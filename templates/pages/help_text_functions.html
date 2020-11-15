@@ -1,0 +1,80 @@
+<table class="text-functions">
+    <tr style="font-weight: bold;">
+        <td>Name</td>
+        <td>Format</td>
+        <td>Example</td>
+        <td>Description</td>
+    </tr>
+    <tr>
+        <td>Cross-linking</td>
+        <td style="white-space: nowrap;">&gt;&gt;&gt;[address]<br>&gt;&gt;&gt;[address/post]</td>
+        <td style="white-space: nowrap;"><a href="http://172.28.1.1/board/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/1">&gt;&gt;&gt;BM-2cTJJ...</a><br><a href="http://172.28.1.1/thread/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/2#1DA705CC1">&gt;&gt;&gt;BM-2cTJJ.../1DA705CC1</a></td>
+        <td>Allows linking to other boards and other board's posts.</td>
+    </tr>
+    <tr>
+        <td>Dice Roll</td>
+        <td style="white-space: nowrap;">#d[int]<br>#[int]d[int]</td>
+        <td style="white-space: nowrap;"><span class="replace-funcs">#d20(15)</span><br/><span class="replace-funcs">#4d6(2, 1, 1, 6)</span></td>
+        <td>Returns a random integer or integers up to the number of sides of the die. Multiple dice can be rolled if an integer is placed before the "d".</td>
+    </tr>
+    <tr>
+        <td>Magic 8 Ball</td>
+        <td style="white-space: nowrap;">#8ball</td>
+        <td><span class="replace-funcs">#8ball(It is decidedly so)</span></td>
+        <td>Produces an 8 ball answer.</td>
+    </tr>
+    <tr>
+        <td>Card Draw</td>
+        <td style="white-space: nowrap;">#c[int 1-52]</td>
+        <td><span class="replace-funcs">#c13(6♠ 3♦ Q♦ Q♣ 8♠ K♣ 4♥ 6♣ 2♦ 10♥ Q♠ J♠ A♣)</span></td>
+        <td>Draws cards from a standard deck of 52 cards.</td>
+    </tr>
+    <tr>
+        <td>Coin Toss</td>
+        <td style="white-space: nowrap;">#flip</td>
+        <td><span class="replace-funcs">#flip(flap)</span></td>
+        <td>Toss a coin.</td>
+    </tr>
+    <tr>
+        <td>Tarot Draw</td>
+        <td style="white-space: nowrap;">#t[int 1-78]</td>
+        <td><span class="replace-funcs">#t3(Ace of Wands (↓), The Magician (↓), The High Priestess)</span></td>
+        <td>Draw cards from a standard Tarot deck.</td>
+    </tr>
+    <tr>
+        <td>Crowley's Tarot</td>
+        <td style="white-space: nowrap;">#ct[int 1-78]</td>
+        <td><span class="replace-funcs">#ct3(Fortune, Four of Cups (↓), The Star)</span></td>
+        <td>Draw cards from Crowley's Tarot deck.</td>
+    </tr>
+    <tr>
+        <td>I Ching Divination</td>
+        <td style="white-space: nowrap;">#iching</td>
+        <td><span class="replace-funcs">#iching(15. <span style="font-family: iching;">䷎</span> CH'IEN / MODESTY <span style="font-family: arrow;">🢂</span> 25. <span style="font-family: iching;">䷘</span> WU WANG / INNOCENCE (THE UNEXPECTED))</span></td>
+        <td>Produce an automatic I Ching divination.</td>
+    </tr>
+    <tr>
+        <td>Rune Draw (version 1)</td>
+        <td style="white-space: nowrap;">#rb[int 1-25]</td>
+        <td><span class="replace-funcs">#rb3(<span style="font-family: runes;">ᛁ</span> - ISA (STANDSTILL), <span style="font-family: runes;">ᚦ</span> - THURISAZ Rev. (STUBBORN), <span style="font-family: runes;">ᚺ</span> - HAGLAZ (DISRUPTION))</span></td>
+        <td>Futhark Rune divination (with blank rune).</td>
+    </tr>
+    <tr>
+        <td>Rune Draw (version 2)</td>
+        <td style="white-space: nowrap;">#r[int 1-24]</td>
+        <td><span class="replace-funcs">#r3(<span style="font-family: runes;">ᛈ</span> - PERTHO (CHANCE AND BECOMING), <span style="font-family: runes;">ᚹ</span> - WUNJO (JOY), <span style="font-family: runes;">ᛋ</span> - SOWILO (SELF))</span></td>
+        <td>Futhark Rune divination (without blank rune).</td>
+    </tr>
+    <tr>
+        <td>Stichomancy</td>
+        <td style="white-space: nowrap;">#stich</td>
+        <td><span class="replace-funcs">#stich("Even as far north as Monterey, in the central part of the State, the famous Hotel del Monte, with its magnificent park of pines and live-oaks, and exquisite flower-gardens underneath the trees, is remarkable for its steadiness of temperature." -<a href="http://www.gutenberg.org/ebooks/28506">Our Italy</a>)</span></td>
+        <td>Perform a stichomancy divination from 60,000 books from the Project Gutenberg library.</td>
+    </tr>
+    <tr>
+        <td>God Song</td>
+        <td style="white-space: nowrap;">#godsong</td>
+        <td><span class="replace-funcs">#godsong(</span><audio style="width: 300px" controls><source src="/static/good_god_song.mp3" type="audio/mp3"></audio><span class="replace-funcs"> 14:27 And king Rehoboam made in their stead brasen shields, and committed them unto the hands of the chief of the guard, which kept the door of the king’s house. -<a target="_blank" href="http://www.gutenberg.org/ebooks/10">The Second Book of Moses: Called Exodus, The Holy Bible (KJV)</a>)</span></td>
+        <td>Creates a God Song along with posting a quote from The Holy Bible (KJV)</td>
+    </tr>
+</table>

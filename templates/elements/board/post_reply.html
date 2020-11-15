@@ -1,0 +1,71 @@
+{% set isoppost = False %}
+
+<div class="post plaque" id="{{post_id(post.message_id)}}">
+	{% include '/elements/board/post_header.html' %}
+	<div>
+{% if post.file_currently_downloading %}
+        Download status: {{post.file_progress}}. Please wait.
+{% elif post.file_do_not_download %}
+		File too large to auto-download<br/>
+		<form method="post" enctype="multipart/form-data" autocomplete="off">
+			<input name="message_id" value="{{post.message_id}}" type="hidden">
+			<input type="submit" name="start_download" value="Allow Download"/>
+		</form><br/>
+{% elif post.file_md5_hash and not post.file_md5_hashes_match %}
+		File discarded (MD5 hashes don't match, likely an issue downloading)<br/>
+		<form method="post" enctype="multipart/form-data" autocomplete="off">
+			<input name="message_id" value="{{post.message_id}}" type="hidden">
+			<input type="submit" name="start_download" value="Download Again"/>
+		</form><br/>
+{% elif not post.file_currently_downloading and
+        not post.file_do_not_download and
+        post.file_extension in config.FILE_EXTENSIONS_IMAGE and
+        (post.file_decoded or
+         (post.file_url and post.file_download_successful)) %}
+		<input type="hidden" id="type_{{post.message_id}}" name="type" value="reply"/>
+		<input type="hidden" id="width_{{post.message_id}}" name="width" value="{{post.media_width}}"/>
+		<input type="hidden" id="height_{{post.message_id}}" name="height" value="{{post.media_height}}"/>
+		<input type="hidden" id="filename_{{post.message_id}}" name="filename" value="{{post.file_filename}}"/>
+		<input type="hidden" id="src_thumb_{{post.message_id}}" name="src_thumb" value="{% if post.image_spoiler %}/static/spoiler.png{% else %}/files/thumb/{{post.message_id}}/{{post.file_filename}}{% endif %}"/>
+		<img id="{{post.message_id}}" class="postimg pic margin-6px" src="{% if post.image_spoiler %}/static/spoiler.png{% else %}/files/thumb/{{post.message_id}}/{{post.file_filename}}{% endif %}"/>
+{% elif not post.file_currently_downloading and
+        not post.file_do_not_download and
+        post.file_extension in config.FILE_EXTENSIONS_AUDIO and
+        (post.file_decoded or
+        (post.file_url and post.file_download_successful)) %}
+        <input type="hidden" id="type_{{post.message_id}}" name="type" value="reply"/>
+    	<div id="{{post.message_id}}" class="video" style="float: left; margin: 1px 10px 10px 10px; width: 450px;">
+            <audio class="video-insert volume-75" controls volume="0.7">
+              <source src="/files/file/{{post.message_id}}/{{post.file_filename}}" type="audio/{{post.file_extension}}">
+              Your browser does not support the audio tag.
+            </audio>
+        </div>
+{% elif not post.file_currently_downloading and
+        not post.file_do_not_download and
+        post.file_extension in config.FILE_EXTENSIONS_VIDEO and
+        (post.file_decoded or
+        (post.file_url and post.file_download_successful)) %}
+        <input type="hidden" id="type_{{post.message_id}}" name="type" value="reply"/>
+    	<input type="hidden" id="width_{{post.message_id}}" name="width" value="{{post.media_width}}"/>
+		<input type="hidden" id="height_{{post.message_id}}" name="height" value="{{post.media_height}}"/>
+    	<div id="{{post.message_id}}" class="video" style="border: 1px solid #000; float: left; margin: 1px 10px 10px 10px; width: 190px;">
+            <video class="video-insert volume-75" controls>
+              <source src="/files/file/{{post.message_id}}/{{post.file_filename}}" type="video/{{post.file_extension}}">
+              Your browser does not support the video tag.
+            </video>
+            <center>Click Enlarge/Shrink</center>
+        </div>
+{% elif post.file_extension %}
+    <div>
+      <a class="newtrailers forward" href="/files/file/{{post.message_id}}/{{post.file_filename}}">
+		  {{post.file_extension|upper}}
+	  </a>
+    </div>
+{% endif %}
+		<blockquote class="post block-reply">
+			<div id="header_{{post.message_id}}">
+	{% include '/elements/board/post.html' %}
+			</div>
+		</blockquote>
+	</div>
+</div>

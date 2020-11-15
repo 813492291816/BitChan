@@ -1,0 +1,281 @@
+{% extends "layout.html" %}
+
+{% set is_private = board['current_chan'].access == "private" %}
+
+{% set rules = chans_board_info[board['current_chan'].address]["rules"] %}
+
+{% set require_identity_to_post = "require_identity_to_post" in rules and
+	                              rules["require_identity_to_post"] %}
+
+{% set primary_addresses = chans_board_info[board['current_chan'].address]["primary_addresses"] %}
+{% set secondary_addresses = chans_board_info[board['current_chan'].address]["secondary_addresses"] %}
+{% set tertiary_addresses = chans_board_info[board['current_chan'].address]["tertiary_addresses"] %}
+{% set restricted_addresses = chans_board_info[board['current_chan'].address]["restricted_addresses"] %}
+
+{% set primary_access = [] %}
+{% set secondary_access = [] %}
+{% set tertiary_access = [] %}
+{% set on_any_access_list = [] %}
+
+{% for id_type in [identities, all_chans] %}
+    {% for address in id_type if id_type[address]['enabled'] %}
+        {% if address in primary_addresses %}
+            {%- do primary_access.append(1) %}
+        {% endif %}
+        {% if address in secondary_addresses %}
+            {%- do secondary_access.append(1) %}
+        {% endif %}
+        {% if address in tertiary_addresses %}
+            {%- do tertiary_access.append(1) %}
+        {% endif %}
+    {% endfor %}
+{% endfor %}
+
+{% if primary_access or secondary_access or tertiary_access %}
+    {%- do on_any_access_list.append(1) %}
+{% endif %}
+
+{% set is_private = board['current_chan'].access == "private" %}
+
+{% block title -%}
+{{chans_board_info[board['current_chan'].address]["label"]|safe}} -
+{% if is_private -%}
+Private
+{% else -%}
+Public
+{% endif %}
+Board
+{% endblock %}
+
+{% block head %}
+    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.min.css">
+    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.theme.min.css">
+    <script src="/static/js/jquery-ui-1.12.1.min.js"></script>
+    <script>
+        function checkForm(form) {
+            form.submit_post.disabled = true;
+            form.submit_post.value = "Please wait...";
+        }
+
+        $(function() {
+            $("#accordion-info-options").show().accordion({
+                collapsible: true,
+                active: false
+            });
+            $("#accordion-owner-options").show().accordion({
+                collapsible: true,
+                active: false
+            });
+            $("#accordion-admin-options").show().accordion({
+                collapsible: true,
+                active: false
+            });
+            $("#accordion-formatting").show().accordion({
+                collapsible: true,
+                active: false
+            });
+            $("#accordion-add-options").show().accordion({
+                collapsible: true,
+                active: false
+            });
+        });
+
+        $(window).scroll(function() {
+            var height = $(window).scrollTop();
+            if (height > 100) {
+                $('#back2Top').fadeIn();
+            } else {
+                $('#back2Top').fadeOut();
+            }
+        });
+
+        $(document).ready(function() {
+            $("#back2Top").click(function(event) {
+                event.preventDefault();
+                $("html, body").animate({ scrollTop: 0 }, "slow");
+                return false;
+            });
+
+            var volume_set = document.getElementsByClassName("volume-75");
+            for(var i = 0; i < volume_set.length; i++) {
+                volume_set[i].volume = 0.75;
+            }
+        });
+
+    {% if rules and "automatic_wipe" in rules %}
+    {% include '/elements/timer_content_wipe.html' %}
+    {% endif %}
+
+    </script>
+    <style>
+        .page-nav {
+            font-size: 1.3em
+        }
+    </style>
+{% endblock %}
+
+{% block admin_css %}
+    <style>
+    {% if board['current_chan'].address in command_options and
+          "css" in command_options[board['current_chan'].address] -%}
+        {{command_options[board['current_chan'].address]["css"]}}
+    {%- endif %}
+    </style>
+{% endblock %}
+
+{% block body %}
+    <a id="back2Top" title="Back to top" href="#">&GreaterGreater;</a>
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    <center>
+        <span style="font-size: 1.5em">
+    {% if is_private %}
+            Private
+    {% else %}
+            Public
+    {% endif %}
+            Board
+        </span>
+    </center>
+    <br/>
+
+    {% include '/elements/title.html' %}
+
+    {% if rules and "automatic_wipe" in rules %}
+    <center>
+        <div style="padding-top: 0.5em">
+            Content Wipe in <span id="clear_content_countdown">-</span>
+        </div>
+    </center>
+    {% endif %}
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <hr/>
+    <center>
+
+        <div style="max-width: 500px; padding-bottom: 1em">
+            <div id="accordion-info-options" style="display: none">
+                <h3>Board Information</h3>
+                <div style="padding: 1em">
+                    <div style="padding-bottom: 0.5em">
+                        <img src="/icon/{{board['current_chan'].address}}" style="width: 40px; height: 40px">
+                    </div>
+
+                    Address:
+                    <div style="padding-bottom: 0.5em">
+                        <span style="font-family: monospace">{{board['current_chan'].address}}</span> <button class="btn" onclick="CopyToClipboard('{{board['current_chan'].address}}')">&#128203;</button>
+                    </div>
+
+                    Passphrase:
+                    <div style="padding-bottom: 0.5em">
+                        <input type="text" id="passphrase" value="{{board['current_chan'].passphrase}}"> <button class="btn" onclick="CopyPassphrase()">&#128203;</button>
+                    </div>
+
+                    {% if rules %}
+                    Rules:
+                    {% include '/elements/rules.html' %}
+                    {% endif %}
+
+                    {% if primary_addresses or secondary_addresses or tertiary_addresses or restricted_addresses %}
+                    <div style="padding-bottom: 0.5em">
+                        {% include '/elements/accordion_access.html' %}
+                    </div>
+                    {% endif %}
+
+                    Options:
+                    <div>
+                        <a href="/leave/{{board['current_chan'].address}}" onclick="return confirm('Are you sure you want to leave this board?')">Leave Board</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if primary_access %}
+        <div style="max-width: 500px; padding-bottom: 1em">
+            <div id="accordion-owner-options" style="display: none">
+                <h3>Owner Options</h3>
+                <div style="padding: 1em">
+                    <form method="post" action="/set_owner_options/{{board['current_chan'].address}}" enctype="multipart/form-data">
+                    {% include '/elements/set_owner_options.html' %}
+                    <div style="padding-top: 1em">
+                        <input type="submit" name="set_options" value="Set Options"/>
+                    </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if secondary_access %}
+        <div style="max-width: 500px; padding-bottom: 1em">
+            <div id="accordion-admin-options" style="display: none">
+                <h3>Admin Options</h3>
+                <div style="padding: 1em">
+                    ...
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+    {% if not is_private or (is_private and on_any_access_list) %}
+        {% include '/elements/board/post_form.html' %}
+    {% else %}
+        Insufficient permissions to post
+    {% endif %}
+    </center>
+    <hr/>
+
+    {% for thread in get_threads_from_page(board['current_chan'].address, board["current_page"]) %}
+
+        {% set message_op = board["messages"].query
+               .filter(board["messages"].thread_id == thread.id)
+               .filter(board["messages"].message_md5_hash == thread.op_md5_hash).first() %}
+
+        {% set message_replies = board["messages"].query
+               .filter(board["messages"].thread_id == thread.id)
+               .filter(board["messages"].message_md5_hash != thread.op_md5_hash)
+               .order_by(board["messages"].timestamp_sent.asc()) %}
+
+        <div class="thread">
+        {% if message_op %}
+            {% set post = message_op %}
+            {% set text = post.message %}
+            {% include '/elements/board/post_op.html' %}
+        {% else %}
+            {% include '/elements/board/op_missing.html' %}
+        {% endif %}
+        {% if message_replies.count() > 5 %}
+            <br>
+            <span class="expand">
+                <br/>
+                {{message_replies.count() - 5}} posts truncated.
+                <a href="/thread/{{thread.chan.address}}/{{thread.thread_hash}}" class="link">Click here</a>
+                to view.
+            </span>
+            {% for post in message_replies[-5:] %}
+                <br/>
+                {% set text = post.message %}
+                {% include '/elements/board/post_reply.html' %}
+            {% endfor %}
+        {% else %}
+            {% for post in message_replies %}
+                {% set text = post.message %}
+                {% include '/elements/board/post_reply.html' %}
+                <br/>
+            {% endfor %}
+        {% endif %}
+        </div>
+        <hr/>
+    {% endfor %}
+
+    {% include '/elements/footer.html' %}
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/join_config.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

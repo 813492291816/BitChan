@@ -1,0 +1,10 @@
+{% extends "layout.html" %}
+
+{% block title -%}Thread Not Found{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <center>
+        <div style="padding-top: 2em">A thread with ID {{thread_id}} at a board address {{board_address}} could not be found</div>
+    </center>
+{% endblock %}

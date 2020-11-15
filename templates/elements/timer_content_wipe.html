@@ -1,0 +1,31 @@
+var countDownDate = {{rules["automatic_wipe"]["wipe_epoch"]}} * 1000;
+var x = setInterval(function() {
+    var now = new Date().getTime();
+    var distance = countDownDate - now;
+
+    var days = Math.floor(distance / (1000 * 60 * 60 * 24));
+    var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+    var seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+    var str_return = "";
+    if (days) {
+        str_return += days
+        if (days > 1)  str_return += " Days, ";
+        else str_return += " Day, ";
+    }
+    if (hours || days) {
+        str_return += + hours
+        if (hours > 1) str_return += " Hours, ";
+        else str_return += " Hour, ";
+    }
+    if (minutes || hours || days) str_return += minutes + " Min., ";
+    if (seconds || minutes || hours || days) str_return += seconds + " Sec.";
+
+    document.getElementById("clear_content_countdown").innerHTML = str_return;
+
+    if (distance < 0) {
+        clearInterval(x);
+        document.getElementById("clear_content_countdown").innerHTML = "CLEARED";
+    }
+}, 1000);

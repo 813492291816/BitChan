@@ -1,0 +1,65 @@
+{% extends "layout.html" %}
+
+{% block title %}Configure{% endblock %}
+
+{% block head %}
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div style="width: 100%; text-align: center;">
+                <h1 class="title themed bold">BitChan Configuration</h1>
+            </div>
+
+            <form method="post">
+                <div style="max-width: 1000px; text-align: center;">
+                    <div class="heading-1 head-center">Options</div>
+
+                    <div class="heading-2 head-center">Export</div>
+                    <p>Useful for backing up addresses and passphrases in order to add addresses or join boards/lists at a later time.</p>
+
+                    <div style="padding: 1em 0 3em 0">
+                        <input type="submit" name="export_chans" value="Export Boards/Lists"/>
+                        <input type="submit" name="export_identities" value="Export Identities"/>
+                        <input type="submit" name="export_address_book" value="Export Address Book"/>
+                    </div>
+
+                    <div class="heading-1 head-center">Settings</div>
+
+                    <div class="heading-2 head-center">Theme</div>
+
+                    <div>
+                        <select name="theme">
+                        {% for theme_name in themes %}
+                            <option value="{{theme_name}}"{% if settings.theme == theme_name %} selected{% endif %}>{{theme_name}}</option>
+                        {% endfor %}
+                        </select>
+                    </div>
+
+                    <div style="padding: 3em 0">
+                        <input type="submit" name="save" value="Save"/>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/join_config.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

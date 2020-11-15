@@ -1,0 +1,229 @@
+{% set theme = themes[settings.theme] %}
+
+.btn {
+  border: none;
+  background-color: inherit;
+  padding: 3px 3px;
+  cursor: pointer;
+  display: inline-block;
+}
+.btn:hover {background: #eee;}
+
+.newtrailers {
+  float: left;
+  margin: 1px 10px 10px 10px;
+  width: 150px;
+  height: 200px;
+  text-align: center;
+  line-height: 200px;
+  color: black;
+  text-decoration: none;
+  font-size: 2em;
+  font-weight: bold;
+}
+
+.forward {
+  background-image: url(/static/file_blank.png);
+  transition:background-image 0.5s ease;
+}
+
+.forward:hover{
+    text-decoration: none;
+}
+
+#back2Top {
+    width: 40px;
+    line-height: 40px;
+    overflow: hidden;
+    z-index: 999;
+    cursor: pointer;
+    transform: rotate(270deg);
+    position: fixed;
+    bottom: 50px;
+    right: 0;
+    background-color: #DDD;
+    color: #555;
+    text-align: center;
+    font-size: 30px;
+    text-decoration: none;
+}
+
+#back2Top:hover {
+    background-color: #DDF;
+    color: #000;
+}
+
+.video-insert {
+    width: 100% !important;
+    height: auto !important;
+}
+
+.ui-accordion .ui-accordion-content {
+    padding: 0px
+}
+
+.ui-state-default {
+    color: {{theme.textcolor}}
+}
+
+.ui-state-active {
+    color: {{theme.textcolor}};
+    border: 1px solid {{theme.formbg}};
+    background: {{theme.formbg}}
+}
+
+.container {
+    display: flex;
+    justify-content: center;
+    padding: 0.5em;
+}
+
+.header-inline-block {
+    display: inline-block;
+    padding-left: 0.5em
+}
+
+.margin-6px {
+    margin: 6px;
+}
+
+.heading-1 {
+    font-size: 2.1em;
+    font-weight: bold;
+    padding-top: 1em;
+    padding-bottom: 0.5em;
+}
+
+.heading-2 {
+    font-size: 1.7em;
+    font-weight: bold;
+    padding-top: .7em;
+    padding-bottom: 0.5em;
+}
+
+.heading-3 {
+    font-size: 1.3em;
+    font-weight: bold;
+    padding-top: .7em;
+    padding-bottom: 0.5em;
+}
+
+.head-center {
+    text-align: center;
+    width: 100%;
+}
+
+.input_hidden {
+    display: none;
+}
+
+.content {
+    background: {{theme.bgcolor}};
+    margin: 0 0 1px 0;
+}
+
+input + label + .content {
+    display: none;
+}
+
+input:checked + label + .content {
+    display: block;
+}
+
+@keyframes colorfultext {
+    to {
+        background-position: 200% center;
+    }
+}
+
+.animated {
+    animation: colorfultext 3s linear infinite;
+    background: radial-gradient(circle farthest-corner, red, orange, yellow, green, blue, indigo, violet);
+    background-clip: text;
+      text-fill-color: transparent;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    background-size: 200% auto;
+    color: #000;
+}
+
+.block-reply {
+    min-width: 3em;
+    max-height: 50em;
+    overflow-y: auto
+}
+
+.replace-shadow {
+    color: white;
+    text-shadow: 2px 2px 4px #000000;
+}
+
+.replace-big {
+    font-weight: bold;
+    font-size: 15pt;
+    color: #AF0A0F;
+    text-transform: uppercase;
+}
+
+.replace-small {
+    font-size: 8pt;
+    color: #6A1dE2
+}
+
+.replace-blinking {
+    animation: blinkingText .5s infinite;
+}
+
+@keyframes blinkingText {
+    100% {
+        color: transparent;
+    }
+    100% {
+        color:  transparent;
+    }
+}
+
+.replace-spoiler {
+    color: black;
+    background-color: black;
+}
+
+.replace-spoiler:hover {
+    color: white;
+}
+
+.language-ascii-art {
+    display: inline-block;
+    padding: 1em;
+    background: #282828;
+    width: auto;
+    z-index: auto;
+    font-family: "Lucida Console", Monaco, monospace;
+    color: #33FF00;
+    text-shadow: 0 0 20px , 0 0 40px, 0 0 80px , 0 0 100px;
+    white-space: pre;
+    background-color: #282828;
+}
+
+.replace-funcs {
+    width: auto;
+    z-index: auto;
+    font-family: "Lucida Console", Monaco, monospace;
+    background: radial-gradient(circle farthest-corner, #920092, #57007F);
+	  background-clip: text;
+    text-fill-color: transparent;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+	  background-size: 200% auto;
+}
+
+.god-text {
+    font-size: 1.1em;
+    width: auto;
+    z-index: auto;
+    font-family: "Lucida Console", Monaco, monospace;
+    color: black;
+    background-color: #C0C0C0;
+    -webkit-text-stroke-width: 0.4px;
+    -webkit-text-stroke-color: red;
+}

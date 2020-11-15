@@ -1,0 +1,19 @@
+{% if url and url_text %}
+<div style="padding-top: 2em; padding-bottom: 1em">
+    <center>
+        <a class="title themed bold" href="{{url}}">{{html.escape(url_text)|safe}}</a>
+    </center>
+</div>
+{% endif %}
+
+<div class="intro bold">
+    <center><h1 class="error bold">{{html.escape(status_msg["status_title"])}}</h1></center>
+    {% if status_msg["status_message"] %}
+    <br/>
+    <center>
+        {% for each_msg in status_msg["status_message"] %}
+        {{html.escape(each_msg)|safe}}<br/>
+        {% endfor %}
+    </center>
+    {% endif %}
+</div>

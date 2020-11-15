@@ -1,0 +1,191 @@
+{% extends "layout.html" %}
+
+{% set is_private = board['current_chan'].access == "private" %}
+
+{% set rules = chans_board_info[board['current_chan'].address]["rules"] %}
+
+{% set require_identity_to_post = "require_identity_to_post" in rules and
+	                              rules["require_identity_to_post"] %}
+
+{% set primary_addresses = chans_board_info[board['current_chan'].address]["primary_addresses"] %}
+{% set secondary_addresses = chans_board_info[board['current_chan'].address]["secondary_addresses"] %}
+{% set tertiary_addresses = chans_board_info[board['current_chan'].address]["tertiary_addresses"] %}
+{% set restricted_addresses = chans_board_info[board['current_chan'].address]["restricted_addresses"] %}
+
+{% set primary_access = [] %}
+{% set secondary_access = [] %}
+{% set tertiary_access = [] %}
+{% set on_any_access_list = [] %}
+
+{% for id_type in [identities, all_chans] %}
+    {% for address in id_type if id_type[address]['enabled'] %}
+        {% if address in primary_addresses %}
+            {%- do primary_access.append(1) %}
+        {% endif %}
+        {% if address in secondary_addresses %}
+            {%- do secondary_access.append(1) %}
+        {% endif %}
+        {% if address in tertiary_addresses %}
+            {%- do tertiary_access.append(1) %}
+        {% endif %}
+    {% endfor %}
+{% endfor %}
+
+{% if primary_access or secondary_access or tertiary_access %}
+    {%- do on_any_access_list.append(1) %}
+{% endif %}
+
+{% block title -%}
+{{board["current_thread"].subject|safe}} -
+{{chans_board_info[board['current_chan'].address]["label"]|safe}} -
+{% if is_private -%}
+Private
+{% else -%}
+Public
+{% endif %}
+Board
+{% endblock %}
+
+{% block head %}
+    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.min.css">
+    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.theme.min.css">
+    <script src="/static/js/jquery-ui-1.12.1.min.js"></script>
+    <script>
+        function checkForm(form) {
+            form.submit_post.disabled = true;
+            form.submit_post.value = "Please wait...";
+        }
+
+        $(function() {
+            $("#accordion-formatting").show().accordion({
+                collapsible: true,
+                active: false
+            });
+            $("#accordion-add-options").show().accordion({
+                collapsible: true,
+                active: false
+            });
+        });
+
+        $(window).scroll(function() {
+            var height = $(window).scrollTop();
+            if (height > 100) {
+                $('#back2Top').fadeIn();
+            } else {
+                $('#back2Top').fadeOut();
+            }
+        });
+
+        $(document).ready(function() {
+            $("#back2Top").click(function(event) {
+                event.preventDefault();
+                $("html, body").animate({ scrollTop: 0 }, "slow");
+                return false;
+            });
+
+            var volume_set = document.getElementsByClassName("volume-75");
+            for(var i = 0; i <= volume_set.length; i++) {
+                volume_set[i].volume = 0.75;
+            }
+        });
+    </script>
+{% endblock %}
+
+{% block admin_css %}
+    <style>
+    {% if board['current_chan'].address in command_options and
+          "css" in command_options[board['current_chan'].address] -%}
+        {{command_options[board['current_chan'].address]["css"]}}
+    {%- endif %}
+    </style>
+{% endblock %}
+
+{% block body %}
+    <a id="back2Top" title="Back to top" href="#">&GreaterGreater;</a>
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    <center>
+        <span style="font-size: 1.5em">
+    {% if is_private %}
+            Private
+    {% else %}
+            Public
+    {% endif %}
+            Board
+        </span>
+    </center>
+    <br/>
+
+    {% include '/elements/title.html' %}
+
+    <div style="padding-top: 1em">
+        <center>
+            <a class="title themed bold" style="text-decoration: none;" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">{{board["current_thread"].subject|safe}}</a>
+        </center>
+    </div>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    {% set thread = board["current_thread"] %}
+
+    {% set message_op_steg = board["messages"].query
+           .filter(board["messages"].thread_id == thread.id)
+           .filter(board["messages"].message_md5_hash == thread.op_md5_hash)
+           .filter(board["messages"].message_steg != None)
+           .first() %}
+
+    {% set message_replies_steg = board["messages"].query
+           .filter(board["messages"].thread_id == thread.id)
+           .filter(board["messages"].message_md5_hash != thread.op_md5_hash)
+           .filter(board["messages"].message_steg.isnot(None))
+           .order_by(board["messages"].timestamp_sent.asc()) %}
+
+    <hr/>
+    <center>
+    {% if not is_private or (is_private and on_any_access_list) %}
+        {% set is_reply = True %}
+        {% include '/elements/board/post_form.html' %}
+    {% else %}
+        Insufficient permissions to post
+    {% endif %}
+    {% if message_op_steg or message_replies_steg.count() %}
+        <p><a href="/thread_steg/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">Steg</a></p>
+    {% endif %}
+    </center>
+    <hr/>
+
+    {% set message_op = board["messages"].query
+           .filter(board["messages"].thread_id == thread.id)
+           .filter(board["messages"].message_md5_hash == thread.op_md5_hash).first() %}
+
+    {% set message_replies = board["messages"].query
+           .filter(board["messages"].thread_id == thread.id)
+           .filter(board["messages"].message_md5_hash != thread.op_md5_hash)
+           .order_by(board["messages"].timestamp_sent.asc()) %}
+
+    <div class="thread">
+    {% if message_op %}
+        {% set post = message_op %}
+        {% set text = message_op.message %}
+        {% include '/elements/board/post_op.html' %}
+    {% else %}
+        {% include '/elements/board/op_missing.html' %}
+    {% endif %}
+    {% for each_message in message_replies %}
+        {% set post = each_message %}
+        {% set text = each_message.message %}
+        {% include '/elements/board/post_reply.html' %}
+        <br/>
+    {% endfor %}
+    </div>
+    <hr/>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/join_config.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

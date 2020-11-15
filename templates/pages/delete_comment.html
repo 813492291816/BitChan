@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+
+{% block title %}Delete Post with Comment{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div style="width: 100%; text-align: center; padding-bottom: 2em">
+                <form method="post">
+                <h1 class="title themed bold">Delete Post with Comment</h1>
+
+                <div style="padding-bottom: 1em">
+                    This will delete this post for every user of the board and replace the content with the message below. The new comment will appear as "ORIGINAL COMMENT DELETED. REASON: " with the comment below following that text.
+                </div>
+
+                <div style="padding-bottom: 1em">
+                    <textarea rows="8" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" name="delete_comment"></textarea>
+                </div>
+                <div>
+                    <input type="submit" name="send" value="Submit"/>
+                </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/join_config.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

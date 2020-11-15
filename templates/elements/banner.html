@@ -1,0 +1,9 @@
+<center>
+    <a href="/">
+{%- if board and "current_chan" in board -%}
+    <img class="banner clickable" src="/banner/{{board['current_chan'].address}}"/>
+{%- else -%}
+    <img class="banner clickable" src="/banner/0"/>
+{%- endif -%}
+    </a>
+</center>

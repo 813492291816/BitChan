@@ -1,0 +1,358 @@
+{% extends "layout.html" %}
+
+{% block title %}Join or Create a Board or List{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <form method="post" enctype="multipart/form-data" autocomplete="off">
+
+    {% if stage == "start" %}
+
+            <input name="stage" value="start" type="hidden">
+            <div style="max-width: 600px; text-align: center;">
+                <div style="width: 100%; text-align: center;">
+                    <h1 class="title themed bold">Join or Create a Board or List</h1>
+                </div>
+                <div class="container">
+                    <select name="join_type">
+                        <option value="join">Join Board or List</option>
+                        <option value="public_board">Create Public Board</option>
+                        <option value="private_board">Create Private Board</option>
+                        <option value="public_list">Create Public List</option>
+                        <option value="private_list">Create Private List</option>
+                    </select>
+                </div>
+                <div class="container">
+                    <input type="submit" name="next" value="Next"/>
+                </div>
+            </div>
+
+    {% elif stage == "join" %}
+
+            <input name="stage" value="join" type="hidden">
+            <div style="text-align: center;">
+                <h1 class="title themed bold">Join a Board or List</h1>
+                <p style="padding: 0.5em; max-width: 550px">Enter the BitChan passphrase for a board or list. This is a special formatted passphrase that can be obtained after joining a board or list. This is typically shared to you from someone that has already created a board or list or may be from your backed-up list of passphrases for boards or lists you've previously joined or created.</p>
+            </div>
+            <div style="padding-top: 0.5em">
+                <div>BitChan Passphrase</div>
+                <input style="width: 100%" name="passphrase" value="">
+            </div>
+            <div style="padding-top: 1em">
+                <input type="submit" name="join" value="Join"/>
+            </div>
+
+    {% elif stage in ["public_board", "private_board", "public_list", "private_list"] %}
+
+        {% if stage == "public_board" %}
+            {% set access = "Public" %}
+            {% set chan_type = "Board" %}
+        {% elif stage == "private_board" %}
+            {% set access = "Private" %}
+            {% set chan_type = "Board" %}
+        {% elif stage == "public_list" %}
+            {% set access = "Public" %}
+            {% set chan_type = "List" %}
+        {% elif stage == "private_list" %}
+            {% set access = "Private" %}
+            {% set chan_type = "List" %}
+        {% endif %}
+
+            <input name="stage" value="{{stage}}" type="hidden">
+            <div style="max-width: 600px;">
+                <div style="text-align: center;">
+                    <h1 class="title themed bold">Create {{access}} {{chan_type}}</h1>
+                </div>
+                <div style="padding: 0.5em">
+        {% if stage == "public_board" %}
+                    For the public board being created, select the Owner and Admin addresses. User addresses have no effect on public boards. Restricted addresses can not post to the board. Owners can set custom options such as CSS and banner image, among others. Owners and Admins can delete posts and ban users. All other addresses can only create posts. If "Require Identity to Post" is selected, users can only post with an address that is not the address of the board (e.g. create an Identity address to post).
+        {% elif stage == "private_board" %}
+                    For the private board being created, select the Owner, Admin, and User addresses. Owners can set custom options such as CSS and banner image, among others. Owners and Admins can delete posts and ban users. Users can only create posts. All other addresses can only read posts.
+        {% elif stage == "public_list" %}
+                    For the public list being created, select the Owner and Admin addresses. User addresses have no effect on public lists. Owners can set custom options such as CSS and banner image, among others. Owners and Admins can add and delete items from the list. All other addresses can only add addresses to the list.
+        {% elif stage == "private_list" %}
+                    For the private list being created, select the Owner, Admin, and User addresses. Owners can set custom options such as CSS and banner image, among others. Owners and Admins can add and delete items from the list. Users can only add to the list. All other addresses can only read the list.
+        {% endif %}
+
+        {% if stage in ["private_board", "private_list"] %}
+                    Address selection is permanent and cannot be changed at a later time. Additional addresses can be provided in the Additional Addresses input box, separated by commas (e.g. "BM-237hfstBbaKIYT64sFfsfN9109Bysfqbby,BM-2oDjsytB5N5sb62s1mNwkds08GMsiryYD3")
+        {% endif %}
+                </div>
+
+                <div style="padding-top: 0.5em">
+                    <div>{{chan_type}} Label (Required)</div>
+                    <input style="width: 100%" name="label" value="">
+                </div>
+
+                <div style="padding-top: 0.5em">
+                    <div>{{chan_type}} Description (Required)</div>
+                    <input style="width: 100%" name="description" value="">
+                </div>
+
+                <div style="padding-top: 0.5em">
+                    <input type="checkbox" id="require_identity_to_post" name="require_identity_to_post" value="y"> <label for="require_identity_to_post">{{config.DICT_PERMISSIONS["require_identity_to_post"]}}</label>
+                </div>
+
+                <div style="padding-top: 0.5em">
+                    <input type="checkbox" id="automatic_wipe" name="automatic_wipe" value="y"> <label for="automatic_wipe">{{config.DICT_PERMISSIONS["automatic_wipe"]}}</label>
+                </div>
+                <div>
+                    <input name="wipe_epoch" id="wipe_epoch" value="{{time.time()|int}}"> <label for="wipe_epoch">Time of First Clear (Epoch, see <a target="_blank" href="https://www.epochconverter.com/">Epoch Converter</a>)</label>
+                </div>
+                <div>
+                    <input name="interval_seconds" id="interval_seconds" value="2592000"> <label for="interval_seconds">Interval (Seconds, default is 30 days)</label>
+                </div>
+
+                <p style="font-size: 2em">Owner Addresses</p>
+
+        {% if identities %}
+                <div style="padding-top: 0.5em">
+                    <div>My Identity Addresses</div>
+
+            {% for address in identities %}
+                {% set label = identities[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="primary_identity_{{address}}" name="primary_identity_{{address}}" value="{{address}}"> <label for="primary_identity_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+            {% endfor %}
+                </div>
+        {% endif %}
+
+        {% if address_book %}
+                <div style="padding-top: 0.5em">
+                    <div>Address Book Addresses</div>
+            {% for address in address_book %}
+                {% set label = address_book[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="primary_address_book_{{address}}" name="primary_address_book_{{address}}" value="{{address}}"> <label for="primary_address_book_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+            {% endfor %}
+                </div>
+        {% endif %}
+
+        {% if all_chans %}
+            {% if chans_board_info %}
+                <div style="padding-top: 0.5em">
+                    <div>Board Addresses</div>
+                {% for address in all_chans if address in chans_board_info %}
+                    {% set label = all_chans[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="primary_chans_{{address}}" name="primary_chans_{{address}}" value="{{address}}"> <label for="primary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+
+            {% if chans_list_info %}
+                <div style="padding-top: 0.5em">
+                    <div>List Addresses</div>
+                {% for address in all_chans if address in chans_list_info %}
+                    {% set label = all_chans[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="primary_chans_{{address}}" name="primary_chans_{{address}}" value="{{address}}"> <label for="primary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+        {% endif %}
+
+                <div style="padding-top: 0.5em">
+                    <div>Additional Addresses (comma-separated)</div>
+                    <input style="width: 100%" name="primary_additional" value="">
+                </div>
+
+                <p style="font-size: 2em">Admin Addresses</p>
+
+        {% if identities %}
+                <div style="padding-top: 0.5em">
+                    <div>My Identity Addresses</div>
+            {% for address in identities %}
+                {% set label = identities[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="secondary_identity_{{address}}" name="secondary_identity_{{address}}" value="{{address}}"> <label for="secondary_identity_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+            {% endfor %}
+                </div>
+        {% endif %}
+
+        {% if address_book %}
+                <div style="padding-top: 0.5em">
+                    <div>Address Book Addresses</div>
+            {% for address in address_book %}
+                {% set label = address_book[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="secondary_address_book_{{address}}" name="secondary_address_book_{{address}}" value="{{address}}"> <label for="secondary_address_book_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+            {% endfor %}
+                </div>
+        {% endif %}
+
+        {% if all_chans %}
+            {% if chans_board_info %}
+                <div style="padding-top: 0.5em">
+                    <div>Board Addresses</div>
+                {% for address in all_chans if address in chans_board_info %}
+                    {% set label = all_chans[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="secondary_chans_{{address}}" name="secondary_chans_{{address}}" value="{{address}}"> <label for="secondary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+
+            {% if chans_list_info %}
+                <div style="padding-top: 0.5em">
+                    <div>List Addresses</div>
+                {% for address in all_chans if address in chans_list_info %}
+                    {% set label = all_chans[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="secondary_chans_{{address}}" name="secondary_chans_{{address}}" value="{{address}}"> <label for="secondary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+        {% endif %}
+
+                <div style="padding-top: 0.5em">
+                    <div>Additional Addresses (comma-separated)</div>
+                    <input style="width: 100%" name="secondary_additional" value="">
+                </div>
+
+        {% if stage in ["private_board", "private_list"] %}
+
+                <p style="font-size: 2em">User Addresses</p>
+
+        {% if identities %}
+                <div style="padding-top: 0.5em">
+                    <div>My Identity Addresses</div>
+            {% for address in identities %}
+                {% set label = identities[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="tertiary_identity_{{address}}" name="tertiary_identity_{{address}}" value="{{address}}"> <label for="tertiary_identity_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+            {% endfor %}
+                </div>
+        {% endif %}
+
+        {% if address_book %}
+                <div style="padding-top: 0.5em">
+                    <div>Address Book Addresses</div>
+            {% for address in address_book %}
+                {% set label = address_book[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="tertiary_address_book_{{address}}" name="tertiary_address_book_{{address}}" value="{{address}}"> <label for="tertiary_address_book_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+            {% endfor %}
+                </div>
+        {% endif %}
+
+        {% if all_chans %}
+            {% if chans_board_info %}
+                <div style="padding-top: 0.5em">
+                    <div>Board Addresses</div>
+                {% for address in all_chans if address in chans_board_info %}
+                    {% set label = all_chans[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="tertiary_chans_{{address}}" name="tertiary_chans_{{address}}" value="{{address}}"> <label for="tertiary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+
+            {% if chans_list_info %}
+                <div style="padding-top: 0.5em">
+                    <div>List Addresses</div>
+                {% for address in all_chans if address in chans_list_info %}
+                    {% set label = all_chans[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="tertiary_chans_{{address}}" name="tertiary_chans_{{address}}" value="{{address}}"> <label for="tertiary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+        {% endif %}
+
+                <div style="padding-top: 0.5em">
+                    <div>Additional Addresses (comma-separated)</div>
+                    <input style="width: 100%" name="tertiary_additional" value="">
+                </div>
+
+        {% endif %}
+
+        {% if stage in ["public_board", "public_list"] %}
+
+                <p style="font-size: 2em">Restricted Addresses</p>
+
+        {% if address_book %}
+                <div style="padding-top: 0.5em">
+                    <div>Address Book Addresses</div>
+            {% for address in address_book %}
+                {% set label = address_book[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="restricted_address_book_{{address}}" name="restricted_address_book_{{address}}" value="{{address}}"> <label for="restricted_address_book_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+            {% endfor %}
+                </div>
+        {% endif %}
+
+        {% if all_chans %}
+            {% if chans_board_info %}
+                <div style="padding-top: 0.5em">
+                    <div>Board Addresses</div>
+                {% for address in all_chans if address in chans_board_info %}
+                    {% set label = all_chans[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="restricted_chans_{{address}}" name="restricted_chans_{{address}}" value="{{address}}"> <label for="restricted_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+
+            {% if chans_list_info %}
+                <div style="padding-top: 0.5em">
+                    <div>List Addresses</div>
+                {% for address in all_chans if address in chans_list_info %}
+                    {% set label = all_chans[address]["label_short"] %}
+                    <div>
+                        <input type="checkbox" id="restricted_chans_{{address}}" name="restricted_chans_{{address}}" value="{{address}}"> <label for="restricted_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+        {% endif %}
+
+                <div style="padding-top: 0.5em">
+                    <div>Additional Addresses (comma-separated)</div>
+                    <input style="width: 100%" name="restricted_additional" value="">
+                </div>
+
+        {% endif %}
+
+                <div style="padding-top: 0.5em">
+                    <div>Extra String (add passphrase entropy)</div>
+                    <input style="width: 100%" name="extra_string" value="">
+                </div>
+
+                <div style="padding-top: 1em">
+                    <input type="submit" name="join" value="Create"/>
+                </div>
+
+            </div>
+
+    {% elif stage == "end" %}
+
+            <a href="/join">Join/Create Another</a>
+
+    {% endif %}
+
+        </form>
+    </div>
+
+{% endblock %}

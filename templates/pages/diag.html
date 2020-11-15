@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+
+{% block title %}Diag{% endblock %}
+
+{% block head %}
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div style="width: 100%; text-align: center; padding-bottom: 2em">
+                <table class="table">
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-bottom: 1em">
+                            <h1 class="title themed bold">Diag</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-bottom: 1em">
+                            <form method="post">
+                                <input type="submit" name="del_inventory" value="Delete BitMessage Inventory"/>
+                            </form>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-bottom: 1em">
+                            <form method="post">
+                                <input type="submit" name="del_trash" value="Delete BitMessage Trash"/>
+                            </form>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/join_config.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

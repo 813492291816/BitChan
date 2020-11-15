@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+
+{% block title %}Bug Report{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div style="width: 100%; text-align: center; padding-bottom: 2em">
+                <form method="post">
+                <h1 class="title themed bold">Submit Bug Report or Feedback</h1>
+
+                <div style="padding-bottom: 1em">
+                    Keep in mind that due to the nature of distributed networks, actions that you make in BitChan can take several minutes to propagate through the network and appear. This is expected behavior for BitChan, not a bug. Therefore, if you send a message or make changes to a board or list, wait several minutes for the changes to take effect rather than submitting a bug report right away.
+                </div>
+
+                <div style="padding-bottom: 1em">
+                    <textarea rows="8" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" name="bug_report"></textarea>
+                </div>
+                <div>
+                    <input type="submit" name="send" value="Submit"/>
+                </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/join_config.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

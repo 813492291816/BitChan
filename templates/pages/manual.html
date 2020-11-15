@@ -1,0 +1,271 @@
+<h1 align="center">
+BitChan Manual
+</h1>
+<ul>
+<li><a href="#about">About</a></li>
+<li><a href="#boards-and-lists">Boards and Lists</a></li>
+<li><a href="#permissions">Permissions</a></li>
+<li><a href="#posts">Posts</a>
+<ul>
+<li><a href="#composing-posts">Composing Posts</a></li>
+<li><a href="#text-modifications">Text Modifications</a>
+<ul>
+<li><a href="#formatting">Formatting</a></li>
+<li><a href="#functions">Functions</a></li>
+</ul></li>
+<li><a href="#supported-file-types">Supported File Types</a></li>
+</ul></li>
+<li><a href="#threads">Threads</a></li>
+<li><a href="#board-and-list-creation">Board and List Creation</a>
+<ul>
+<li><a href="#rules">Rules</a>
+<ul>
+<li><a href="#automatic-wipe">Automatic Wipe</a></li>
+<li><a href="#require-identity-to-post">Require Identity to Post</a></li>
+</ul></li>
+<li><a href="#creating-public-boards-and-lists">Creating Public Boards and Lists</a></li>
+<li><a href="#creating-private-boards-and-lists">Creating Private Boards and Lists</a></li>
+</ul></li>
+<li><a href="#identities">Identities</a></li>
+<li><a href="#address-book">Address Book</a></li>
+<li><a href="#developer-information">Developer Information</a></li>
+</ul>
+<h1 id="about">About</h1>
+<p>BitChan is a decentralized anonymous image board inspired by Bitboard and built on top of <a href="https://bitmessage.org">BitMessage</a> with <a href="https://www.torproject.org">Tor</a> and <a href="https://gnupg.org">GnuGP</a>.</p>
+<p>BitMessage is a decentralized, text-based encrypted messaging application. It relies on public key encryption similar to PGP and decentralized message delivery, which due to the nature of every message being distributed to every client also provides plausible deniability (i.e. no one knows who the message was intended to go to). BitChan runs on top of BitMessage to enhance its functionality and security. BitChan features boards for forum-like discussions with image and file sharing, lists to organize and share other boards and lists, along with a host of additional features to enhance posts and provide board/list management with the use of owner, admin, and user permissions. Boards and lists can be public or private, with or without owners or admins, allowing a full range of options from completely unmoderatable to strictly allowing only select addresses to post or modify list contents.</p>
+<h1 id="boards-and-lists">Boards and Lists</h1>
+<p>Both boards and lists are built from channels, or chans, in BitMessage. Each BitMessage chan is an address that acts like an inbox that messages can be sent to. Message sent to a chan are encrypted so only members of that chan can decrypt and read them. To become a member of a chan, you must know the passphrase used to generate the chan’s address. Anyone that has the passphrase that generates the address of the chan can decrypt the messages sent to the chan, allowing multiple people to read messages sent to the chan, and multiple people to send messages to the chan. You can use any address to send messages to the chan, including the same chan’s address that’s receiving it, your own identity addresses (personal addresses), or other chan addresses.</p>
+<p>Although the functionality of boards and lists are very different, they both are operate on a simple chan. The messages received in chans are processed to determine if they originated from BitChan by their format and the decryptability of their contents. BitChan interprets the contents of the messages and presents the data in a meaningful way that extends the functionality of mere text communication.</p>
+<p>Boards act as communication platforms for producing threads of one or more posts, with added functionality, including text formatting, file attachments (any format, with in-browser embedding for image, audio, and video), admin modertion, among others. Public boards allow anyone to post, including from the address of the board itself (an anonymous post) or from a different address. Private boards allow only specific addresses to post, while public boards allow any address to post (with some caveats). If a public board does not have an owner or admin set, it is completely unmoderatable and posts cannot be removed (unless an <a href="#automatic-wipe">automatic wipe rule</a> was set when it was created).</p>
+<p>Lists act as a medium to compile a lists of other boards and lists that can be modified and shared with others. Users can join any of the boards or lists on the list. Any user can add to a public list, but only authorized users may add to a private list. Owners and admins may delete items from both public and private lists. If a public list does not have an owner or admin set, it is completely unmoderatable and can only grow in size (unless an <a href="#automatic-wipe">automatic wipe rule</a> was set when it was created).</p>
+<p>Information about a board or list can be found in the “Information” dropdown box near the top of their page. This information includes:</p>
+<p><strong><em>Address</em></strong></p>
+<p>Every board and list has a unique and permanent BitMessage address. To the right of the address is a button to copy it to your clipboard. This is provided for easier cross-linking (see <a href="#functions">Functions</a>).</p>
+<p><strong><em>Passphrase</em></strong></p>
+<p>Every board and list has a unique and permanent passphrase that is used to generate the address of the board or list. This passphrase is required to join the board or list and decrypt the messages sent to the address. Any user with the passphrase can join the board or list and begin interacting with it, depending on its <a href="#permissions">Permissions</a> and <a href="#rules">Rules</a>. To the right of the passphrase is a button to copy it to your clipboard for easier sharing with others. As the passphrase is necessary for joining a board or list and decrypting messages, if you want to share a board with someone, but don’t want to share it via a list, you must provide the user with the passphrase.</p>
+<p><strong><em>Owner Addresses</em></strong></p>
+<p>Owner addresses have the highest permissions of any users. These are typically considered the owners of the list or board. Addresses in this list that appear green indicate that you have these addresses either as an identity or belong to that addresses board or list. Another way of thinking about it is they are addresses in which you have the passphrase of, and those addresses can be used to interact with the board or list you’re viewing the permissions of.</p>
+<p><strong><em>Admin Addresses</em></strong></p>
+<p>Admin addresses have the next highest permissions after owners. Currently, the only special abilities Admins have over regular users are to delete threads and posts.</p>
+<p><strong><em>User Addresses</em></strong></p>
+<p>For private boards and lists, addresses on the User Address list can post to boards or add to lists. If you don’t have at least one address on this list, you are only able to view the board or list.</p>
+<p><strong><em>Restricted Addresses</em></strong></p>
+<p>Restricted Addresses are prevented from posting to boards or modifying lists. This address list is useful if you wish to create a public list with <em>Requires Identity to Post</em> set and have all your other board and list addresses added to this <em>Restricted Addresses</em> list. This forces users to create an address (either an Identity or a board/list) in order to post or modify the list. Because the user is forced to create a new address, this allows the owner/admin to be able to ban users.</p>
+<p><strong><em>Leave</em></strong></p>
+<p>Leave the current board or list. You can always rejoin by entering the passphrase again or selecting <strong>Join</strong> from a list. Keep in mind that when leaving a board, all posts are deleted. Therefore, if you rejoin the board, you will not have it populate with messages that existed on the board prior to joining (note: when joining a board for the very first time, all unexpired messages prior to joining <em>are</em> retrieved).</p>
+<h1 id="permissions">Permissions</h1>
+<p>For both boards and lists, there can be Owner, Admin and User addresses specified. If you have an address that is an Owner or Admin of a board or list, you can perform special actions that affect all members. Normally, when a thread or post is deleted from a board, this occurs only locally on your computer. However, Owners and Admins have the ability to delete threads and posts for all users of the board. For private lists, Owners and Admins can delete list items and the changes will be reflected for all users of the list.</p>
+<p>Owners of private boards and lists will see an <strong>Owner Options</strong> menu at the top of the page, where they can modify the parameters of the board or list. Additionally, when an Owner or Admin selects the dropdown menu next to a user’s address or post ID, there will be additional options available to them. See the table, below, for what actions are available to each access level. Additionally, some actions may be restricted based on other settings of the board or list.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Ability</th>
+<th>Owner</th>
+<th>Admin</th>
+<th>User</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Modify Access Addresses</td>
+<td>X</td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Set Custom Banner Image</td>
+<td>X</td>
+<td></td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>Set Custom CSS</td>
+<td>X</td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Set Word Replacements</td>
+<td>X</td>
+<td></td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>Global Post/Thread Delete</td>
+<td>X</td>
+<td>X</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Ban Address</td>
+<td>X</td>
+<td>X</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>Delete from List</td>
+<td>X</td>
+<td>X</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Post</td>
+<td>X</td>
+<td>X</td>
+<td>X</td>
+</tr>
+<tr class="odd">
+<td>Add to List</td>
+<td>X</td>
+<td>X</td>
+<td>X</td>
+</tr>
+</tbody>
+</table>
+<p><strong><em>Note: Be careful when banning an address, as there’s no restriction to prevent you from banning your own address, and there is currently no ability to remove a ban. Consider adding addresses to the Restricted Address list instead, as this can be changed at a future point in time.</em></strong></p>
+<h1 id="posts">Posts</h1>
+<p>Posts are text-based messages on a board that can contain a file attachment. If the file attachment is a supported image or video, the media is displayed with the message. User-entered HTML is not allowed, but text can be stylized with various formatting tags. There are also several tags that provide the ability to execute functions (for example, dice rolls and coin flips, that because of the use of a seed, appear the same to all users). More about these functions can be found in <a href="#text-modifications">Text Modifications</a>.</p>
+<h2 id="composing-posts">Composing Posts</h2>
+<p>There are a number of options available when composing a post, which include:</p>
+<p><strong><em>From</em></strong></p>
+<p>This list includes all available addresses which are controlled by you and allowed to post on the board. If the owner of the board has restricted certain addresses from posting and it’s one you control, it will not appear in this list.</p>
+<p><strong><em>Flag</em></strong></p>
+<p>This list contains 258 nation flags to choose from. The selected flag will appear next to the From Address in the post header.</p>
+<p><strong><em>Subject</em></strong></p>
+<p>If your post is an original post (OP) you can provide a subject. The subject line can be a maximum of 64 characters. No formatting is allowed here.</p>
+<p><strong><em>Comment</em></strong></p>
+<p>This is where the body of your post is written, where several <a href="#text-modifications">Text Modifications</a> can be used.</p>
+<p><strong><em>Post Formatting</em></strong></p>
+<p>This menu contains buttons to facilitate formatting text in the comment. To use it, highlight text in the comment and press one of the buttons. This will surround the selected text with the formatting tags. More about formatting can be found in <a href="#formatting">Formatting</a>.</p>
+<p><strong><em>Image/File</em></strong></p>
+<p>This is where you can select a file attachment. You can attach any file type, but only certain types will display as embedded media (see <a href="#supported-file-types">Supported File Types</a>).</p>
+<p><strong><em>Image Spoiler</em></strong></p>
+<p>Select this box to spoiler your image. Rather than automatically displaying the image on the post, a placeholder image will be displayed until the user clicks the image to display the original.</p>
+<p><strong><em>Strip EXIF (JPG/PNG only)</em></strong></p>
+<p>This option removes EXIF data from .jpg and .png files prior to posting to a board.</p>
+<p><strong><em>Upload</em></strong></p>
+<p>Select the desired file transfer method. BitMessage is the most secure method of sending a file, but there is a ~300 KB limit due to the message size limitations of BitMessage (and a drawback for sending large file sizes due to the required proof of work to send a message that significantly increases how long it takes to send your message). Several external upload sites are supported, and additional measures have been taken to ensure the privacy of your file when uploaded to these sites. First, the attachment is added to a compressed and password-protected ZIP archive. Then, the headers of the archive are taken out of the file, along with several random-sized segments at random places from the file, and inserted into the message transmitted over BitMessage. The file is then uploaded to the external site, and once the file has been downloaded by the user, these pieces are placed back into the archive and the file is extracted. Additionally, and like all BitMessage communication, all uploads and downloads are routed through tor.</p>
+<p><strong><em>Steg Comment (JPG/PNG only)</em></strong></p>
+<p>Enter any text you desire to hide in your image with steganography. Some images may not work due to limitations of the software or a characteristic of the particular image. You should receive an error if it’s unable to be performed.</p>
+<p><strong><em>Steg Passphrase</em></strong></p>
+<p>The password to use to PGP-encrypt the message being inserted into the image. A default password is auto-populated here to allow for proof-of-concept testing of the steganography feature. In a future release, BitChan will allow the user to set the passphrase(s) to decrypt the message.</p>
+<h2 id="text-modifications">Text Modifications</h2>
+<p>There are several strings that will format text or execute functions in messages. These range from changing to color of text to generating random values from dice rolls.</p>
+<h3 id="formatting">Formatting</h3>
+<p>Text formatting tags can be inserted manually in a post comment or can be automatically added around the highlighted text in a comment box by selecting one of the formatting buttons in the Post Formatting dropdown below the comment box.</p>
+{% include '/pages/help_text_formatting.html' %}
+<h3 id="functions">Functions</h3>
+<p>Text functions can be used to perform random or calculated actions, such as dice rolling (#2d20), coin flipping (#flip), card pulling (#c13), and more.</p>
+{% include '/pages/help_text_functions.html' %}
+<h2 id="supported-file-types">Supported File Types</h2>
+<p>BitChan supports attaching <em>any file type</em> to a post, but only certain types are supported for native display in the web browser. File types that can’t be displayed will receive a placeholder image. You can still open the file by clicking the title link or save it by clicking the “dl” link.</p>
+<p>The file types below have native support in most modern web browsers:</p>
+<p><strong>Audio</strong>: .wav, .mp3, .ogg</p>
+<p><strong>Images</strong>: .jpg, .jpeg, .png, .gif, .webp</p>
+<p><strong>Video</strong>: .mp4, .webm, .ogg</p>
+<h1 id="threads">Threads</h1>
+<p>Threads are collections of posts under a single subject that are displayed sequentially in the order in which they were received. The creation of a thread is based on the hash of a post that identified itself as an OP. Any post that identifies itself as an OP is placed into its own new thread. Any post that identifies itself as a reply and references the hash of a non-existent OP/thread is placed under an OP place holder. This prevents OP hijacking and other issues that can arise from messages being received out of order or otherwise containing malicious content.</p>
+<h1 id="board-and-list-creation">Board and List Creation</h1>
+<p>BitChan allows anyone to make and maintain boards and lists. Your board/list can be made</p>
+<ul>
+<li>Whenever</li>
+<li>For any reason and</li>
+<li>About anything</li>
+</ul>
+<p>To create a board or a list go to the home page, click the <strong>Create or Join</strong> link and select the option that suits you:</p>
+<ul>
+<li>Create Public Board</li>
+<li>Create Private Board</li>
+<li>Create Public List</li>
+<li>Create Private List</li>
+</ul>
+<p>Click <strong>Next.</strong> From here you can set Owner, Administrator, and User permissions by adding addresses from discovered or added boards, lists, identities, or manually added address book entries. Just tick their respective boxes. You can add additional addresses for each user type as comma separated values in the <strong>Additional Addresses</strong> field.</p>
+<p>All boards and lists require both a label and description at a minimum.</p>
+<p><strong><em>Label</em></strong></p>
+<p>The label is a common name for the board or list. It corresponds to the url path normally seen on other imageboards (e.g. /fit/ in https://imageboard.com/fit/). Slashes ‘/’ are not necessary when entering your label.</p>
+<p><strong><em>Description</em></strong></p>
+<p>The description is a few words which describes the general theme of the board.</p>
+<p><strong><em>Owner Addresses</em></strong></p>
+<p>Owner addresses have special abilities to moderate their board or list. This includes, but is not limited to, the ability to ban users, globally delete posts/threads, set custom CSS, set word replacements, modify address access, and set a custom banner image.</p>
+<p><strong><em>Admin Addresses</em></strong></p>
+<p>Admin addresses have a limited set of abilities to moderate a board or list. This includes the ability to delete posts/threads.</p>
+<p><strong><em>User Addresses</em></strong></p>
+<p>User addresses are those addresses that can only post or add to a list. This access level is only useful when creating a private board or list and you wish to give only specific addresses the ability to post or add to a list. This can be useful because you have the most control and can remove the addresses of users that cause problems on your board or list.</p>
+<p><strong><em>Restricted Addresses</em></strong></p>
+<p>Only available for public boards and public lists, restricted addresses are prevented form posting or modifying lists. When used in conjunction with <strong>Require Identity to Post</strong>, you can selectively ban individuals from posting or modifying lists.</p>
+<p><strong><em>Extra String</em></strong></p>
+<p>Since passphrases are used to create board and lists, it’s crucial to use a unique passphrase to ensure the board or list you’re creating is unique. Furthermore, since passphrases are generated based on the parameters of the board or list (label, description, addresses, etc.), it’s possible for two users to generate the same passphrase, resulting in the same board or list. Therefore, in order to increase the likelihood of generating a unique passphrases, a user can add an extra string of characters to the end of their passphrase.</p>
+<h2 id="rules">Rules</h2>
+<p>Rules are certain requirements of a board or list that are set by the Owner.</p>
+<h3 id="automatic-wipe">Automatic Wipe</h3>
+<p>Set a start time (epoch timestamp) and interval for when all content on the board or list is deleted for all users.</p>
+<h3 id="require-identity-to-post">Require Identity to Post</h3>
+<p>Require that all posts originate from an address that is not the board or list address. This doesn’t necessarily mean you need an identity to post, as other boards and list addresses can be used as long as they are not explicitly restricted from doing so.</p>
+<h2 id="creating-public-boards-and-lists">Creating Public Boards and Lists</h2>
+<p>Public boards are the closest to an unmoderated board you can get on BitChan. Any address except those on the restricted address list can create threads and posts. Addresses can be restricted after board creation by the owner, but because of the freedom afforded by BitMessage to create an arbitrary number of unique addresses, if your address is restricted, you can simply make another one.</p>
+<p>Similarly for public lists, you can create a list to which any address except those on the restricted address list can add their own boards or lists to the public list.</p>
+<h2 id="creating-private-boards-and-lists">Creating Private Boards and Lists</h2>
+<p>By default, private boards and lists prevent users from posting unless given access. This access is enabled through the Owner, Admin, and User address lists set at the time the board or list is created. Additionally, these access lists can be changed after the board or list is created.</p>
+<h1 id="identities">Identities</h1>
+<p>Identities are addresses that only you have the ability to control. The passphrase used to create the address will always create the same address. This means you can share the passphrase with other people and they will have the ability to post from the same address. To create an identity address, simply click the <strong>Identities</strong> link and enter a passphrase and a label. The identity will appear in the list with options to rename or delete it. There is no limit to the number of identities you can create. The label you choose will appear next to it’s address to indicate it’s one of your identities. This label is only stored locally and will only be visible to you. Everyone else will only see the address.</p>
+<p>Not every circumstance demands that you use an identity address to post or modify a list. Unless a board/list requires specific addresses (e.g. public boards which have the rule <em>Require Identity to Post</em> enabled), you can use the address of the board/list itself. This can be considered an anonymous way to use BitChan, as all posts to a board are coming from the board’s own address.</p>
+<h1 id="address-book">Address Book</h1>
+<p>When you find an address that you want to associate with a name you can add it to the address book with a label. To do this, locate and click the arrow to the right of the name in a post, select <em>Add to Address Book</em>, enter a label, then select <em>Save</em>. You can access the address book at any time by clicking the <em>Address Book</em> link, where you can add, rename, and delete address book entries.</p>
+<p>By default the BitChan Developer address will be entered in your address book so you can identify official communications.</p>
+<h1 id="developer-information">Developer Information</h1>
+<p>GitHub Repository: <a href="https://github.com/813492291816/BitChan">github.com/813492291816/BitChan</a></p>
+<p>BitMessage Address: <code>BM-2cWyqGJHrwCPLtaRvs3f67xsnj8NmPvRWZ</code></p>
+<p>E-Mail (can only receive, no sending): <a href="mailto:bitchan@mailchuck.com">BitChan@mailchuck.com</a></p>
+<p><em>This email is not considered secure and it’s recommended to PGP-encrypt your messages when corresponding. If you would like a response, it’s recommended to provide a BitMessage address you can receive messages to and a PGP public key.</em></p>
+<p>PGP Public Key:</p>
+<pre><code>-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+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
+=dZAw
+-----END PGP PUBLIC KEY BLOCK-----</code></pre>

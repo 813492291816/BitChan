@@ -1,0 +1,119 @@
+{% extends "layout.html" %}
+
+{% block title %}Status{% endblock %}
+
+{% block head %}
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div style="width: 100%; padding-bottom: 2em;">
+                <table class="table" style="margin-left: auto; margin-right: auto;">
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-bottom: 1em">
+                            <h1 class="title themed bold">BitChan Status</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Version</td>
+                        <td>{{config.VERSION_BITCHAN}}</td>
+                    </tr>
+                    <tr>
+                        <td>Status</td>
+                        <td>Running</td>
+                    </tr>
+                    <tr>
+                        <td>Total messages processed</td>
+                        <td>{{settings.messages_current + settings.messages_older + settings.messages_newer}}</td>
+                    </tr>
+                    <tr>
+                        <td>Current version messages</td>
+                        <td>{{settings.messages_current}}</td>
+                    </tr>
+                    <tr>
+                        <td>Older version messages (discarded)</td>
+                        <td>{{settings.messages_older}}</td>
+                    </tr>
+                    <tr>
+                        <td>Newer version messages (discarded)</td>
+                        <td>{{settings.messages_newer}}</td>
+                    </tr>
+                </table>
+
+                <table class="table" style="margin-left: auto; margin-right: auto;">
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-top: 2em; padding-bottom: 1em">
+                            <h1 class="title themed bold">BitMessage Status</h1>
+                        </td>
+                    </tr>
+    {% for each_key, each_value in bm_status.items() %}
+                    <tr>
+                        <td>{{each_key}}</td>
+                        <td>{{each_value}}</td>
+                    </tr>
+    {% endfor %}
+                </table>
+
+                <table class="table" style="margin-left: auto; margin-right: auto;">
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-top: 2em; padding-bottom: 1em">
+                            <h1 class="title themed bold">Tor Status</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan=2 style="text-align: center;">
+                            <form method="post">
+                                <input type="submit" name="tor_newnym" value="Request New BitChan Tor Identity"/>
+                            </form>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan=2 style="text-align: center;">
+                            <a target="_blank" href="https://check.torproject.org/">Check Browser IP Address at check.torproject.org</a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Version</td>
+                        <td>{{tor_version}}</td>
+                    </tr>
+    {% for each_key, each_value in tor_status.items() %}
+                    <tr>
+                        <td>{{each_key}}</td>
+                        <td>{{each_value}}</td>
+                    </tr>
+    {% endfor %}
+    {% for each_id in tor_circuit_dict %}
+                    <tr>
+                        <td>Circuit {{each_id}} ({{tor_circuit_dict[each_id]["purpose"]}})</td>
+                        <td>
+        {% for each_sub_circuit in tor_circuit_dict[each_id]["subcircuits"] %}
+                            {{each_sub_circuit["div"]}}- {{each_sub_circuit["fingerprint"]}} ({{each_sub_circuit["nickname"]}}, {{each_sub_circuit["address"]}})
+                            {%- if not loop.last %}<br/>{% endif %}
+        {% endfor %}
+                        </td>
+                    </tr>
+    {% endfor %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/join_config.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

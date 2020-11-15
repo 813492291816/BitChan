@@ -1,0 +1,33 @@
+<div style="padding-top: 0.2em; padding-bottom: 0.5em">
+{% for each_rule, each_value in rules.items() %}
+    <span style="font-family: monospace">
+        {{config.DICT_PERMISSIONS[each_rule]}}:
+    {% if each_rule == "automatic_wipe" %}
+        Every
+        {% set days = 0 %}
+        {% set hours = 0 %}
+        {% set minutes = 0 %}
+        {% set seconds = each_value["interval_seconds"] %}
+        {% if seconds / 60 / 60 / 24 >= 1 %}
+            {% set days = (seconds / 60 / 60 / 24)|int %}
+            {% set seconds = seconds - (days * 60 * 60 * 24) %}
+        {% endif %}
+        {% if seconds / 60 / 60 >= 1 %}
+            {% set hours = (seconds / 60 / 60)|int %}
+            {% set seconds = seconds - (hours * 60 * 60) %}
+        {% endif %}
+        {% if seconds / 60 >= 1 %}
+            {% set minutes = (seconds / 60)|int %}
+            {% set seconds = seconds - (minutes * 60 * 60) %}
+        {% endif %}
+        {% if days %}{{days}} Days{% endif %}
+        {% if hours %}{{hours}} Hours{% endif %}
+        {% if minutes %}{{days}} Min{% endif %}
+        {% if seconds %}{{days}} Sec{% endif %}
+    {% elif each_rule in ["require_identity_to_post"] %}
+        {{each_value}}
+    {% endif %}
+    </span>
+    {% if not loop.last %}<br/>{% endif %}
+{% endfor %}
+</div>

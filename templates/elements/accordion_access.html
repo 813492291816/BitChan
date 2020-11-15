@@ -1,0 +1,56 @@
+
+{% if primary_addresses %}
+Owner Addresses:<br/>
+    {% for each_address in primary_addresses -%}
+        {%- if each_address in chans_board_info or
+               each_address in chans_list_info or
+               each_address in identities -%}
+<span style="color: green; font-family: monospace">{{each_address[:9]}}...{{each_address[-6:]}}{% if each_address in address_labels %} ({{address_labels[each_address]}}){% endif %}</span>
+        {%- else -%}
+<span style="font-family: monospace">{{each_address}}{% if each_address in address_labels %} ({{address_labels[each_address]}}){% endif %}</span>
+        {%- endif -%}
+        {%- if not loop.last %}, {% endif -%}
+    {%- endfor -%}
+{% endif %}
+{% if secondary_addresses %}
+    {% if primary_addresses %}<br/>{% endif %}
+Admin Addresses:<br/>
+    {% for each_address in secondary_addresses -%}
+        {%- if each_address in chans_board_info or
+               each_address in chans_list_info or
+               each_address in identities -%}
+<span style="color: green; font-family: monospace">{{each_address[:9]}}...{{each_address[-6:]}}{% if each_address in address_labels %} ({{address_labels[each_address]}}){% endif %}</span>
+        {%- else -%}
+<span style="font-family: monospace">{{each_address}}{% if each_address in address_labels %} ({{address_labels[each_address]}}){% endif %}</span>
+        {%- endif -%}
+        {%- if not loop.last %}, {% endif -%}
+    {%- endfor -%}
+{% endif %}
+{% if tertiary_addresses %}
+    {% if primary_addresses or secondary_access %}<br/>{% endif %}
+User Addresses:<br/>
+    {% for each_address in tertiary_addresses -%}
+        {%- if each_address in chans_board_info or
+               each_address in chans_list_info or
+               each_address in identities -%}
+<span style="color: green; font-family: monospace">{{each_address[:9]}}...{{each_address[-6:]}}{% if each_address in address_labels %} ({{address_labels[each_address]}}){% endif %}</span>
+        {%- else -%}
+<span style="font-family: monospace">{{each_address}}{% if each_address in address_labels %} ({{address_labels[each_address]}}){% endif %}</span>
+        {%- endif -%}
+        {%- if not loop.last %}, {% endif -%}
+    {%- endfor -%}
+{% endif %}
+{% if restricted_addresses %}
+    {% if primary_addresses or secondary_access %}<br/>{% endif %}
+Restricted Addresses:<br/>
+    {% for each_address in restricted_addresses -%}
+        {%- if each_address in chans_board_info or
+               each_address in chans_list_info or
+               each_address in identities -%}
+<span style="color: green; font-family: monospace">{{each_address[:9]}}...{{each_address[-6:]}}{% if each_address in address_labels %} ({{address_labels[each_address]}}){% endif %}</span>
+        {%- else -%}
+<span style="font-family: monospace">{{each_address}}{% if each_address in address_labels %} ({{address_labels[each_address]}}){% endif %}</span>
+        {%- endif -%}
+        {%- if not loop.last %}, {% endif -%}
+    {%- endfor -%}
+{% endif %}

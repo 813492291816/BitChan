@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+
+{% block title %}Add to Address Book{% endblock %}
+
+{% block head %}
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div style="width: 100%; text-align: center; padding-bottom: 2em">
+                <form method="post">
+                <input type="hidden" id="address" name="address" value="{{address}}"/>
+                <div class="heading-1 head-center">Add {{address}} to Address Book</div>
+
+                <div>
+                    <label style="display: block" for="label">Label</label>
+                    <input type="text" id="label" name="label"/>
+                </div>
+                <div>
+                    <label style="display: block">&nbsp;</label>
+                    <input type="submit" name="add" value="Add to Address Book"/>
+                </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/join_config.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

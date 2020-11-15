@@ -1,0 +1,180 @@
+{% set isboardview = board['current_thread'] == None %}
+
+{% if isoppost %}
+<span style="overflow-wrap: break-word;" class="subject bold"><b>{{thread.subject|safe}}</b></span>
+{% endif %}
+
+<img style="position: relative; top: 3px; width: 15px; height: 15px" src="/icon/{{post.address_from}}">
+
+<span class="poster bold" style="
+{%- if post.address_from == config.BITCHAN_DEVELOPER_ADDRESS -%}
+font-family: 'Lucida Console', Monaco, monospace; color: purple; background-color: white;
+{%- elif post.address_from in primary_addresses -%}
+font-family: 'Lucida Console', Monaco, monospace; color: red; background-color: white;
+{%- elif post.address_from in secondary_addresses -%}
+font-family: 'Lucida Console', Monaco, monospace; color: orange; background-color: white;
+{%- elif post.address_from in identities -%}
+font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-color: white;
+{%- endif -%}
+">{{get_user_name(post.address_from, board['current_chan'].address)}}</span>
+
+{% set can_add_address_book = [] %}
+{% set can_ban_from_board = [] %}
+{% set can_block = [] %}
+
+{% if post.address_from not in all_chans and
+	  post.address_from not in identities and
+	  post.address_from not in address_book %}
+	{%- do can_add_address_book.append(1) %}
+{% endif %}
+
+{% if post.address_from != board['current_chan'].address %}
+	{%- do can_block.append(1) %}
+
+	{% if primary_access or secondary_access %}
+		{%- do can_ban_from_board.append(1) %}
+	{% endif %}
+{% endif %}
+
+{% if post.address_from != board['current_chan'].address %}
+<div tabindex="0" class="menu">
+	<span class="link clickable">&#9654;</span>
+	<table class="menu-content">
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				{{post.address_from}} <button class="btn" onclick="CopyToClipboard('{{post.address_from}}')">&#128203;</button>
+			</td>
+		</tr>
+
+		{% if can_add_address_book %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/address_book_add/{{post.address_from}}">Add to Address Book</a>
+			</td>
+		</tr>
+		{% endif %}
+
+		{% if can_ban_from_board %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/admin_board_ban_address/{{post.thread.chan.address}}/{{post.address_from}}" onclick="return confirm('Confirm banning address from board for everyone.')">Ban from Board (For Everyone)</a>
+			</td>
+		</tr>
+		{% endif %}
+
+		{% if can_block %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/block_address/{{post.thread.chan.address}}/{{post.address_from}}/global" onclick="return confirm('Confirm blocking address from all boards for just you.')">Block from all Boards (For You)</a>
+			</td>
+		</tr>
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/block_address/{{post.thread.chan.address}}/{{post.address_from}}/single_board" onclick="return confirm('Confirm blocking address from this board for just you.')">Block from this Board (For You)</a>
+			</td>
+		</tr>
+		{% endif %}
+	</table>
+</div>
+{% endif %}
+
+{% if post.nation and post.nation in nations %}
+	<img style="position: relative; top: 3px;"
+		 {%- if nations and post.nation in nations -%}
+		 	title="{{nations[post.nation]}}"
+		 {% endif %}src="/static/nations/{{post.nation}}">
+{% endif %}
+
+{% if post.timestamp_sent %}
+	{% if post.expires_time %}
+		<span title="TTL Expires {{timestamp_to_date(post.expires_time)}}">{{timestamp_to_date(post.timestamp_sent)}}</span>
+	{% else %}
+		{{timestamp_to_date(post.timestamp_sent)}}
+	{% endif %}
+{% endif %}
+
+{% if isboardview %}
+	<a class="link" href="/thread/{{post.thread.chan.address}}/{{post.thread.thread_hash}}#{{post_id(post.message_id)}}">{{post_id(post.message_id)}}</a>
+{% else %}
+	<a class="link" href="#reply" onclick="javascript:document.getElementById('body_reply').value += '>>{{post_id(post.message_id)}}\n';">{{post_id(post.message_id)}}</a>
+{% endif %}
+
+{% if isboardview and isoppost %}
+	[<a class="link" href="/thread/{{post.thread.chan.address}}/{{post.thread.thread_hash}}">Reply</a>]
+{% endif %}
+
+<div tabindex="0" class="menu">
+	<span class="link clickable">&#9654;</span>
+	<table class="menu-content">
+	{% if isoppost %}
+		{% if primary_access %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/thread" onclick="return confirm('Confirm delete thread for just you.')">Delete Thread (For You)</a>
+			</td>
+		</tr>
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/thread_all" onclick="return confirm('Confirm delete thread for everyone.')">Delete Thread (For Everyone)</a>
+			</td>
+		</tr>
+		{% else %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/thread">Delete Thread (For You)</a>
+			</td>
+		</tr>
+		{% endif %}
+	{% endif %}
+	{% if primary_access %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/post" onclick="return confirm('Confirm delete post for just you.')">Delete Post (For You)</a>
+			</td>
+		</tr>
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/post_all" onclick="return confirm('Confirm delete post for everyone.')">Delete Post (For Everyone)</a>
+			</td>
+		</tr>
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/delete_with_comment/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}" onclick="return confirm('Confirm delete post for everyone with comment.')">Delete Post (For Everyone, with Comment)</a>
+			</td>
+		</tr>
+	{% else %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/post">Delete Post (For You)</a>
+			</td>
+		</tr>
+	{% endif %}
+	</table>
+</div>
+
+{% if not isboardview %}
+	{% for reply in board["nexus_thread"].get_post_replies(post_id(post.message_id)) %}
+		<a class="reference link" href="#{{reply}}">&gt;&gt;{{reply}}</a>
+	{% endfor %}
+{% endif %}
+
+<br/>
+{%- if post.file_size is not none -%}
+	{{"(%s" % (human_readable_size(post.file_size))}}
+	{%- if not post.media_width or not post.media_height -%}
+		{{")"}}
+	{%- endif -%}
+{%- endif -%}
+
+{%- if post.media_width and post.media_height -%}
+	{%- if post.file_size is not none -%}
+		{{", "}}
+	{%- else -%}
+		{{"("}}
+	{%- endif -%}
+    {{"%dx%d)" % (post.media_width, post.media_height)}}
+{%- endif -%}
+
+{% if post.file_filename %}
+	<a href="/files/file/{{post.message_id}}/{{post.file_filename}}">{{post.file_filename}}</a> (<a href="/dl/{{post.message_id}}/{{post.file_filename}}">dl</a>)
+{% endif %}

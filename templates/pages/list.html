@@ -1,0 +1,447 @@
+{% extends "layout.html" %}
+
+{% set is_private = board['current_chan'].access == "private" %}
+
+{% set rules = chans_list_info[board['current_chan'].address]["rules"] %}
+
+{% set primary_addresses = chans_list_info[board['current_chan'].address]["primary_addresses"] %}
+{% set secondary_addresses = chans_list_info[board['current_chan'].address]["secondary_addresses"] %}
+{% set tertiary_addresses = chans_list_info[board['current_chan'].address]["tertiary_addresses"] %}
+{% set restricted_addresses = chans_list_info[board['current_chan'].address]["restricted_addresses"] %}
+
+{% set primary_access = [] %}
+{% set secondary_access = [] %}
+{% set tertiary_access = [] %}
+{% set on_any_access_list = [] %}
+
+{% for id_type in [identities, all_chans] %}
+    {% for address in id_type if id_type[address]['enabled'] %}
+        {% if address in primary_addresses %}
+            {%- do primary_access.append(1) %}
+        {% endif %}
+        {% if address in secondary_addresses %}
+            {%- do secondary_access.append(1) %}
+        {% endif %}
+        {% if address in tertiary_addresses %}
+            {%- do tertiary_access.append(1) %}
+        {% endif %}
+    {% endfor %}
+{% endfor %}
+
+{% if primary_access or secondary_access or tertiary_access %}
+    {%- do on_any_access_list.append(1) %}
+{% endif %}
+
+{% block head %}
+    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.min.css">
+    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.theme.min.css">
+    <script src="/static/js/jquery-ui-1.12.1.min.js"></script>
+    <script>
+        $(function() {
+            $("#accordion-info-options").show().accordion({
+                collapsible: true,
+                active: false
+            });
+            $("#accordion-owner-options").show().accordion({
+                collapsible: true,
+                active: false
+            });
+            $("#accordion-admin-options").show().accordion({
+                collapsible: true,
+                active: false
+            });
+        });
+
+    {% if rules and "automatic_wipe" in rules %}
+    {% include '/elements/timer_content_wipe.html' %}
+    {% endif %}
+
+    </script>
+    <style>
+        .list table {
+            padding-top: 2em
+        }
+        .list th, td {
+            padding: 0.8em;
+        }
+
+        .address-mine {
+            font-size: 0.9em;
+            color: green;
+            font-family: monospace
+        }
+        .address-other {
+            font-size: 0.9em;
+            font-family: monospace
+        }
+    </style>
+{% endblock %}
+
+{% block admin_css %}
+    <style>
+    {% if board['current_chan'].address in command_options and
+          "css" in command_options[board['current_chan'].address] -%}
+        {{command_options[board['current_chan'].address]["css"]}}
+    {%- endif %}
+    </style>
+{% endblock %}
+
+{% block title %}
+{{chans_list_info[board['current_chan'].address]["label"]|safe}} -
+{% if is_private %}
+Private
+{% else %}
+Public
+{% endif %}
+List
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    <center>
+        <span style="font-size: 1.5em">
+        {% if is_private %}
+            Private
+        {% else %}
+            Public
+        {% endif %}
+            List
+        </span>
+    </center>
+    <br/>
+
+    <div>
+        <center>
+            <a class="title themed bold" style="text-decoration: none;" href="/list/{{board['current_chan'].address}}">/{{chans_list_info[board['current_chan'].address]["label"]|safe}}/ - {{chans_list_info[board['current_chan'].address]["description"]|safe}}</a>
+        </center>
+    </div>
+
+    {% if rules and "automatic_wipe" in rules %}
+    <center>
+        <div style="padding-top: 0.5em">
+            Content Wipe in <span id="clear_content_countdown">-</span>
+        </div>
+    </center>
+    {% endif %}
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <hr/>
+    <center>
+
+        <div style="max-width: 500px; padding-bottom: 1em">
+            <div id="accordion-info-options" style="display: none">
+                <h3>List Information</h3>
+                <div style="padding: 1em">
+                    <div style="padding-bottom: 0.5em">
+                        <img src="/icon/{{board['current_chan'].address}}" style="width: 40px; height: 40px">
+                    </div>
+
+                    Address:
+                    <div style="padding-bottom: 0.5em">
+                        <span style="font-family: monospace">{{board['current_chan'].address}}</span> <button class="btn" onclick="CopyToClipboard('{{board['current_chan'].address}}')">&#128203;</button>
+                    </div>
+
+                    Passphrase:
+                    <div style="padding-bottom: 0.5em">
+                        <input type="text" id="passphrase" value="{{board['current_chan'].passphrase}}"> <button class="btn" onclick="CopyPassphrase()">&#128203;</button>
+                    </div>
+
+                    {% if rules %}
+                    Rules:
+                    {% include '/elements/rules.html' %}
+                    {% endif %}
+
+                    {% if primary_addresses or secondary_addresses or tertiary_addresses %}
+                    <div style="padding-bottom: 0.5em">
+                        {% include '/elements/accordion_access.html' %}
+                    </div>
+                    {% endif %}
+
+                    Options:
+                    <div>
+                        <a href="/leave/{{board['current_chan'].address}}" onclick="return confirm('Are you sure you want to leave this list?')">Leave List</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    {% if primary_access %}
+        <div style="max-width: 500px; padding-bottom: 1em">
+            <div id="accordion-owner-options" style="display: none">
+                <h3>Owner Options</h3>
+                <div style="padding: 1em">
+                    <form method="post" action="/set_owner_options/{{board['current_chan'].address}}" enctype="multipart/form-data">
+                        {% include '/elements/set_owner_options.html' %}
+                        <div style="padding-top: 1em">
+                            <input type="submit" name="set_options" value="Set Options"/>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if secondary_access %}
+        <div style="max-width: 500px; padding-bottom: 1em">
+            <div id="accordion-admin-options" style="display: none">
+                <h3>Admin Options</h3>
+                <div style="padding: 1em">
+                    ...
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
+    </center>
+
+    {% if primary_access or secondary_access or tertiary_access or not is_private %}
+    <div style="padding-top: 1em">
+        <center>
+            <form action="/list/{{board['current_chan'].address}}" method="post">
+                <select name="address">
+        {% if form_list_add %}
+            {% for each_item in form_list_add %}
+                    <option value="{{each_item[0]}}">{{each_item[1]}}</option>
+            {% endfor %}
+        {% else %}
+                    <option>No Boards/Lists Available.</option>
+        {% endif %}
+                </select>
+                <input class="button" type="submit" name="add" id="add" value="Add to List"/>
+            </form>
+        </center>
+    </div>
+    {% endif %}
+
+    {% set list_chans = chan_lists[board["current_chan"].address]["list"] %}
+
+    <center>
+    {% if list_chans %}
+        <table class="list" style="max-width: 1050px">
+            <tr>
+                <td></td>
+                <td>Address</td>
+                <td>Type</td>
+                <td>Label</td>
+                <td>Description</td>
+            </tr>
+
+            {% for address in list_chans %}
+
+                {% set access = get_access(address) %}
+                {% set errors, list_entry_info = process_passphrase(list_chans[address]["passphrase"]) %}
+                {% set rules = list_entry_info["rules"] %}
+
+                {% if not access %}
+                    {% set access = {
+                        "primary_addresses": list_entry_info["primary_addresses"],
+                        "secondary_addresses": list_entry_info["secondary_addresses"],
+                        "tertiary_addresses": list_entry_info["tertiary_addresses"],
+                        "restricted_addresses": list_entry_info["restricted_addresses"],
+                    } %}
+                {% endif %}
+
+            <tr>
+                <td style="border-top: 1px solid black;">
+                    <img style="width: 25px; height: 25px" src="/icon/{{address}}">
+                </td>
+                <td style="border-top: 1px solid black;">
+                {% if address in chans_board_info %}
+                    <a style="font-family: monospace" href="/board/{{address}}/1">{{address}}</a>
+                {% elif address in chans_list_info %}
+                    <a style="font-family: monospace" href="/list/{{address}}">{{address}}</a>
+                {% else %}
+                    <span style="font-family: monospace">{{address}}</span>
+                {% endif %}
+                </td>
+                <td style="border-top: 1px solid black;">
+                {% if list_entry_info["access"] == "public" %}
+                    Public
+                {% elif list_entry_info["access"] == "private" %}
+                    Private
+                {% endif %}
+                {% if list_entry_info["type"] == "board" %}
+                    Board
+                {% elif list_entry_info["type"] == "list" %}
+                    List
+                {% endif %}
+                </td>
+                <td style="border-top: 1px solid black;">{{html.escape(list_entry_info["label"])|safe}}</td>
+                <td style="border-top: 1px solid black;">{{replace_lt_gt(list_entry_info["description"])|safe}}</td>
+            </tr>
+
+                {% if (address not in chans_board_info and address not in chans_list_info) or
+                      (primary_access or secondary_access) or
+                      access["primary_addresses"] or
+                      access["secondary_addresses"] or
+                      access["tertiary_addresses"] or
+                      access["restricted_addresses"] or
+                      rules
+                %}
+            <tr>
+                <td colspan="5" style="padding: 0 0.8em 0.8em 0.8em;{% if loop.last %} border-bottom: 1px solid black;{% endif %}">
+                {% endif %}
+
+                    {% if (address not in chans_board_info and address not in chans_list_info) or
+                          (primary_access or secondary_access) %}
+                    <div style="padding: 0.2em 0">
+                    {% if address not in chans_board_info and address not in chans_list_info %}
+                    <form action="/list/{{board['current_chan'].address}}" method="post">
+                        <input name="address" value="{{address}}" type="hidden"/>
+                        <input type="submit" name="join" id="join" value="Join"/>
+                    </form>
+                    {% endif %}
+                    {% if primary_access or secondary_access %}
+                    <form action="/list/{{board['current_chan'].address}}" method="post">
+                        <input name="address" value="{{address}}" type="hidden"/>
+                        <input type="submit" name="delete" id="delete" value="Remove From List"/>
+                    </form>
+                    {% endif %}
+                    </div>
+                    {% endif %}
+
+                    {% if access["primary_addresses"] %}
+                    <div style="padding: 0.2em 0">
+                    Owner Access:
+                        {% for each_address in access["primary_addresses"] -%}
+                            {%- if each_address in chans_board_info or
+                                  each_address in chans_list_info or
+                                  each_address in identities -%}
+                    <span class="address-mine">
+                                {%- if each_address in address_labels -%}
+                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                                {%- else -%}
+                                    {{each_address}}
+                                {%- endif -%}
+                            {%- else -%}
+                    <span class="address-other">
+                                {%- if each_address in address_labels -%}
+                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                                {%- else -%}
+                                    {{each_address}}
+                                {%- endif -%}
+                            {%- endif -%}
+                    </span>
+                            {%- if not loop.last %}, {% endif -%}
+                        {%- endfor -%}
+                    </div>
+                    {% endif %}
+
+                    {% if access["secondary_addresses"] %}
+                    <div style="padding: 0.2em 0">
+                    Admin Access:
+                        {% for each_address in access["secondary_addresses"] -%}
+                            {%- if each_address in chans_board_info or
+                                  each_address in chans_list_info or
+                                  each_address in identities -%}
+                    <span class="address-mine">
+                                {%- if each_address in address_labels -%}
+                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                                {%- else -%}
+                                    {{each_address}}
+                                {%- endif -%}
+                            {%- else -%}
+                    <span class="address-other">
+                                {%- if each_address in address_labels -%}
+                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                                {%- else -%}
+                                    {{each_address}}
+                                {%- endif -%}
+                            {%- endif -%}
+                    </span>
+                            {%- if not loop.last %}, {% endif -%}
+                        {%- endfor -%}
+                    </div>
+                    {% endif %}
+
+                    {% if access["tertiary_addresses"] %}
+                    <div style="padding: 0.2em 0">
+                    User Access:
+                        {% for each_address in access["tertiary_addresses"] -%}
+                            {%- if each_address in chans_board_info or
+                                  each_address in chans_list_info or
+                                  each_address in identities -%}
+                    <span class="address-mine">
+                                {%- if each_address in address_labels -%}
+                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                                {%- else -%}
+                                    {{each_address}}
+                                {%- endif -%}
+                            {%- else -%}
+                    <span class="address-other">
+                                {%- if each_address in address_labels -%}
+                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                                {%- else -%}
+                                    {{each_address}}
+                                {%- endif -%}
+                            {%- endif -%}
+                    </span>
+                            {%- if not loop.last %}, {% endif -%}
+                        {%- endfor -%}
+                    </div>
+                    {% endif %}
+
+                    {% if access["restricted_addresses"] %}
+                    <div style="padding: 0.2em 0">
+                    Restricted Access:
+                        {% for each_address in access["restricted_addresses"] -%}
+                            {%- if each_address in chans_board_info or
+                                  each_address in chans_list_info or
+                                  each_address in identities -%}
+                    <span class="address-mine">
+                                {%- if each_address in address_labels -%}
+                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                                {%- else -%}
+                                    {{each_address}}
+                                {%- endif -%}
+                            {%- else -%}
+                    <span class="address-other">
+                                {%- if each_address in address_labels -%}
+                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                                {%- else -%}
+                                    {{each_address}}
+                                {%- endif -%}
+                            {%- endif -%}
+                    </span>
+                            {%- if not loop.last %}, {% endif -%}
+                        {%- endfor -%}
+                    </div>
+                    {% endif %}
+
+                    {% if rules %}
+                    {% include '/elements/rules.html' %}
+                    {% endif %}
+
+                {% if (address not in chans_board_info and address not in chans_list_info) or
+                      (primary_access or secondary_access) or
+                      access["primary_addresses"] or
+                      access["secondary_addresses"] or
+                      access["tertiary_addresses"] or
+                      access["restricted_addresses"] or
+                      rules
+                %}
+                </td>
+            </tr>
+                {% endif %}
+
+            {% endfor %}
+        </table>
+    {% else %}
+        <div style="padding-top: 1em">
+            This list is currently empty. If you have write access, you may add to the list, otherwise you will need to wait for someone with write access to update it.
+        </div>
+    {% endif %}
+    </center>
+    <hr/>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/join_config.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

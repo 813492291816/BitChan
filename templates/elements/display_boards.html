@@ -1,0 +1,16 @@
+<div class="chans">
+    <center>
+        Boards
+        <br/>
+        [
+        {% for address in chans_board_info %}
+            {% if board and 'current_chan' in board and board['current_chan'] and address == board['current_chan'].address %}
+            {{chans_board_info[address]["label_short"]|safe}}
+            {% else %}
+            <a class="link" title="{{chans_board_info[address]['description']|safe}}" href="/board/{{address}}/1">{{chans_board_info[address]["label_short"]|safe}}</a>
+            {% endif %}
+            {% if not loop.last %} / {% endif %}
+        {% endfor %}
+        ]
+    </center>
+</div>

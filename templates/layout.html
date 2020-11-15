@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>{% block title %}{% endblock %} - BitChan {{config.VERSION_BITCHAN}}</title>
+        <link rel="icon" type="image/png" href="/static/favicon.ico">
+        <script src="/static/js/jquery-3.5.1.min.js"></script>
+        <script src="/static/js/toggle.js"></script>
+        <script src="/static/js/post_formatter.js"></script>
+        <script>
+            function CopyToClipboard(value) {
+                let tmpIn = document.createElement("input");
+                tmpIn.style = "top: -1000px; left: -1000px; position: absolute"
+                tmpIn.value = value;
+                document.body.appendChild(tmpIn);
+                tmpIn.select();
+                document.execCommand("copy");
+                document.body.removeChild(tmpIn);
+            }
+            function CopyPassphrase() {
+                 var textToCopy = document.getElementById("passphrase");
+                 textToCopy.select();
+                 document.execCommand("copy");
+            }
+        </script>
+        <style>
+            {% include '/elements/css_theme.css' %}
+        </style>
+        {%- block head %}{% endblock -%}
+        <style>
+            {% include '/elements/css_extra.css' %}
+        </style>
+        {%- block admin_css %}{% endblock -%}
+    </head>
+    <body class="board">
+        <div class="gradient"></div>
+        {%- block body %}{% endblock -%}
+    </body>
+</html>

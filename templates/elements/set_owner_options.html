@@ -1,0 +1,49 @@
+<div>
+    <div>
+        Modify Access
+        <br/>Format: "BM-Address-1,BM-Address-2,..."
+    </div>
+    <div style="padding-top: 0.5em">Admin Addresses</div>
+    <div>
+        <textarea rows="2" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="modify_admin_addresses" name="modify_admin_addresses">{{",".join(secondary_addresses)}}</textarea>
+    </div>
+    <div style="padding-top: 0.5em">User Addresses</div>
+    <div>
+        <textarea rows="2" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="modify_user_addresses" name="modify_user_addresses">{{",".join(tertiary_addresses)}}</textarea>
+    </div>
+    <div style="padding-top: 0.5em">Restricted Addresses</div>
+    <div>
+        <textarea rows="2" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="modify_restricted_addresses" name="modify_restricted_addresses">{{",".join(restricted_addresses)}}</textarea>
+    </div>
+
+    <div style="padding-top: 1em">
+        Custom Banner Image
+        <br/>Maximum Size: {{config.BANNER_MAX_WIDTH}}x{{config.BANNER_MAX_HEIGHT}}</div>
+    <div>
+        <input name="file_banner" type="file"/>
+    </div>
+
+    <div style="padding-top: 1em">
+        Word Replacements
+        <br/>Format: "word1,word1_replacement;word2,word2_replacement;..."</div>
+    <div>
+        <textarea rows="6" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="word_replace" name="word_replace">
+    {%- if board['current_chan'].address in command_options and
+           "word_replace" in command_options[board['current_chan'].address] -%}
+        {%- for word_orig, word_replacement in command_options[board['current_chan'].address]["word_replace"].items() -%}
+            {{word_orig}},{{word_replacement}}{%- if not loop.last -%};{%- endif -%}
+        {%- endfor -%}
+    {%- endif -%}
+        </textarea>
+    </div>
+
+    <div style="padding-top: 1em">Custom CSS</div>
+    <div>
+        <textarea rows="6" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="css" name="css">
+    {%- if board['current_chan'].address in command_options and
+           "css" in command_options[board['current_chan'].address] -%}
+            {{command_options[board['current_chan'].address]["css"]}}
+    {%- endif -%}
+        </textarea>
+    </div>
+</div>

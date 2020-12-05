@@ -97,12 +97,13 @@ List
 {% endblock %}
 
 {% block body %}
+    {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
     <br/>
 
     <center>
-        <span style="font-size: 1.5em">
+        <span class="themed" style="font-size: 1.5em">
         {% if is_private %}
             Private
         {% else %}
@@ -121,7 +122,7 @@ List
 
     {% if rules and "automatic_wipe" in rules %}
     <center>
-        <div style="padding-top: 0.5em">
+        <div class="themed" style="padding-top: 0.5em">
             Content Wipe in <span id="clear_content_countdown">-</span>
         </div>
     </center>
@@ -136,45 +137,54 @@ List
 
         <div style="max-width: 500px; padding-bottom: 1em">
             <div id="accordion-info-options" style="display: none">
-                <h3>List Information</h3>
+                <h3 class="themed">List Information</h3>
                 <div style="padding: 1em">
                     <div style="padding-bottom: 0.5em">
                         <img src="/icon/{{board['current_chan'].address}}" style="width: 40px; height: 40px">
                     </div>
 
-                    Address:
-                    <div style="padding-bottom: 0.5em">
-                        <span style="font-family: monospace">{{board['current_chan'].address}}</span> <button class="btn" onclick="CopyToClipboard('{{board['current_chan'].address}}')">&#128203;</button>
+                    <span class="themed">Address:</span>
+                    <div class="themed" style="padding-bottom: 0.5em">
+                        <span style="font-family: monospace">{{board['current_chan'].address}}</span> <button class="btn" title="Copy to Clipboard" onclick="CopyToClipboard('{{board['current_chan'].address}}')">&#128203;</button>
                     </div>
 
-                    Passphrase:
+                    <span class="themed">BitChan List Passphrase:</span>
+                    <div class="themed" style="padding-bottom: 0.5em">
+                        <input type="text" id="passphrase" value="{{board['current_chan'].passphrase}}"> <button class="btn" title="Copy to Clipboard" onclick="CopyElemID('passphrase')">&#128203;</button>
+                    </div>
+
+                    <span class="themed">Message PGP Passphrase:</span>
                     <div style="padding-bottom: 0.5em">
-                        <input type="text" id="passphrase" value="{{board['current_chan'].passphrase}}"> <button class="btn" onclick="CopyPassphrase()">&#128203;</button>
+                        <form method="post" style="display: inline-block;" enctype="multipart/form-data">
+                            <input type="text" id="pgp_passphrase_msg" name="pgp_passphrase_msg" value="{{board['current_chan'].pgp_passphrase_msg}}">
+                            <input type="submit" name="set_pgp_passphrase_msg" value="Set"/>
+                        </form>
+                        <button class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_msg')">&#128203;</button>
                     </div>
 
                     {% if rules %}
-                    Rules:
+                    <span class="themed">Rules:</span>
                     {% include '/elements/rules.html' %}
                     {% endif %}
 
                     {% if primary_addresses or secondary_addresses or tertiary_addresses %}
-                    <div style="padding-bottom: 0.5em">
+                    <div class="themed" style="padding-bottom: 0.5em">
                         {% include '/elements/accordion_access.html' %}
                     </div>
                     {% endif %}
 
-                    Options:
+                    <span class="themed">Options:</span>
                     <div>
-                        <a href="/leave/{{board['current_chan'].address}}" onclick="return confirm('Are you sure you want to leave this list?')">Leave List</a>
+                        <a class="link" href="/leave/{{board['current_chan'].address}}" onclick="return confirm('Are you sure you want to leave this list?')">Leave List</a>
                     </div>
                 </div>
             </div>
         </div>
 
     {% if primary_access %}
-        <div style="max-width: 500px; padding-bottom: 1em">
+        <div class="themed" style="max-width: 500px; padding-bottom: 1em">
             <div id="accordion-owner-options" style="display: none">
-                <h3>Owner Options</h3>
+                <h3 class="themed">Owner Options</h3>
                 <div style="padding: 1em">
                     <form method="post" action="/set_owner_options/{{board['current_chan'].address}}" enctype="multipart/form-data">
                         {% include '/elements/set_owner_options.html' %}
@@ -188,9 +198,9 @@ List
     {% endif %}
 
     {% if secondary_access %}
-        <div style="max-width: 500px; padding-bottom: 1em">
+        <div class="themed" style="max-width: 500px; padding-bottom: 1em">
             <div id="accordion-admin-options" style="display: none">
-                <h3>Admin Options</h3>
+                <h3 class="themed">Admin Options</h3>
                 <div style="padding: 1em">
                     ...
                 </div>
@@ -201,19 +211,45 @@ List
     </center>
 
     {% if primary_access or secondary_access or tertiary_access or not is_private %}
-    <div style="padding-top: 1em">
+    <div class="themed" style="padding-top: 1em">
         <center>
             <form action="/list/{{board['current_chan'].address}}" method="post">
-                <select name="address">
-        {% if form_list_add %}
-            {% for each_item in form_list_add %}
-                    <option value="{{each_item[0]}}">{{each_item[1]}}</option>
-            {% endfor %}
-        {% else %}
-                    <option>No Boards/Lists Available.</option>
-        {% endif %}
-                </select>
-                <input class="button" type="submit" name="add" id="add" value="Add to List"/>
+                <table>
+                    <tr>
+                        <td>
+                            <input class="button" type="submit" name="save_from" id="save_from" value="Save From"/>
+                        </td>
+                        <td>
+                            <select name="from_address">
+                            {% if board['current_chan'].address not in from_list %}
+                                <option value=""></option>
+                            {% endif %}
+                            {% for each_address in from_list %}
+                                <option value="{{each_address}}"
+                                {%- if board['current_chan'].default_from_address == each_address %}
+                                    {{' selected'}}
+                                {%- endif -%}>{{from_list[each_address]}}</option>
+                            {% endfor %}
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <input class="button" type="submit" name="add" id="add" value="Add to List"/>
+                        </td>
+                        <td>
+                            <select name="address">
+                    {% if form_list_add %}
+                        {% for each_item in form_list_add %}
+                                <option value="{{each_item[0]}}">{{each_item[1]}}</option>
+                        {% endfor %}
+                    {% else %}
+                                <option>No Boards/Lists Available.</option>
+                    {% endif %}
+                            </select>
+                        </td>
+                    </tr>
+                </table>
             </form>
         </center>
     </div>
@@ -223,7 +259,7 @@ List
 
     <center>
     {% if list_chans %}
-        <table class="list" style="max-width: 1050px">
+        <table class="list themed" style="max-width: 1050px">
             <tr>
                 <td></td>
                 <td>Address</td>
@@ -272,8 +308,8 @@ List
                     List
                 {% endif %}
                 </td>
-                <td style="border-top: 1px solid black;">{{html.escape(list_entry_info["label"])|safe}}</td>
-                <td style="border-top: 1px solid black;">{{replace_lt_gt(list_entry_info["description"])|safe}}</td>
+                <td style="border-top: 1px solid black;">{{list_entry_info["label"]|safe}}</td>
+                <td style="border-top: 1px solid black;">{{list_entry_info["description"]|safe}}</td>
             </tr>
 
                 {% if (address not in chans_board_info and address not in chans_list_info) or
@@ -285,138 +321,135 @@ List
                       rules
                 %}
             <tr>
-                <td colspan="5" style="padding: 0 0.8em 0.8em 0.8em;{% if loop.last %} border-bottom: 1px solid black;{% endif %}">
+                <td colspan="5" style="padding: 0 0.8em 0.8em 0.8em;">
                 {% endif %}
 
-                    {% if (address not in chans_board_info and address not in chans_list_info) or
-                          (primary_access or secondary_access) %}
+                {% if (address not in chans_board_info and address not in chans_list_info) or
+                      (primary_access or secondary_access) %}
                     <div style="padding: 0.2em 0">
+                        <form action="/list/{{board['current_chan'].address}}" method="post">
+                            <input name="address" value="{{address}}" type="hidden"/>
                     {% if address not in chans_board_info and address not in chans_list_info %}
-                    <form action="/list/{{board['current_chan'].address}}" method="post">
-                        <input name="address" value="{{address}}" type="hidden"/>
-                        <input type="submit" name="join" id="join" value="Join"/>
-                    </form>
+                            <input type="submit" name="join" id="join" value="Join"/>
                     {% endif %}
                     {% if primary_access or secondary_access %}
-                    <form action="/list/{{board['current_chan'].address}}" method="post">
-                        <input name="address" value="{{address}}" type="hidden"/>
-                        <input type="submit" name="delete" id="delete" value="Remove From List"/>
-                    </form>
+                            <input type="submit" name="delete" id="delete" value="Remove From List" onclick="return confirm('Are you sure you want to remove this from the list?')"/>
                     {% endif %}
+                        </form>
                     </div>
-                    {% endif %}
+                {% endif %}
 
-                    {% if access["primary_addresses"] %}
+                {% if access["primary_addresses"] %}
                     <div style="padding: 0.2em 0">
                     Owner Access:
-                        {% for each_address in access["primary_addresses"] -%}
-                            {%- if each_address in chans_board_info or
-                                  each_address in chans_list_info or
-                                  each_address in identities -%}
+                    {% for each_address in access["primary_addresses"] -%}
+                        {%- if each_address in chans_board_info or
+                              each_address in chans_list_info or
+                              each_address in identities -%}
                     <span class="address-mine">
-                                {%- if each_address in address_labels -%}
-                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
-                                {%- else -%}
-                                    {{each_address}}
-                                {%- endif -%}
+                            {%- if each_address in address_labels -%}
+                                {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
                             {%- else -%}
-                    <span class="address-other">
-                                {%- if each_address in address_labels -%}
-                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
-                                {%- else -%}
-                                    {{each_address}}
-                                {%- endif -%}
+                                {{each_address}}
                             {%- endif -%}
+                        {%- else -%}
+                    <span class="address-other">
+                            {%- if each_address in address_labels -%}
+                                {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                            {%- else -%}
+                                {{each_address}}
+                            {%- endif -%}
+                        {%- endif -%}
                     </span>
-                            {%- if not loop.last %}, {% endif -%}
-                        {%- endfor -%}
+                        {%- if not loop.last %}, {% endif -%}
+                    {%- endfor -%}
                     </div>
-                    {% endif %}
+                {% endif %}
 
-                    {% if access["secondary_addresses"] %}
+                {% if access["secondary_addresses"] %}
                     <div style="padding: 0.2em 0">
                     Admin Access:
-                        {% for each_address in access["secondary_addresses"] -%}
-                            {%- if each_address in chans_board_info or
-                                  each_address in chans_list_info or
-                                  each_address in identities -%}
+                    {% for each_address in access["secondary_addresses"] -%}
+                        {%- if each_address in chans_board_info or
+                              each_address in chans_list_info or
+                              each_address in identities -%}
                     <span class="address-mine">
-                                {%- if each_address in address_labels -%}
-                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
-                                {%- else -%}
-                                    {{each_address}}
-                                {%- endif -%}
+                            {%- if each_address in address_labels -%}
+                                {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
                             {%- else -%}
-                    <span class="address-other">
-                                {%- if each_address in address_labels -%}
-                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
-                                {%- else -%}
-                                    {{each_address}}
-                                {%- endif -%}
+                                {{each_address}}
                             {%- endif -%}
+                        {%- else -%}
+                    <span class="address-other">
+                            {%- if each_address in address_labels -%}
+                                {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                            {%- else -%}
+                                {{each_address}}
+                            {%- endif -%}
+                        {%- endif -%}
                     </span>
-                            {%- if not loop.last %}, {% endif -%}
-                        {%- endfor -%}
+                        {%- if not loop.last %}, {% endif -%}
+                    {%- endfor -%}
                     </div>
-                    {% endif %}
+                {% endif %}
 
-                    {% if access["tertiary_addresses"] %}
+                {% if access["tertiary_addresses"] %}
                     <div style="padding: 0.2em 0">
                     User Access:
-                        {% for each_address in access["tertiary_addresses"] -%}
-                            {%- if each_address in chans_board_info or
-                                  each_address in chans_list_info or
-                                  each_address in identities -%}
+                    {% for each_address in access["tertiary_addresses"] -%}
+                        {%- if each_address in chans_board_info or
+                              each_address in chans_list_info or
+                              each_address in identities -%}
                     <span class="address-mine">
-                                {%- if each_address in address_labels -%}
-                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
-                                {%- else -%}
-                                    {{each_address}}
-                                {%- endif -%}
+                            {%- if each_address in address_labels -%}
+                                {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
                             {%- else -%}
-                    <span class="address-other">
-                                {%- if each_address in address_labels -%}
-                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
-                                {%- else -%}
-                                    {{each_address}}
-                                {%- endif -%}
+                                {{each_address}}
                             {%- endif -%}
+                        {%- else -%}
+                    <span class="address-other">
+                            {%- if each_address in address_labels -%}
+                                {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                            {%- else -%}
+                                {{each_address}}
+                            {%- endif -%}
+                        {%- endif -%}
                     </span>
-                            {%- if not loop.last %}, {% endif -%}
-                        {%- endfor -%}
+                        {%- if not loop.last %}, {% endif -%}
+                    {%- endfor -%}
                     </div>
-                    {% endif %}
+                {% endif %}
 
-                    {% if access["restricted_addresses"] %}
+                {% if access["restricted_addresses"] %}
                     <div style="padding: 0.2em 0">
                     Restricted Access:
-                        {% for each_address in access["restricted_addresses"] -%}
-                            {%- if each_address in chans_board_info or
-                                  each_address in chans_list_info or
-                                  each_address in identities -%}
+                    {% for each_address in access["restricted_addresses"] -%}
+                        {%- if each_address in chans_board_info or
+                              each_address in chans_list_info or
+                              each_address in identities -%}
                     <span class="address-mine">
-                                {%- if each_address in address_labels -%}
-                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
-                                {%- else -%}
-                                    {{each_address}}
-                                {%- endif -%}
+                            {%- if each_address in address_labels -%}
+                                {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
                             {%- else -%}
-                    <span class="address-other">
-                                {%- if each_address in address_labels -%}
-                                    {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
-                                {%- else -%}
-                                    {{each_address}}
-                                {%- endif -%}
+                                {{each_address}}
                             {%- endif -%}
+                        {%- else -%}
+                    <span class="address-other">
+                            {%- if each_address in address_labels -%}
+                                {{each_address[:9]}}...{{each_address[-6:]}} ({{address_labels[each_address]}})
+                            {%- else -%}
+                                {{each_address}}
+                            {%- endif -%}
+                        {%- endif -%}
                     </span>
-                            {%- if not loop.last %}, {% endif -%}
-                        {%- endfor -%}
+                        {%- if not loop.last %}, {% endif -%}
+                    {%- endfor -%}
                     </div>
-                    {% endif %}
+                {% endif %}
 
-                    {% if rules %}
-                    {% include '/elements/rules.html' %}
-                    {% endif %}
+                {% if rules %}
+                {% include '/elements/rules.html' %}
+                {% endif %}
 
                 {% if (address not in chans_board_info and address not in chans_list_info) or
                       (primary_access or secondary_access) or
@@ -433,7 +466,7 @@ List
             {% endfor %}
         </table>
     {% else %}
-        <div style="padding-top: 1em">
+        <div class="themed" style="padding-top: 1em">
             This list is currently empty. If you have write access, you may add to the list, otherwise you will need to wait for someone with write access to update it.
         </div>
     {% endif %}
@@ -442,6 +475,6 @@ List
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/join_config.html' %}
+    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

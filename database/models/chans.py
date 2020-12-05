@@ -28,6 +28,7 @@ class Identity(CRUDMixin, db.Model):
     address = db.Column(db.String, unique=True, default=None)
     label = db.Column(db.String, default=None)
     passphrase_base64 = db.Column(db.String, default=None)
+    unread_messages = db.Column(db.Integer, default=0)
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(
@@ -71,11 +72,14 @@ class Chan(CRUDMixin, db.Model):
     tertiary_addresses = db.Column(db.String, default="[]")
     restricted_addresses = db.Column(db.String, default="[]")
     rules = db.Column(db.String, default="{}")
+    pgp_passphrase_msg = db.Column(db.String, default="")
+    pgp_passphrase_steg = db.Column(db.String, default="")
     label = db.Column(db.String, default=None)
     description = db.Column(db.String, default=None)
     is_setup = db.Column(db.Boolean, default=False)
     image_banner_base64 = db.Column(db.String, default=None)
     image_banner_timestamp_utc = db.Column(db.Integer, default=0)
+    default_from_address = db.Column(db.String, default=None)
 
     # List-specific
     list = db.Column(db.String, default="{}")
@@ -103,7 +107,8 @@ class Threads(CRUDMixin, db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True)
     chan_id = db.Column(db.Integer, db.ForeignKey('chan.id'), default=None)
     thread_hash = db.Column(db.String, unique=True, default=None)
-    op_md5_hash = db.Column(db.String, default=None)  # The hash of the OP
+    op_sha256_hash = db.Column(db.String, default=None)  # The hash of the OP
+    default_from_address = db.Column(db.String, default=None)
     subject = db.Column(db.String, default=None)
     timestamp_sent = db.Column(db.Integer, default=0)
     timestamp_received = db.Column(db.Integer, default=0)
@@ -130,10 +135,12 @@ class Messages(CRUDMixin, db.Model):
     timestamp_received = db.Column(db.Integer, default=None)
     timestamp_sent = db.Column(db.Integer, default=None)
     is_op = db.Column(db.Boolean, default=None)  # Is this message an OP or not
-    message_md5_hash = db.Column(db.String, default=None)  # This message payload MD5 hash
+    message_sha256_hash = db.Column(db.String, default=None)  # This message payload SHA256 hash
     subject = db.Column(db.String, default=None)
     message = db.Column(db.String, default=None)
     nation = db.Column(db.String, default=None)
+    nation_base64 = db.Column(db.String, default=None)
+    nation_name = db.Column(db.String, default=None)
     file_decoded = db.Column(db.String, default=None)
     file_filename = db.Column(db.String, default=None)
     file_extension = db.Column(db.String, default=None)
@@ -144,8 +151,11 @@ class Messages(CRUDMixin, db.Model):
     file_currently_downloading = db.Column(db.Boolean, default=False)
     file_progress = db.Column(db.String, default="")
     file_download_successful = db.Column(db.Boolean, default=False)
-    file_md5_hash = db.Column(db.String, default=None)
-    file_md5_hashes_match = db.Column(db.Boolean, default=None)
+    file_sha256_hash = db.Column(db.String, default=None)
+    file_enc_cipher = db.Column(db.String, default=None)
+    file_enc_key_bytes = db.Column(db.Integer, default=None)
+    file_enc_password = db.Column(db.String, default=None)
+    file_sha256_hashes_match = db.Column(db.Boolean, default=None)
     upload_filename = db.Column(db.String, default=None)
     saved_file_filename = db.Column(db.String, default=None)
     saved_image_thumb_filename = db.Column(db.String, default=None)
@@ -153,8 +163,6 @@ class Messages(CRUDMixin, db.Model):
     media_height = db.Column(db.Integer, default=None)
     image_spoiler = db.Column(db.Boolean, default=None)
     message_original = db.Column(db.String, default=None)
-    passphrase_pgp = db.Column(db.String, default=None)
-    decrypted_pgp = db.Column(db.Boolean, default=None)
     message_steg = db.Column(db.String, default=None)
     replies = db.Column(db.String, default="[]")
 
@@ -175,6 +183,25 @@ class DeletedMessages(CRUDMixin, db.Model):
     message_id = db.Column(db.String, unique=True, default=None)
     address_from = db.Column(db.String, default=None)
     expires_time = db.Column(db.Integer, default=None)
+
+    def __repr__(self):
+        return "<{cls}(id={rep.id})>".format(
+            cls=self.__class__.__name__, rep=self)
+
+
+class UploadProgress(CRUDMixin, db.Model):
+    __tablename__ = "upload_progress"
+    __table_args__ = {
+        'extend_existing': True
+    }
+
+    id = db.Column(db.Integer, unique=True, primary_key=True)
+    upload_id = db.Column(db.String, unique=True, default=None)
+    uploading = db.Column(db.Boolean, default=None)
+    filename = db.Column(db.String, default=None)
+    total_size_bytes = db.Column(db.Integer, default=None)
+    progress_size_bytes = db.Column(db.Integer, default=0)
+    progress_percent = db.Column(db.Float, default=0)
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(

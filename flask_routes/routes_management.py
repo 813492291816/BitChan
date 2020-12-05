@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+import urllib
 
 from flask import render_template
 from flask import request
@@ -63,6 +64,9 @@ def join():
             if not passphrase:
                 status_msg['status_message'].append("Passphrase required")
 
+            if not form_join.pgp_passphrase_msg.data:
+                status_msg['status_message'].append("Message PGP passphrase required")
+
             errors, dict_chan_info = process_passphrase(passphrase)
             if not dict_chan_info:
                 status_msg['status_message'].append("Error parsing passphrase")
@@ -92,6 +96,8 @@ def join():
                 new_chan.restricted_addresses = json.dumps(dict_chan_info["restricted_addresses"])
                 new_chan.rules = json.dumps(dict_chan_info["rules"])
                 new_chan.description = dict_chan_info["description"]
+                new_chan.pgp_passphrase_msg = form_join.pgp_passphrase_msg.data
+                new_chan.pgp_passphrase_steg = form_join.pgp_passphrase_steg.data
 
                 if result.startswith("BM-"):
                     new_chan.address = result
@@ -124,6 +130,9 @@ def join():
             if not label:
                 status_msg['status_message'].append("Label required")
 
+            if not form_join.pgp_passphrase_msg.data:
+                status_msg['status_message'].append("Message PGP passphrase required")
+
             for each_word in RESTRICTED_WORDS:
                 if each_word in label.lower():
                     status_msg['status_message'].append(
@@ -132,6 +141,8 @@ def join():
             description = form_join.description.data
             if not description:
                 status_msg['status_message'].append("Description required")
+            elif len(description) > config.DESCRIPTION_LENGTH:
+                status_msg['status_message'].append("Description too long. Must be 200 or less characters.")
 
             def process_additional_addresses(form_list, status_msg):
                 add_list_failed = []
@@ -301,6 +312,8 @@ def join():
                 new_chan.secondary_addresses = json.dumps(list_secondary_addresses)
                 new_chan.tertiary_addresses = json.dumps(list_tertiary_addresses)
                 new_chan.rules = json.dumps(rules)
+                new_chan.pgp_passphrase_msg = form_join.pgp_passphrase_msg.data
+                new_chan.pgp_passphrase_steg = form_join.pgp_passphrase_steg.data
 
                 if result.startswith("BM-"):
                     if stage == "public_board":
@@ -336,6 +349,78 @@ def join():
 
     return render_template("pages/join.html",
                            stage=stage,
+                           status_msg=status_msg,
+                           url=url,
+                           url_text=url_text)
+
+
+@blueprint.route('/join_passphrase/<passphrase>', methods=('GET', 'POST'))
+def join_passphrase(passphrase):
+    status_msg = {"status_message": []}
+    url = ""
+    url_text = ""
+
+    if not passphrase:
+        status_msg['status_message'].append("Passphrase required")
+
+    # unquote percent-encoded passphrase
+    passphrase = urllib.parse.unquote(passphrase)
+
+    errors, dict_chan_info = process_passphrase(passphrase)
+    if not dict_chan_info:
+        status_msg['status_message'].append("Error parsing passphrase")
+        for error in errors:
+            status_msg['status_message'].append(error)
+
+    if not status_msg['status_message']:
+        for each_word in RESTRICTED_WORDS:
+            if each_word in dict_chan_info["label"].lower():
+                status_msg['status_message'].append(
+                    "bitchan is a restricted word for labels")
+
+    if not status_msg['status_message']:
+        status_msg['status_title'] = "Success"
+        result = nexus.join_chan(passphrase)
+
+        if dict_chan_info["rules"]:
+            dict_chan_info["rules"] = set_clear_time_to_future(dict_chan_info["rules"])
+
+        new_chan = Chan()
+        new_chan.passphrase = passphrase
+        new_chan.access = dict_chan_info["access"]
+        new_chan.type = dict_chan_info["type"]
+        new_chan.primary_addresses = json.dumps(dict_chan_info["primary_addresses"])
+        new_chan.secondary_addresses = json.dumps(dict_chan_info["secondary_addresses"])
+        new_chan.tertiary_addresses = json.dumps(dict_chan_info["tertiary_addresses"])
+        new_chan.restricted_addresses = json.dumps(dict_chan_info["restricted_addresses"])
+        new_chan.rules = json.dumps(dict_chan_info["rules"])
+        new_chan.description = dict_chan_info["description"]
+
+        if result.startswith("BM-"):
+            new_chan.address = result
+            new_chan.label = dict_chan_info["label"]
+            new_chan.is_setup = True
+            if new_chan.type == "board":
+                status_msg['status_message'].append("Joined board")
+                url = "/board/{}/1".format(result)
+                url_text = "/{}/ - {}".format(new_chan.label, new_chan.description)
+            elif new_chan.type == "list":
+                status_msg['status_message'].append("Joined list")
+                url = "/list/{}".format(result)
+                url_text = "{} - {}".format(new_chan.label, new_chan.description)
+        else:
+            status_msg['status_message'].append(
+                "Chan creation queued. Label set temporarily to passphrase.")
+            new_chan.address = None
+            new_chan.label = "[chan] {}".format(passphrase)
+            new_chan.is_setup = False
+        new_chan.save()
+
+    if 'status_title' not in status_msg and status_msg['status_message']:
+        status_msg['status_title'] = "Error"
+
+    return render_template("pages/join.html",
+                           stage="end",
                            status_msg=status_msg,
                            url=url,
                            url_text=url_text)

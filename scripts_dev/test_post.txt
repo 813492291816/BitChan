@@ -1,0 +1,41 @@
+>green
+<pink
+@@bold@@
+~~italics~~
+__underline__
+++strikethrough++
+``highlight``
+Test^^superscript^^
+Test%%subscript%%
+--smol--
+==big==
+**spoiler**
+^rred^r
+^bblue^b
+^oorange^o
+^ccyan^c
+^ppurple^p
+^tbrown^t
+[candy]candy[/candy]
+[color=(#32CD32)]lime green[/color]
+^sshadow^s
+[flash]flashing[/flash]
+[meme]meme[/meme]
+[autism]autism[/autism]
+[aa]        /\_/\
+   ____/ o o \
+ /~____  =ø= /
+(______)__m_m)[/aa]
+>>>BM-2cXxMxqBBEMAdZhL86K4i2W7cUBj72EVCj
+[identity]BM-2cW1cSbE6JN9e23wNCXz9XVQLiAJoTVLJm[/identity]
+#d20 #4d6
+#8ball
+#c13
+#flip
+#t3
+#ct3
+#iching
+#rb3
+#r3
+#stich
+#godsong

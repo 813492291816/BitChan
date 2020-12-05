@@ -35,6 +35,7 @@ def global_var():
 def list_chans(list_address):
     form_join = forms_board.Join()
     form_list = forms_board.List()
+    form_set = forms_board.SetChan()
 
     identities = nexus.get_identities()
     subscriptions = nexus.get_subscriptions()
@@ -58,7 +59,7 @@ def list_chans(list_address):
 
     chans = Chan.query.filter(and_(
         Chan.address != list_address,
-        Chan.address not in this_chan_list)).order_by(
+        Chan.address.notin_(this_chan_list))).order_by(
             Chan.type.asc(),
             Chan.label.asc()).all()
     for each_chan in chans:
@@ -72,7 +73,8 @@ def list_chans(list_address):
             str_select += " [Public] "
         elif each_chan.access == "private":
             str_select += " [Private] "
-        str_select += "({})".format(each_chan.address)
+        str_select += "({}...{})".format(
+            each_chan.address[:9], each_chan.address[-6:])
         form_list_add.append((each_chan.address, str_select))
 
     if request.method == 'GET':
@@ -80,16 +82,37 @@ def list_chans(list_address):
             session.pop('status_msg')
 
     elif request.method == 'POST':
+        if form_set.set_pgp_passphrase_msg.data:
+            if not form_set.pgp_passphrase_msg.data:
+                status_msg['status_message'].append("PGP passphrase required")
+            else:
+                chan.pgp_passphrase_msg = form_set.pgp_passphrase_msg.data
+                chan.save()
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append("Changed PGP Passphrase.")
+
+        # set default/preferred address to update list
+        elif form_list.save_from.data:
+            chan = Chan.query.filter(
+                Chan.address == list_address).first()
+            if chan:
+                if form_list.from_address.data:
+                    chan.default_from_address = form_list.from_address.data
+                else:
+                    chan.default_from_address = None
+                chan.save()
+
         # Add/delete a board or list to/from a list
-        if form_list.add.data or form_list.delete.data:
+        elif form_list.add.data or form_list.delete.data:
             chan_add = Chan.query.filter(
                 Chan.address == form_list.address.data).first()
-            if not chan_add:
+            if form_list.add.data and not chan_add:
                 status_msg["status_message"].append("Invalid list to modify")
             else:
                 mod_list = Chan.query.filter(and_(
                     Chan.type == "list",
                     Chan.address == list_address)).first()
+
                 try:
                     dict_list_addresses = json.loads(mod_list.list)
                 except:
@@ -141,6 +164,7 @@ def list_chans(list_address):
                         }
                         status_msg["status_message"].append(
                             "Added {} to the List".format(form_list.address.data))
+
                     elif form_list.delete.data:
                         dict_list_addresses.pop(form_list.address.data, None)
                         status_msg["status_message"].append(
@@ -148,7 +172,7 @@ def list_chans(list_address):
 
                     mod_list.list = json.dumps(dict_list_addresses)
                     mod_list.list_send = True
-                    db.session.commit()
+                    mod_list.save()
 
                     time_to_send = 60 * 10
                     logger.info("Instructing send_lists() to run in {} minutes".format(time_to_send / 60))
@@ -253,6 +277,7 @@ def list_chans(list_address):
                            chan_posts=chan_posts,
                            form_list=form_list,
                            form_list_add=form_list_add,
+                           from_list=nexus.get_from_list(list_address),
                            identities_subscriptions=identities_subscriptions,
                            status_msg=status_msg,
                            url=url,

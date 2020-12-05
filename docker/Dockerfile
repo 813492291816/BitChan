@@ -26,9 +26,9 @@ RUN chown -R bitchan /usr/local/bitmessage
 # BitChan apt dependencies
 RUN apt-get update && apt-get install -yq --no-install-suggests --no-install-recommends \
     secure-delete gnupg2 build-essential ffmpeg libsm6 libxext6 docker.io \
-    python3-dev python3-setuptools python3-distutils python3-pip netbase
+    python3-dev python3-setuptools python3-distutils python3-pip netbase libjpeg-dev zlib1g-dev
 
-# BitMessage apt dependencies
+# Bitmessage apt dependencies
 RUN apt-get install -yq --no-install-suggests --no-install-recommends \
     python-msgpack dh-python python-all-dev build-essential libssl-dev \
     python-stdeb fakeroot python-pip libcap-dev nano sed git
@@ -40,16 +40,16 @@ RUN rm -rf /var/lib/apt/lists/*
 RUN pip2 install --upgrade pip
 RUN pip3 install --upgrade pip
 
-# Run BitMessage clone script (gets bitmessage)
+# Run Bitmessage clone script (gets bitmessage)
 COPY ./docker/bitmessage_clone.sh ./bitmessage_clone.sh
 RUN /home/bitchan/bitmessage_clone.sh
 RUN rm -f /home/bitchan/bitmessage_clone.sh
 
-# Get BitMessage pip dependencies and install
+# Get Bitmessage pip dependencies and install
 RUN pip2 install -r /home/bitchan/PyBitmessage/requirements.txt
 RUN cd /home/bitchan/PyBitmessage && python2 setup.py install
 
-# Run BitMessage setup script (generates initial keys.dat)
+# Run Bitmessage setup script (generates initial keys.dat)
 COPY ./docker/bitmessage_setup.sh ./bitmessage_setup.sh
 RUN /home/bitchan/bitmessage_setup.sh
 RUN rm -f /home/bitchan/bitmessage_setup.sh

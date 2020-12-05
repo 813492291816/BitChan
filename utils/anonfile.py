@@ -23,19 +23,28 @@
 # Modified to allow requests to use of proxies for Tor
 #
 import logging
+import os
 from functools import wraps
 
 import requests
 import wget
 from bs4 import BeautifulSoup
+from requests_toolbelt import MultipartEncoder
+from requests_toolbelt import MultipartEncoderMonitor
 from user_agent import generate_user_agent
+
+from config import DATABASE_BITCHAN
+from database.models import UploadProgress
+from database.utils import session_scope
+
+DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 
 logger = logging.getLogger('bitchan.utils.anonfile')
 
 
 class AnonFile():
     # Custom timeout needs to be a tuple (connection_timeout, read_timeout)
-    def __init__(self, api_key='', server=None, uri=None, custom_timeout=None, proxies=None):
+    def __init__(self, api_key='', server=None, uri=None, custom_timeout=None, proxies=None, upload_id=None):
         # openload.cc letsupload.cc megaupload.nz bayfiles.com
         self.server_list = {
             'anonfile': 'https://api.anonfiles.com',
@@ -46,6 +55,8 @@ class AnonFile():
         }
 
         self.proxies = proxies
+        self.upload_id = upload_id
+        self.progress = 0
 
         # Api endpoint
         if server is None or server not in self.server_list:
@@ -93,21 +104,45 @@ class AnonFile():
         status = False
 
         try:
-            file_upload = {'file': open(file_path, 'rb')}
-
             # Post method, upload file and receive callback
             url = "{}/upload{}".format(self.anonfile_endpoint_url, self.api_key)
+
+            def upl_callback(monitor):
+                with session_scope(DB_PATH) as new_session:
+                    upl = new_session.query(UploadProgress).filter(
+                        UploadProgress.upload_id == self.upload_id).first()
+                    if upl:
+                        if monitor.bytes_read > self.progress + 10000:
+                            self.progress = monitor.bytes_read
+                            upl.progress_size_bytes = monitor.bytes_read
+                            upl.progress_percent = monitor.bytes_read / upl.total_size_bytes * 100
+                            new_session.commit()
+                            logger.info("Upload {}: {}/{} ({:.1f} %) uploaded".format(
+                                upl.upload_id,
+                                upl.progress_size_bytes,
+                                upl.total_size_bytes,
+                                upl.progress_percent))
+
+            e = MultipartEncoder({
+                'file': (os.path.basename(file_path), open(file_path, 'rb'))
+            })
+            m = MultipartEncoderMonitor(e, upl_callback)
+
             response = requests.post(
                 url,
                 proxies=self.proxies,
-                headers={'User-Agent': generate_user_agent()},
-                files=file_upload,
+                headers={
+                    'User-Agent': generate_user_agent(),
+                    'Content-Type': e.content_type
+                },
+                data=m,
                 verify=True,
                 timeout=self.timeout)
 
             status = bool(response.json()['status'])
 
             # File info, file json object as stated at https://anonfile.com/docs/api
+            logger.info("Upload site response: {}".format(response.json()))
             file_obj = response.json()['data']['file']
 
             if not status:

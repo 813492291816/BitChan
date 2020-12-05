@@ -1,4 +1,4 @@
-{% set isboardview = board['current_thread'] == None %}
+{% set is_board_view = board['current_thread'] == None %}
 
 {% set max_lines = 12 %}
 {% set max_chars = max_lines * 175 %}
@@ -6,22 +6,16 @@
     {% set text = "" %}
 {% endif %}
 
-<p class="post">
 {% set groups = format_body(text).split("<br/>") %}
 {% set part1 = "<br/>".join(groups[:max_lines]) %}
+{% set part2 = "<br/>".join(groups[max_lines:]) %}
 
+<p class="post">
 {{part1|safe}}
-
-{% if groups[max_lines:]|length > 0 and isboardview %}
-	<br>
-	<span class="expand">
-	<br/>
-		Comment truncated.
-		<a href="/thread/{{board['current_chan'].address}}/{{post.thread.thread_hash}}#{{post_id(post.message_id)}}" class="link">Click here</a>
-		to view the full post.
-	</span>
-{% else %}
-	<br>
-	{{"<br/>".join(groups[max_lines:])|safe}}
-{% endif %}
+{% if groups[max_lines:]|length > 0 and is_board_view -%}
+<br/><br/><span class="expand">
+Comment truncated. <a href="/thread/{{board['current_chan'].address}}/{{post.thread.thread_hash}}#{{post_id(post.message_id)}}" class="link">Click here</a> to view the full post.</span>
+{% else -%}
+<br/>{{part2|safe}}
+{% endif -%}
 </p>

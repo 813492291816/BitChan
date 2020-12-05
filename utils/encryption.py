@@ -4,6 +4,10 @@ import os
 from io import BytesIO
 
 import gnupg
+from Crypto.Cipher import AES
+from Crypto.Cipher import ChaCha20_Poly1305
+from Crypto.Protocol.KDF import scrypt
+from Crypto.Random import get_random_bytes
 
 from utils.files import delete_file
 from utils.general import get_random_alphanumeric_string
@@ -49,3 +53,93 @@ def decrypt_safe_size(message, passphrase, max_size):
             return None
     finally:
         delete_file(tmp_decrypted)
+
+
+def crypto_multi_enc(cipher_str, password, path_file_in, path_file_out, key_bytes=32):
+    BUFFER_SIZE = 1024 * 1024  # The size in bytes that we read, encrypt and write to at once
+
+    file_in = open(path_file_in, 'rb')
+    file_out = open(path_file_out, 'wb')
+
+    salt = get_random_bytes(32)  # 32-bit salt
+    key = scrypt(password, salt, key_len=key_bytes, N=2 ** 20, r=8, p=1)  # Generate key using password and salt
+
+    file_out.write(salt)  # Write salt to the output file
+
+    if cipher_str == "AES-GCM":
+        cipher = AES.new(key, AES.MODE_GCM)  # encrypt data
+        file_out.write(cipher.nonce)  # Write nonce to the output file
+    elif cipher_str == "XChaCha20-Poly1305":
+        nonce = get_random_bytes(24)  # for XChaCha20-Poly1305, nonce must be 24 bytes long
+        cipher = ChaCha20_Poly1305.new(key=key, nonce=nonce)  # encrypt data
+        file_out.write(nonce)  # Write nonce to the output file
+    else:
+        logger.error("Unknown cipher: {}".format(cipher_str))
+        return
+
+    data = file_in.read(BUFFER_SIZE)
+    while len(data) != 0:  # Check if we need to encrypt anymore data
+        encrypted_data = cipher.encrypt(data)  # Encrypt the data we read
+        file_out.write(encrypted_data)  # Write encrypted data to the output file
+        data = file_in.read(BUFFER_SIZE)  # Read some more of the file
+
+    tag = cipher.digest()  # Signal to the cipher that we are done and get the tag
+    file_out.write(tag)
+
+    file_in.close()
+    file_out.close()
+    return True
+
+
+def crypto_multi_decrypt(cipher_str, password, path_file_in, path_file_out, key_bytes=32):
+    BUFFER_SIZE = 1024 * 1024  # The size in bytes that we read, encrypt and write to at once
+
+    # Open files
+    file_in = open(path_file_in, 'rb')
+    file_out = open(path_file_out, 'wb')
+
+    # Read salt and generate key
+    salt = file_in.read(32)  # read 32-bit salt
+    key = scrypt(password, salt, key_len=key_bytes, N=2 ** 20, r=8, p=1)  # Generate key using password and salt
+
+    if cipher_str == "AES-GCM":
+        nonce_length = 16
+        nonce = file_in.read(nonce_length)  # The nonce is 16 bytes long
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    elif cipher_str == "XChaCha20-Poly1305":
+        nonce_length = 24
+        nonce = file_in.read(nonce_length)  # The nonce is 24 bytes long
+        cipher = ChaCha20_Poly1305.new(key=key, nonce=nonce)
+    else:
+        logger.error("Unknown cipher: {}".format(cipher_str))
+        return
+
+    # Identify how many bytes of encrypted there is
+    # We know that the salt (32) + the nonce (based on cipher) + the data (?) + the tag (16) is in the file
+    # So some basic algebra can tell us how much data we need to read to decrypt
+    file_in_size = os.path.getsize(path_file_in)
+    encrypted_data_size = file_in_size - 32 - nonce_length - 16  # Total - salt - nonce - tag = encrypted data
+
+    # Read, decrypt and write the data
+    for _ in range(int(encrypted_data_size / BUFFER_SIZE)):  # Identify how many loops of full buffer reads needed
+        data = file_in.read(BUFFER_SIZE)  # Read data from the encrypted file
+        decrypted_data = cipher.decrypt(data)  # Decrypt the data
+        file_out.write(decrypted_data)  # Write decrypted data to the output file
+    data = file_in.read(int(encrypted_data_size % BUFFER_SIZE))  # Read what calculated to be left of encrypted data
+    decrypted_data = cipher.decrypt(data)  # Decrypt data
+    file_out.write(decrypted_data)  # Write decrypted data to the output file
+
+    # Verify encrypted file was not tampered with
+    tag = file_in.read(16)
+    try:
+        cipher.verify(tag)
+    except ValueError as e:
+        # If we get a ValueError, there was an error when decrypting so delete the file we created
+        file_in.close()
+        file_out.close()
+        os.remove(path_file_out)
+        raise e
+
+    file_in.close()
+    file_out.close()
+    return True

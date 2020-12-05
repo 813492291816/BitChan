@@ -5,8 +5,8 @@ import os
 from io import BytesIO
 
 import gnupg
-from stegano import lsb
-from stegano.exifHeader import exifHeader
+from utils.stegano import lsb
+from utils.stegano.exifHeader import exifHeader
 
 import config
 from utils.encryption import decrypt_safe_size
@@ -23,7 +23,7 @@ def steg_encrypt(orig_img, steg_img, sec_msg, gpg_pass):
             # PGP-encrypt steg message
             gpg = gnupg.GPG()
             sec_msg = gpg.encrypt(
-                sec_msg, symmetric=True, passphrase=gpg_pass, recipients=None)
+                sec_msg, symmetric="AES256", passphrase=gpg_pass, recipients=None)
 
             # base64-encode encrypted steg message
             msg_enc_b64enc = base64.b64encode(sec_msg.data).decode()
@@ -68,17 +68,17 @@ def steg_decrypt(steg_img, gpg_pass, file_extension=None):
     return decrypted_msg
 
 
-def check_steg(message_id, file_extension, file_path=None, file_decoded=None):
+def check_steg(message_id, file_extension, passphrase=config.PASSPHRASE_STEG, file_path=None, file_decoded=None):
     """Check image for steg message"""
     try:
         if file_path and os.path.exists(file_path):
             steg_message = steg_decrypt(
                 file_path,
-                config.PASSPHRASE_STEG)
+                passphrase)
         elif file_decoded:
             steg_message = steg_decrypt(
                 BytesIO(file_decoded),
-                config.PASSPHRASE_STEG,
+                passphrase,
                 file_extension=file_extension)
         else:
             logger.error("Could not find file to extract steg from")

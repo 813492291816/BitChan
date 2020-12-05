@@ -3,7 +3,6 @@ import logging
 import os.path
 import shutil
 import time
-import zipfile
 from pathlib import Path
 from threading import Thread
 
@@ -15,12 +14,15 @@ from PIL import UnidentifiedImageError
 from user_agent import generate_user_agent
 
 import config
+from database.models import Chan
 from database.models import Messages
 from database.utils import session_scope
+from utils.encryption import crypto_multi_decrypt
 from utils.files import data_file_multiple_insert
 from utils.files import delete_file
 from utils.files import generate_thumbnail
 from utils.files import human_readable_size
+from utils.general import get_random_alphanumeric_string
 from utils.steg import check_steg
 
 DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
@@ -30,12 +32,12 @@ logger = logging.getLogger('bitchan.utils.download')
 
 def generate_hash(file_path):
     """
-    Generates an MD5 hash value from a file
+    Generates an SHA256 hash value from a file
 
     :param file_path: path to the file for hash validation
-    :type file_path:  string
+    :type file_path: string
     """
-    m = hashlib.md5()
+    m = hashlib.sha256()
     with open(file_path, 'rb') as f:
         while True:
             chunk = f.read(1000 * 1000)  # 1MB
@@ -47,14 +49,14 @@ def generate_hash(file_path):
 
 def validate_file(file_path, hash):
     """
-    Validates a file against an MD5 hash value
+    Validates a file against an SHA256 hash value
 
     :param file_path: path to the file for hash validation
     :type file_path:  string
     :param hash:      expected hash value of the file
-    :type hash:       string -- MD5 hash value
+    :type hash:       string -- SHA256 hash value
     """
-    m = hashlib.md5()
+    m = hashlib.sha256()
     with open(file_path, 'rb') as f:
         while True:
             chunk = f.read(1000 * 1000)  # 1MB
@@ -139,7 +141,7 @@ def download_with_resume(message_id, url, file_path, hash=None, timeout=15):
         if file_size == os.path.getsize(tmp_file_path):
             # if there's a hash value, validate the file
             if hash and not validate_file(tmp_file_path, hash):
-                raise Exception('Error validating the file against its MD5 hash')
+                raise Exception('Error validating the file against its SHA256 hash')
             shutil.move(tmp_file_path, file_path)
             return file_path
         elif file_size == -1:
@@ -147,27 +149,33 @@ def download_with_resume(message_id, url, file_path, hash=None, timeout=15):
 
 
 def download_and_extract(
+        address,
         message_id,
         file_url,
         file_extracts_start_base64,
         upload_filename,
-        download_path,
         file_path,
         file_extension,
-        file_md5_hash,
+        file_sha256_hash,
+        file_enc_cipher,
+        file_enc_key_bytes,
+        file_enc_password,
         img_thumb_filename):
 
-    logger.info("download_and_extract({}, {}, [file_extracts_start_base64], {}, {}, {}, {}, {}, {},".format(
+    logger.info("download_and_extract({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, password={}".format(
+        address,
         message_id,
         file_url,
         upload_filename,
-        download_path,
         file_path,
         file_extension,
-        file_md5_hash,
-        img_thumb_filename))
+        file_sha256_hash,
+        img_thumb_filename,
+        file_enc_cipher,
+        file_enc_key_bytes,
+        file_enc_password))
 
-    file_md5_hashes_match = False
+    file_sha256_hashes_match = False
     file_size = None
     file_do_not_download = None
     file_download_successful = None
@@ -177,6 +185,10 @@ def download_and_extract(
     downloaded = None
     force_allow_download = False
     download_url = None
+
+    # save downloaded file to /tmp/
+    # filename has been randomly generated, so no risk of collisions
+    download_path = "/tmp/{}".format(upload_filename)
 
     # Parse page for URL to direct download zip
     try:
@@ -190,7 +202,7 @@ def download_and_extract(
                 download_url = href
                 break
     except:
-        logger.error("{}: Error getting zip page".format(message_id[0:6]))
+        logger.error("{}: Error getting upload page".format(message_id[0:6]))
 
     if not download_url:
         logger.error("{}: Could not find URL for {}".format(
@@ -236,22 +248,21 @@ def download_and_extract(
             return (file_download_successful,
                     file_size,
                     file_do_not_download,
-                    file_md5_hashes_match,
+                    file_sha256_hashes_match,
                     media_height,
                     media_width,
                     message_steg)
         else:
             file_do_not_download = False
 
-        download_attempts = 5
-        for _ in range(download_attempts):
+        for _ in range(config.DOWNLOAD_ATTEMPTS):
             try:
                 download_with_resume(message_id, download_url, download_path)
                 if file_size == os.path.getsize(download_path):
                     break
             except Exception as err:
                 logger.error("Exception downloading: {}".format(err))
-            time.sleep(5)
+            time.sleep(60)
 
         try:
             if file_size == os.path.getsize(download_path):
@@ -266,48 +277,50 @@ def download_and_extract(
             logger.info("{}: File size ({}) is larger than allowed to auto-download ({})".format(
                 message_id[0:6], file_size, human_readable_size(config.DOWNLOAD_MAX_AUTO)))
         elif downloaded == "downloaded":
-            logger.info("{}: Zip successfully downloaded".format(message_id[0:6]))
+            logger.info("{}: File successfully downloaded".format(message_id[0:6]))
             file_download_successful = True
         elif downloaded is None:
             logger.error("{}: Could not download zip after {} attempts".format(
-                message_id[0:6], download_attempts))
+                message_id[0:6], config.DOWNLOAD_ATTEMPTS))
             file_download_successful = False
 
         if file_download_successful:
-            # compare MD5 hashes
-            if file_md5_hash:
-                if not validate_file(download_path, file_md5_hash):
+            # Add missing parts back to file
+            if file_extracts_start_base64:
+                size_before = os.path.getsize(download_path)
+                data_file_multiple_insert(download_path, file_extracts_start_base64, chunk=4096)
+                logger.info("{}: File data insertion. Before: {}, After: {}".format(
+                    message_id[0:6], size_before, os.path.getsize(download_path)))
+
+            # compare SHA256 hashes
+            if file_sha256_hash:
+                if not validate_file(download_path, file_sha256_hash):
                     logger.info(
-                        "{}: File MD5 hash ({}) does not match provided MD5"
+                        "{}: File SHA256 hash ({}) does not match provided SHA256"
                         " hash ({}). Deleting.".format(
                             message_id[0:6],
                             generate_hash(download_path),
-                            file_md5_hash))
-                    file_md5_hashes_match = False
+                            file_sha256_hash))
+                    file_sha256_hashes_match = False
                     file_download_successful = False
                     delete_file(download_path)
                     return (file_download_successful,
                             file_size,
                             file_do_not_download,
-                            file_md5_hashes_match,
+                            file_sha256_hashes_match,
                             media_height,
                             media_width,
                             message_steg)
                 else:
-                    file_md5_hashes_match = True
-                    logger.info("{}: Zip File MD5 hashes match ({})".format(
-                        message_id[0:6], file_md5_hash))
+                    file_sha256_hashes_match = True
+                    logger.info("{}: File SHA256 hashes match ({})".format(
+                        message_id[0:6], file_sha256_hash))
 
-            # Add missing part back to file
-            if file_extracts_start_base64:
-                size_before = os.path.getsize(download_path)
-                data_file_multiple_insert(download_path, file_extracts_start_base64, chunk=4096)
-                logger.info("{}: ZIP data insertion. Before: {}, After: {}".format(
-                    message_id[0:6], size_before, os.path.getsize(download_path)))
-
-            # extract zip with password
-            logger.info("{}: Extracting zip".format(message_id[0:6]))
-            extract_filename = "file.{}".format(file_extension)
+            # decrypt file
+            logger.info("{}: Decrypting file".format(message_id[0:6]))
+            extract_filename = "{}.{}".format(
+                get_random_alphanumeric_string(12, with_punctuation=False, with_spaces=False),
+                file_extension)
             extract_path = "/tmp"
             full_path_filename = os.path.join(extract_path, extract_filename)
             delete_file(full_path_filename)  # make sure no file already exists
@@ -316,16 +329,26 @@ def download_and_extract(
                 message = new_session.query(Messages).filter(
                     Messages.message_id == message_id).first()
                 if message:
-                    message.file_progress = "Extracting file from ZIP archive"
+                    message.file_progress = "Decrypting file"
                     new_session.commit()
 
             try:
-                z = zipfile.ZipFile(download_path)
-                z.setpassword(config.PASSPHRASE_ZIP.encode())
-                z.extract(extract_filename, path=extract_path)
+                ret_crypto = crypto_multi_decrypt(
+                    file_enc_cipher,
+                    file_enc_password,
+                    download_path,
+                    full_path_filename,
+                    key_bytes=file_enc_key_bytes)
+                if not ret_crypto:
+                    logger.error("{}: Issue decrypting file")
+
+                # z = zipfile.ZipFile(download_path)
+                # z.setpassword(config.PASSPHRASE_ZIP.encode())
+                # z.extract(extract_filename, path=extract_path)
+
                 shutil.copy(full_path_filename, file_path)  # Copy
                 delete_file(full_path_filename)  # Secure delete
-                logger.info("{}: Finished extracting zip".format(message_id[0:6]))
+                logger.info("{}: Finished decrypting file".format(message_id[0:6]))
 
                 # Verify image and video dimensions
                 if file_extension in config.FILE_EXTENSIONS_IMAGE:
@@ -364,15 +387,25 @@ def download_and_extract(
                 file_size = os.path.getsize(file_path)
                 if file_extension in config.FILE_EXTENSIONS_IMAGE:
                     # If image file, check for steg message
-                    message_steg = check_steg(
-                        message_id, file_extension, file_path=file_path)
-
                     with session_scope(DB_PATH) as new_session:
+                        pgp_passphrase_steg = config.PASSPHRASE_STEG
+                        chan = new_session.query(Chan).filter(
+                            Chan.address == address).first()
+                        if chan and chan.pgp_passphrase_steg:
+                            pgp_passphrase_steg = chan.pgp_passphrase_steg
+
+                        message_steg = check_steg(
+                            message_id,
+                            file_extension,
+                            passphrase=pgp_passphrase_steg,
+                            file_path=file_path)
+
                         message = new_session.query(Messages).filter(
                             Messages.message_id == message_id).first()
                         if message:
                             message.file_progress = "generating image thumbnail"
                             new_session.commit()
+
                     generate_thumbnail(
                         message_id, file_path, img_thumb_filename, file_extension)
 
@@ -382,17 +415,15 @@ def download_and_extract(
                     if message:
                         message.file_progress = "file download/saving complete"
                         new_session.commit()
-            except OSError:
-                logger.exception("Error extracting. Not a ZIP file?")
             except Exception:
-                logger.exception("Error extracting zip")
+                logger.exception("Error processing file")
 
         delete_file(download_path)
 
     return (file_download_successful,
             file_size,
             file_do_not_download,
-            file_md5_hashes_match,
+            file_sha256_hashes_match,
             media_height,
             media_width,
             message_steg)

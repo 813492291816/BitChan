@@ -129,10 +129,15 @@ def delete(current_chan, message_id, thread_id, delete_type):
                 from_address = admin_has_access(current_chan)
 
                 if from_address:
+                    pgp_passphrase_msg = config.PASSPHRASE_MSG
+                    chan = Chan.query.filter(Chan.address == current_chan).first()
+                    if chan and chan.pgp_passphrase_msg:
+                        pgp_passphrase_msg = chan.pgp_passphrase_msg
+
                     str_message = json.dumps(dict_message)
                     gpg = gnupg.GPG()
                     message_encrypted = gpg.encrypt(
-                        str_message, symmetric=True, passphrase=config.PASSPHRASE_MSG, recipients=None)
+                        str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
                     message_send = base64.b64encode(message_encrypted.data).decode()
 
                     lf = LF()
@@ -216,10 +221,15 @@ def delete_with_comment(current_chan, message_id, thread_id):
                     from_address = admin_has_access(current_chan)
 
                     if from_address:
+                        pgp_passphrase_msg = config.PASSPHRASE_MSG
+                        chan = Chan.query.filter(Chan.address == current_chan).first()
+                        if chan and chan.pgp_passphrase_msg:
+                            pgp_passphrase_msg = chan.pgp_passphrase_msg
+
                         str_message = json.dumps(dict_message)
                         gpg = gnupg.GPG()
                         message_encrypted = gpg.encrypt(
-                            str_message, symmetric=True, passphrase=config.PASSPHRASE_MSG, recipients=None)
+                            str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
                         message_send = base64.b64encode(message_encrypted.data).decode()
 
                         lf = LF()
@@ -327,10 +337,15 @@ def admin_board_ban_address(chan_address, ban_address):
             from_address = admin_has_access(chan_address)
 
             if from_address:
+                pgp_passphrase_msg = config.PASSPHRASE_MSG
+                chan = Chan.query.filter(Chan.address == chan_address).first()
+                if chan and chan.pgp_passphrase_msg:
+                    pgp_passphrase_msg = chan.pgp_passphrase_msg
+
                 str_message = json.dumps(dict_message)
                 gpg = gnupg.GPG()
                 message_encrypted = gpg.encrypt(
-                    str_message, symmetric=True, passphrase=config.PASSPHRASE_MSG, recipients=None)
+                    str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
                 message_send = base64.b64encode(message_encrypted.data).decode()
 
                 lf = LF()
@@ -573,10 +588,15 @@ def set_owner_options(chan_address):
                 if modify_restricted_addresses is not None:
                     dict_message["options"]["modify_restricted_addresses"] = modify_restricted_addresses
 
+                pgp_passphrase_msg = config.PASSPHRASE_MSG
+                chan = Chan.query.filter(Chan.address == chan.address).first()
+                if chan and chan.pgp_passphrase_msg:
+                    pgp_passphrase_msg = chan.pgp_passphrase_msg
+
                 str_message = json.dumps(dict_message)
                 gpg = gnupg.GPG()
                 message_encrypted = gpg.encrypt(
-                    str_message, symmetric=True, passphrase=config.PASSPHRASE_MSG, recipients=None)
+                    str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
                 message_send = base64.b64encode(message_encrypted.data).decode()
 
                 if len(message_send) > config.BM_PAYLOAD_MAX_SIZE:

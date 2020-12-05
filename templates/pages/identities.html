@@ -26,7 +26,7 @@
             </div>
             {% if identities %}
             <div style="width: 100%; text-align: center; padding-top: 2em; padding-bottom: 1em">
-                <table class="table">
+                <table class="table themed">
                     <tr>
                         <td></td>
                         <td>Address</td>
@@ -41,7 +41,7 @@
                             <img style="width: 25px; height: 25px" src="/icon/{{address}}">
                         </td>
                         <td style="font-family: monospace">
-                            {{address}}
+                            <a class="link" href="/mailbox/{{address}}/inbox/1/0">{{address}}</a>
                         </td>
                         <td>
                             <input type="text" name="ident_label" value="{{each_identity["label"]}}"/>
@@ -56,12 +56,12 @@
                 </table>
             </div>
             {% else %}
-            <div style="width: 100%; text-align: center;">
+            <div class="themed" style="width: 100%; text-align: center;">
                 No Identities Found
             </div>
             {% endif %}
 
-            <div style="width: 100%; text-align: center; padding-bottom: 2em">
+            <div class="themed" style="width: 100%; text-align: center; padding-bottom: 2em">
                 <form method="post">
                 <div class="heading-1 head-center">Add Identity</div>
 
@@ -84,6 +84,6 @@
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/join_config.html' %}
+    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

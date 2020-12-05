@@ -12,11 +12,15 @@ ntplib==0.3.4
 opencv-python==4.4.0.46
 pydub==0.24.1
 pyminizip==0.2.4
+pycryptodome==3.9.9
 python-gnupg==0.4.6
-requests[socks]==2.24.0
+requests[socks]==2.25.0
+requests-toolbelt==0.9.1
 sortedcontainers==2.3.0
-stegano==0.9.8
 stem==1.8.0
 user_agent==0.1.9
 wget==3.2
 wtforms==2.3.3
+
+# utils/stegano dependency
+piexif==1.1.3

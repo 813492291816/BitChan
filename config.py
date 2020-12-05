@@ -2,9 +2,9 @@ import logging
 import os
 from logging import handlers
 
-VERSION_BITCHAN = "0.9.0"
+VERSION_BITCHAN = "0.10.0"
 VERSION_ALEMBIC = '000000000000'
-VERSION_MIN_MSG = "0.9.0"
+VERSION_MIN_MSG = "0.10.0"
 
 LOG_LEVEL = logging.INFO
 
@@ -14,15 +14,20 @@ LOG_LEVEL = logging.INFO
 THREADS_PER_PAGE = 15
 ID_LENGTH = 9
 LABEL_LENGTH = 25
+DESCRIPTION_LENGTH = 128
 CLEAR_INVENTORY_WAIT = 60 * 10  # 10 minutes
 BM_TTL = 60 * 60 * 24 * 28  # 28 days
-BM_PAYLOAD_MAX_SIZE = 348768
+BM_PAYLOAD_MAX_SIZE = 2 ** 18 - 500  # 261,644
 BM_REFRESH_PERIOD = 5
 BANNER_MAX_WIDTH = 650
 BANNER_MAX_HEIGHT = 400
 DOWNLOAD_MAX_AUTO = 5000000
+DOWNLOAD_ATTEMPTS = 5
 SEND_BEFORE_EXPIRE_DAYS = 20
 UPLOAD_SIZE_TO_THREAD = 5000000
+FLAG_MAX_WIDTH = 25
+FLAG_MAX_HEIGHT = 15
+FLAG_MAX_SIZE = 3500
 FILE_EXTENSIONS_AUDIO = ["wav", "mp3", "ogg"]
 FILE_EXTENSIONS_IMAGE = ["jpg", "jpeg", "png", "gif", "webp"]
 FILE_EXTENSIONS_VIDEO = ["mp4", "webm", "ogg"]
@@ -74,6 +79,12 @@ DICT_UPLOAD_SERVERS = {
     }
 }
 UPLOAD_SERVERS_NAMES = [(k, v["form_name"]) for k, v in DICT_UPLOAD_SERVERS.items()]
+UPLOAD_ENCRYPTION_CIPHERS = [
+    ("XChaCha20-Poly1305,32", "XChaCha20-Poly1305 (256-bit key)"),
+    ("AES-GCM,32", "AES-GCM (256-bit key)"),
+    ("AES-GCM,24", "AES-GCM (192-bit key)"),
+    ("AES-GCM,16", "AES-GCM (128-bit key)")
+]
 
 DICT_PERMISSIONS = {
     "require_identity_to_post": "Require Identity to Post",
@@ -82,12 +93,16 @@ DICT_PERMISSIONS = {
 
 DEFAULT_CHANS = [
     {
-        "address": "BM-2cUmjx3XGuftJhHGXfoaA5TfyGpFFvLgzB",
+        "address": "BM-2cXxMxqBBEMAdZhL86K4i2W7cUBj72EVCj",
         "access": "public",
         "type": "board",
         "label": "babby",
         "description": "Babby's First Board",
-        "restricted_addresses": [],
+        "restricted_addresses": [
+            "BM-2cUYu7r41Bbnox4P8gEVtdnZGLnisgG7Yu",
+            "BM-2cVZdtgUe7uq7LbWx12W2btJybAphF3VxG",
+            "BM-2cTjxB1RMaPV64emmF63w1J9RQYDVz26vP"
+        ],
         "primary_addresses": [],
         "secondary_addresses": [],
         "tertiary_addresses": [],
@@ -146,7 +161,18 @@ DEFAULT_CHANS = [
 ]
 
 #
-# BitMessage
+# Mailbox
+#
+MSGS_PER_PAGE = [
+    (5, "5 per page"),
+    (15, "15 per page"),
+    (25, "25 per page"),
+    (50, "50 per page"),
+    (10000, "All messages")
+]
+
+#
+# Bitmessage
 #
 messages_dat = "/usr/local/bitmessage/messages.dat"
 keys_dat = "/usr/local/bitmessage/keys.dat"

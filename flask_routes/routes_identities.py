@@ -61,6 +61,8 @@ def identities():
                                 new_ident.save()
 
                                 nexus._refresh_identities = True
+                                nexus.signal_clear_inventory()
+
                                 status_msg['status_title'] = "Success"
                                 status_msg['status_message'].append(
                                     "Created identity {} with address {}.".format(

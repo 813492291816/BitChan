@@ -1,5 +1,18 @@
 {% set theme = themes[settings.theme] %}
 
+.ui-widget-content {
+    background: {{theme.bgcolor}}
+}
+
+.ui-state-default {
+    background: {{theme.card_bg}}
+}
+
+.ui-widget-content a {
+    color: {{theme.link}};
+    text-decoration: none;
+}
+
 .btn {
   border: none;
   background-color: inherit;
@@ -49,6 +62,28 @@
 }
 
 #back2Top:hover {
+    background-color: #DDF;
+    color: #000;
+}
+
+#back2Bottom {
+    width: 40px;
+    line-height: 40px;
+    overflow: hidden;
+    z-index: 999;
+    cursor: pointer;
+    transform: rotate(90deg);
+    position: fixed;
+    bottom: 50px;
+    right: 0;
+    background-color: #DDD;
+    color: #555;
+    text-align: center;
+    font-size: 30px;
+    text-decoration: none;
+}
+
+#back2Bottom:hover {
     background-color: #DDF;
     color: #000;
 }
@@ -203,18 +238,6 @@ input:checked + label + .content {
     text-shadow: 0 0 20px , 0 0 40px, 0 0 80px , 0 0 100px;
     white-space: pre;
     background-color: #282828;
-}
-
-.replace-funcs {
-    width: auto;
-    z-index: auto;
-    font-family: "Lucida Console", Monaco, monospace;
-    background: radial-gradient(circle farthest-corner, #920092, #57007F);
-	  background-clip: text;
-    text-fill-color: transparent;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-	  background-size: 200% auto;
 }
 
 .god-text {

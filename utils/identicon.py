@@ -246,7 +246,7 @@ def render_identicon(code, size, renderer=None):
 def generate_icon(address):
     try:
         hash_num = ""
-        for each_char in hashlib.md5(address.encode()).hexdigest():
+        for each_char in hashlib.sha256(address.encode()).hexdigest():
             if is_int(each_char):
                 hash_num += each_char
         hash_num = int(hash_num)

@@ -4,12 +4,26 @@
 <div>
 	<form method="post" enctype="multipart/form-data" autocomplete="off">
 		<input name="chan" value="{{chan}}" type="hidden">
-		<table class="form themed bold">
+		<table class="form themed bold" style="table-layout: fixed; max-width: 600px;">
 			<tbody>
 				<tr>
 					<td class="form themed bold">From</td>
 					<td colspan="2">
-					  {% include '/elements/board/form_post_from.html' %}
+					  <select name="from_address" style="width: 100%">
+						{% for each_address in from_list %}
+							<option value="{{each_address}}">{{from_list[each_address]}}</option>
+						{% endfor %}
+						</select>
+				    </td>
+				</tr>
+				<tr>
+					<td class="form themed bold">Thread Default From</td>
+					<td colspan="2"><input type="checkbox" id="default_from_address" name="default_from_address" value="y"{% if thread.default_from_address or ("default_from_address" in form_populate and form_populate["default_from_address"]) %} checked{% endif %}/></td>
+				</tr>
+				<tr>
+					<td class="form themed bold">Flag</td>
+					<td colspan="2">
+						{% include '/elements/board/nation_select.html' %}
 				    </td>
 				</tr>
 				<tr>
@@ -19,7 +33,7 @@
 						<input style="display:none;" name="subject" value="{{thread.subject}}" />
 						<input type="hidden" name="board_id" value="{{board['current_chan'].address}}"/>
 						<input type="hidden" name="thread_id" value="{{thread.thread_hash}}"/>
-						<input type="hidden" name="op_md5_hash" value="{{thread.op_md5_hash}}"/>
+						<input type="hidden" name="op_sha256_hash" value="{{thread.op_sha256_hash}}"/>
 						<input type="hidden" name="is_op" value="no"/>
 					</td>
 				</tr>
@@ -32,10 +46,6 @@
 					<td colspan="2"><textarea rows="7" maxlength="246250" class="form" name="steg_message">{% if "steg_comment" in form_populate and form_populate["steg_comment"] %}{{form_populate["steg_comment"]}}{% endif %}</textarea></td>
 				</tr>
 				<tr>
-					<td class="form themed bold">Steg Passphrase</td>
-					<td colspan="2"><input class="form" name="steg_passphrase" type="text" value="{% if "steg_passphrase" in form_populate and form_populate["steg_passphrase"] %}{{form_populate["steg_passphrase"]}}{% else %}{{config.PASSPHRASE_STEG}}{% endif %}"/></td>
-				</tr>
-				<tr>
 					<td class="form themed bold">Image/File</td>
 					<td colspan="2"><input class="" name="file" type="file"/>{% if "file" in form_populate and form_populate["file"] %}<br/><strong>PLEASE RESELECT FILE/IMAGE</strong>{% endif %}
 				</tr>
@@ -44,12 +54,12 @@
 					<td colspan="2"><input type="checkbox" id="image_spoiler" name="image_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/></td>
 				</tr>
 				<tr>
-					<td class="form themed bold">Strip EXIF (JPG/PNG only)</td>
+					<td class="form themed bold">Strip EXIF<br/><span style="font-size: 0.7em">JPG/PNG only</span></td>
 					<td colspan="2"><input type="checkbox" id="strip_exif" name="strip_exif" value="y"{% if "strip_exif" in form_populate and not form_populate["strip_exif"] %}{% else %} checked{% endif %}/></td>
 				</tr>
 			    <tr>
-				    <td class="form themed bold">Upload</td>
-					<td>
+				    <td class="form themed bold">Upload Method</td>
+					<td colspan="2">
 					  <select name="upload">
 					    <option value="bitmessage"{% if "upload" in form_populate and form_populate["upload"] == "bitmessage" %} selected{% endif %}>Bitmessage (most secure, ~250KB)</option>
 					  {% for each_server in config.UPLOAD_SERVERS_NAMES %}
@@ -57,8 +67,18 @@
 					  {% endfor %}
 					  </select>
 				    </td>
+			    </tr>
+				<tr>
+					<td class="form themed bold">Upload Encryption<br/><span style="font-size: 0.7em">Non-Bitmessage uploads only</span></td>
 					<td>
-						<input class="postbutton button" type="submit" name="submit" value="Post"/>
+					  <select name="upload_cipher_and_key">
+					  {% for each_cipher in config.UPLOAD_ENCRYPTION_CIPHERS %}
+					    <option value="{{each_cipher[0]}}">{{each_cipher[1]}}</option>
+					  {% endfor %}
+				      </select>
+				    </td>
+					<td>
+						<input class="postbutton" type="submit" name="submit_post" value="Post"/>
 					</td>
 			    </tr>
 			</tbody>

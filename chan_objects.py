@@ -52,8 +52,6 @@ class ChanPost:
                         config.FILE_DIRECTORY, message.saved_file_filename)
                     img_thumb_filename = "{}/{}".format(
                         config.FILE_DIRECTORY, message.saved_image_thumb_filename)
-                    download_path = "/tmp/{}.zip".format(get_random_alphanumeric_string(
-                        30, with_punctuation=False, with_spaces=False))
 
                     # Pick a download slot to fill (2 slots per domain)
                     domain = urlparse(message.file_url).netloc
@@ -67,18 +65,21 @@ class ChanPost:
                             (file_download_successful,
                              file_size,
                              file_do_not_download,
-                             file_md5_hashes_match,
+                             file_sha256_hashes_match,
                              media_height,
                              media_width,
                              message_steg) = download_and_extract(
+                                message.thread.chan.address,
                                 self.message_id,
                                 message.file_url,
                                 json.loads(message.file_extracts_start_base64),
                                 message.upload_filename,
-                                download_path,
                                 file_path,
                                 message.file_extension,
-                                message.file_md5_hash,
+                                message.file_sha256_hash,
+                                message.file_enc_cipher,
+                                message.file_enc_key_bytes,
+                                message.file_enc_password,
                                 img_thumb_filename)
                         finally:
                             lf.lock_release(lockfile)
@@ -89,7 +90,7 @@ class ChanPost:
                         message.media_width = media_width
                         message.file_download_successful = file_download_successful
                         message.file_do_not_download = file_do_not_download
-                        message.file_md5_hashes_match = file_md5_hashes_match
+                        message.file_sha256_hashes_match = file_sha256_hashes_match
                         message.message_steg = message_steg
                         new_session.commit()
         except Exception as e:

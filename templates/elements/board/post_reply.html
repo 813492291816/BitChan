@@ -1,4 +1,4 @@
-{% set isoppost = False %}
+{% set is_op_post = False %}
 
 <div class="post plaque" id="{{post_id(post.message_id)}}">
 	{% include '/elements/board/post_header.html' %}
@@ -11,8 +11,8 @@
 			<input name="message_id" value="{{post.message_id}}" type="hidden">
 			<input type="submit" name="start_download" value="Allow Download"/>
 		</form><br/>
-{% elif post.file_md5_hash and not post.file_md5_hashes_match %}
-		File discarded (MD5 hashes don't match, likely an issue downloading)<br/>
+{% elif post.file_sha256_hash and not post.file_sha256_hashes_match %}
+		File discarded (SHA256 hashes don't match, likely an issue downloading)<br/>
 		<form method="post" enctype="multipart/form-data" autocomplete="off">
 			<input name="message_id" value="{{post.message_id}}" type="hidden">
 			<input type="submit" name="start_download" value="Download Again"/>

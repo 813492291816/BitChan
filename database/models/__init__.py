@@ -11,6 +11,8 @@ from .chans import DeletedMessages
 from .chans import Identity
 from .chans import Messages
 from .chans import Threads
+from .chans import UploadProgress
+from .settings import Flags
 from .settings import GlobalSettings
 
 logger = logging.getLogger('bitchan.db_models')
@@ -59,5 +61,7 @@ def populate_db():
                 primary_addresses=json.dumps(each_chan["primary_addresses"]),
                 secondary_addresses=json.dumps(each_chan["secondary_addresses"]),
                 tertiary_addresses=json.dumps(each_chan["tertiary_addresses"]),
-                rules=json.dumps(each_chan["rules"])
+                rules=json.dumps(each_chan["rules"]),
+                pgp_passphrase_msg=config.PASSPHRASE_MSG,
+                pgp_passphrase_steg=config.PASSPHRASE_STEG
             ).save()

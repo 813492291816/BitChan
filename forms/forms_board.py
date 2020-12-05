@@ -9,7 +9,6 @@ from wtforms import PasswordField
 from wtforms import SelectField
 from wtforms import StringField
 from wtforms import SubmitField
-
 from config import UPLOAD_SERVERS_NAMES
 from forms.nations import nations
 
@@ -20,12 +19,11 @@ class Post(FlaskForm):
     board_id = StringField("Board ID")
     thread_id = StringField("Thread ID")
     is_op = StringField("Is OP")
-    op_md5_hash = StringField("OP Hash")
-    from_address = StringField("From")
+    op_sha256_hash = StringField("OP Hash")
+    from_address = StringField("From Address")
+    default_from_address = BooleanField("Set default From")
     chan = StringField("Chan")
-    nation = SelectField(
-        "Nations",
-        choices=[("", "None")] + nations)
+    nation = SelectField("Nations")
     subject = StringField("Subject")
     body = StringField("Body")
     file = FileField()
@@ -34,9 +32,17 @@ class Post(FlaskForm):
     upload = SelectField(
         "Upload",
         choices=[("bitmessage", "Bitmessage (most secure, ~300K max)")] + UPLOAD_SERVERS_NAMES)
+    upload_cipher_and_key = StringField("Upload Encryption Cipher")
     message_id = StringField("Message ID")
     start_download = SubmitField("Download File")
     submit = SubmitField("Submit")
+
+
+class SetChan(FlaskForm):
+    pgp_passphrase_msg = StringField("MessagePGP Passphrase")
+    set_pgp_passphrase_msg = SubmitField("Set Message PGP Passphrase")
+    pgp_passphrase_steg = StringField("Steg PGP Passphrase")
+    set_pgp_passphrase_steg = SubmitField("Set Steg PGP Passphrase")
 
 
 class SetOptions(FlaskForm):
@@ -51,7 +57,6 @@ class SetOptions(FlaskForm):
 
 class Steg(FlaskForm):
     steg_message = StringField("Steg Message")
-    steg_passphrase = StringField("Steg Passphrase")
 
 
 class Join(FlaskForm):
@@ -70,12 +75,16 @@ class Join(FlaskForm):
     passphrase = PasswordField("Passphrase")
     label = StringField("Label")
     description = StringField("Label")
+    pgp_passphrase_msg = StringField("Message PGP Passphrase")
+    pgp_passphrase_steg = StringField("Steg PGP Passphrase")
     next = SubmitField("Next")
     join = SubmitField("Join")
 
 
 class List(FlaskForm):
     address = StringField("Address")
+    from_address = StringField("From Address")
+    save_from = SubmitField("Save From")
     add = SubmitField("Add")
     delete = SubmitField("Delete")
 

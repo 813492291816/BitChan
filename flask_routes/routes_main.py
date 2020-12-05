@@ -1,15 +1,16 @@
 import base64
 import csv
 import datetime
+import html
 import logging
+import os
 import re
-import socket
 import subprocess
 import time
 from collections import OrderedDict
-from datetime import datetime
 from io import StringIO
 
+from PIL import Image
 from flask import redirect
 from flask import render_template
 from flask import request
@@ -27,13 +28,17 @@ import config
 from bitchan_flask import nexus
 from database.models import AddressBook
 from database.models import Chan
+from database.models import Flags
 from database.models import GlobalSettings
 from database.models import Identity
 from database.models import Messages
 from database.models import Threads
+from database.models import UploadProgress
 from forms import forms_board
 from forms import forms_settings
 from utils.files import LF
+from utils.files import delete_file
+from utils.general import get_random_alphanumeric_string
 from utils.routes import page_dict
 
 logger = logging.getLogger('bitchan.routes_main')
@@ -126,6 +131,7 @@ def help_docs():
 @blueprint.route('/configure', methods=('GET', 'POST'))
 def configure():
     form_settings = forms_settings.Settings()
+    form_flag = forms_settings.Flag()
 
     status_msg = session.get('status_msg', {"status_message": []})
 
@@ -134,7 +140,70 @@ def configure():
             session.pop('status_msg')
 
     elif request.method == 'POST':
-        if form_settings.save.data:
+        if form_flag.flag_upload.data:
+            flag_save_path = None
+
+            if not form_flag.flag_file.data:
+                status_msg['status_message'].append("A file upload is required.")
+            if not form_flag.flag_name.data:
+                status_msg['status_message'].append("A flag name is required.")
+            if len(form_flag.flag_name.data) > 64:
+                status_msg['status_message'].append("Flag name must be a maximum of 64 characters")
+
+            if not status_msg['status_message']:
+                flag_filename = html.escape(form_flag.flag_file.data.filename)
+                flag_extension = html.escape(os.path.splitext(flag_filename)[1].split(".")[1].lower())
+                if flag_extension not in config.FILE_EXTENSIONS_IMAGE:
+                    status_msg['status_message'].append(
+                        "Unsurrpoted extension. Supported: {}".format(config.FILE_EXTENSIONS_IMAGE))
+
+            if not status_msg['status_message']:
+                flag_save_path = "/tmp/{}.{}".format(
+                    get_random_alphanumeric_string(
+                        12, with_spaces=False, with_punctuation=False),
+                    flag_extension)
+
+                # Save file to disk
+                form_flag.flag_file.data.save(flag_save_path)
+
+                flag_file_size = os.path.getsize(flag_save_path)
+                flag = Image.open(flag_save_path)
+                flag_width, flag_height = flag.size
+                logger.info("Uploaded flag is {} wide x {} high, {} bytes".format(
+                    flag_width, flag_height, flag_file_size))
+                if flag_width > config.FLAG_MAX_WIDTH or flag_height > config.FLAG_MAX_HEIGHT:
+                    status_msg['status_message'].append(
+                        "At least one of the flag's dimensions is too large. Max 25px width, 15px height.")
+                if flag_file_size > config.FLAG_MAX_SIZE:
+                    status_msg['status_message'].append(
+                        "Flag file size is too large. Must be less than or equal to 3500 bytes.")
+
+            if not status_msg['status_message']:
+                new_flag = Flags()
+                new_flag.name = form_flag.flag_name.data
+                new_flag.flag_extension = flag_extension
+                new_flag.flag_base64 = base64.b64encode(open(flag_save_path, "rb").read()).decode()
+                new_flag.save()
+
+            if flag_save_path:
+                delete_file(flag_save_path)
+
+        elif form_flag.flag_rename.data:
+            if not form_flag.flag_name.data:
+                status_msg['status_message'].append("A flag name is required.")
+
+            if not status_msg['status_message']:
+                flag = Flags.query.filter(Flags.id == int(form_flag.flag_id.data)).first()
+                if flag:
+                    flag.name = form_flag.flag_name.data
+                    flag.save()
+
+        elif form_flag.flag_delete.data:
+            flag = Flags.query.filter(Flags.id == int(form_flag.flag_id.data)).first()
+            if flag:
+                flag.delete()
+
+        elif form_settings.save.data:
             settings = GlobalSettings.query.first()
             if form_settings.theme.data:
                 settings.theme = form_settings.theme.data
@@ -174,7 +243,7 @@ def configure():
                 "Content-Disposition",
                 "attachment",
                 filename="BitChan Backup Board-List {}.csv".format(
-                    datetime.now().strftime("%Y-%m-%d %H_%M_%S")))
+                    datetime.datetime.now().strftime("%Y-%m-%d %H_%M_%S")))
             return response
 
         elif form_settings.export_identities.data:
@@ -204,7 +273,7 @@ def configure():
                 "Content-Disposition",
                 "attachment",
                 filename="BitChan Backup Identities {}.csv".format(
-                    datetime.now().strftime("%Y-%m-%d %H_%M_%S")))
+                    datetime.datetime.now().strftime("%Y-%m-%d %H_%M_%S")))
             return response
 
         elif form_settings.export_address_book.data:
@@ -233,7 +302,7 @@ def configure():
                 "Content-Disposition",
                 "attachment",
                 filename="BitChan Backup Address Book {}.csv".format(
-                    datetime.now().strftime("%Y-%m-%d %H_%M_%S")))
+                    datetime.datetime.now().strftime("%Y-%m-%d %H_%M_%S")))
             return response
 
         session['status_msg'] = status_msg
@@ -266,13 +335,14 @@ def status():
                 status_msg['status_title'] = "Success"
                 status_msg['status_message'].append("New Tor identity requested")
 
-    try:
-        bm_status = nexus._api.clientStatus()
-    except socket.timeout:
-        logger.error("Timeout during API query: restarting bitmessage")
-        nexus.restart_bitmessage()
-    except Exception:
-        logger.exception("Unknown Exception")
+    lf = LF()
+    if lf.lock_acquire(config.LOCKFILE_API, to=60):
+        try:
+            bm_status = nexus._api.clientStatus()
+        except Exception as err:
+            logger.error("Error: {}".format(err))
+        finally:
+            lf.lock_release(config.LOCKFILE_API)
 
     try:
         tor_version = subprocess.check_output(
@@ -320,7 +390,8 @@ def status():
                            status_msg=status_msg,
                            tor_circuit_dict=tor_circuit_dict,
                            tor_status=tor_status,
-                           tor_version=tor_version)
+                           tor_version=tor_version,
+                           upload_progress=UploadProgress.query.all())
 
 
 @blueprint.route('/diag', methods=('GET', 'POST'))
@@ -335,19 +406,19 @@ def diag():
                 nexus.clear_bm_inventory()
                 status_msg['status_title'] = "Success"
                 status_msg['status_message'].append(
-                    "Deleted BitMessage inventory and restarting BitMessage. Give it time to resync.")
+                    "Deleted Bitmessage inventory and restarting Bitmessage. Give it time to resync.")
             except Exception as err:
                 status_msg['status_message'].append(
-                    "Couldn't delete BitMessage inventory: {}".format(err))
+                    "Couldn't delete Bitmessage inventory: {}".format(err))
                 logger.exception("Couldn't delete BM inventory")
         elif form_diag.del_trash.data:
             try:
                 nexus.delete_and_vacuum()
                 status_msg['status_title'] = "Success"
-                status_msg['status_message'].append("Deleted BitMessage Trash items.")
+                status_msg['status_message'].append("Deleted Bitmessage Trash items.")
             except Exception as err:
                 status_msg['status_message'].append(
-                    "Couldn't delete BitMessage Trash items: {}".format(err))
+                    "Couldn't delete Bitmessage Trash items: {}".format(err))
                 logger.exception("Couldn't delete BM Trash Items")
 
     return render_template("pages/diag.html",
@@ -367,10 +438,10 @@ def bug_report():
                 if config.DEFAULT_CHANS[0]["address"] in nexus.get_all_chans():
                     address_from = config.DEFAULT_CHANS[0]["address"]
                 elif nexus.get_all_chans():
-                    address_from = nexus.get_all_chans()[0]
+                    address_from = list(nexus.get_all_chans().keys())[0]
                 else:
                     status_msg['status_message'].append(
-                        "Could not foid address to send from. "
+                        "Could not find address to send from. "
                         "Join/Create a board or list and try again.")
                     address_from = None
 

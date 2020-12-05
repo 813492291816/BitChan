@@ -1,0 +1,86 @@
+{% extends "layout.html" %}
+
+{% block title %}Compose Message{% endblock %}
+
+{% block head %}
+    <style>
+        table#border-1px tr td {
+            border: 1px solid black;
+        }
+        .border-2px {
+            border: 2px solid black;
+        }
+        table#border-none tr  td {
+            border: none;
+            padding: 0.1em;
+        }
+        table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px; text-align: center; padding-bottom: 2em">
+
+            <h1 class="title themed bold">Compose Message</h1>
+
+            <form method="post" enctype="multipart/form-data">
+            <table id="border-1px" class="table" style="width: 800px; margin-left: auto; margin-right: auto;">
+                <tr>
+                    <td class="themed">From</td>
+                    <td>
+                        <div>
+                            <select name="from_address" style="width: 100%">
+        {% for each_address, each_str in get_from_list_all().items() %}
+                                <option value="{{each_address}}"{% if "from_address" in form_populate and form_populate["from_address"] and each_address == form_populate["from_address"] %} selected{% endif %}>{{each_str}}</option>
+        {% endfor %}
+                            </select>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="themed">To</td>
+                    <td>
+                        <input style="width: 100%; box-sizing: border-box;" type="text" name="to_address" value="{% if 'to_address' in form_populate and form_populate['to_address'] %}{{form_populate['to_address']}}{% else %}{{address_to}}{% endif %}"/>
+                        <br/><span style="color: red; font-weight: bold">NOTE: SOME ADDRESSES ARE SHARED AND A MESSAGE CAN BE READ BY MANY INDIVIDUALS
+                    </span>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="themed">TTL (seconds)</td>
+                    <td>
+                        <input type="number" style="width: 100%; box-sizing: border-box;" name="ttl" value="{% if 'ttl' in form_populate and form_populate['ttl'] %}{{form_populate['ttl']}}{% else %}2419200{% endif %}"/>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="themed">Subject</td>
+                    <td>
+                        <input type="text" style="width: 100%; box-sizing: border-box;" name="subject" value="{% if 'subject' in form_populate and form_populate['subject'] %}{{form_populate['subject']}}{% endif %}"/>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <textarea rows="10" maxlength="261644" class="form" style="width: 100%; box-sizing: border-box;" id="body" name="body">{% if "body" in form_populate and form_populate["body"] %}{{form_populate["body"]}}{% endif %}</textarea>
+                    </td>
+                </tr>
+            </table>
+
+            <div style="padding: 5px; width: 100%; text-align: left">
+                <input type="submit" name="send" value="Send"/>
+            </div>
+            </form>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/footer_links.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

@@ -1,2 +1,2 @@
-SocksPort 0.0.0.0:9060
-ControlPort 0.0.0.0:9061
+SocksPort 172.28.1.2:9060
+ControlPort 172.28.1.2:9061

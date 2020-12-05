@@ -1,0 +1,300 @@
+{% extends "layout.html" %}
+
+{% block title %}Mailbox{% if ident_address %} - {{ident_address}}{% endif %}{% endblock %}
+
+{% block head %}
+    <style>
+        table#border-1px tr td {
+            border: 1px solid black;
+        }
+        .border-2px {
+            border: 2px solid black;
+        }
+        table#border-none tr  td {
+            border: none;
+            padding: 0.1em;
+        }
+        table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+        table#msg-list tr td {
+            border: 1px solid black;
+        }
+        table#msg-list th {
+            position: sticky;
+            top: 0;
+        }
+    </style>
+    <script>
+        function toggle(source) {
+            var inputs = document.getElementsByTagName("input");
+            for (let x=0; x<inputs.length; x++){
+                if (inputs[x].type == "checkbox" &&
+                        inputs[x].name.indexOf("selected_") == 0) {
+                    inputs[x].checked = source.checked;
+                }
+            }
+        }
+    </script>
+{% endblock %}
+
+{% block body %}
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container" style="display: block">
+
+    {% if ident_address == '0' %}
+
+        <table class="table themed" style="margin-left: auto; margin-right: auto;">
+            <tr>
+                <td colspan="2" style="text-align: center">
+                    <h1 class="title themed bold">Identity Mailboxes</h1>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2" style="text-align: center; padding-bottom: 1em">
+                    <a class="link" href="/compose/0">Compose Message</a>
+                </td>
+            </tr>
+        {% if identities %}
+            <tr>
+                <td></td>
+                <td>Address</td>
+                <td>Label</td>
+                <td>Unread</td>
+            </tr>
+            {% for each_ident_address in identities %}
+            <tr>
+                <td>
+                    <img style="width: 25px; height: 25px" src="/icon/{{each_ident_address}}">
+                </td>
+                <td>
+                    <a class="link" href="/mailbox/{{each_ident_address}}/inbox/1/0">{{each_ident_address}}</a>
+                </td>
+                <td>
+                    {{identities[each_ident_address]["label"]}}
+                </td>
+                <td>
+                    {{unread_mail_counts[each_ident_address]}}
+                </td>
+            </tr>
+            {% endfor %}
+        {% else %}
+            <tr>
+                <td colspan="2" class="themed">No Mailboxes. Create an Identity to access its mailbox.</td>
+            </tr>
+        {% endif %}
+        </table>
+
+    {% else %}
+
+        {% set messages_page, messages_sorted = get_messages_from_page(mailbox, page, ident_address) %}
+        {% set total_pages = (messages_sorted|length / settings.messages_per_mailbox_page)|round(0, "ceil")|int %}
+
+        {% if messages_sorted|length == 0 %}
+            {% set pages = [] %}
+        {% else %}
+            {% set pages = range(1, total_pages + 1) %}
+        {% endif %}
+
+        {%- if mailbox == "inbox" -%}
+            {% set time_point = "receivedTime" %}
+            {% set time_str = "Received" %}
+        {%- elif mailbox == "sent" -%}
+            {% set time_point = "lastActionTime" %}
+            {% set time_str = "Sent" %}
+        {%- endif -%}
+
+        <div class="themed" style="padding-bottom: 0.5em; text-align: center">
+            <h1>Mailbox for {{identities[ident_address]["label"]}} ({{ident_address}})</h1>
+            <span style="padding-right: 0.5em">
+            {%- if mailbox != "inbox" -%}
+                    <a class="link" href="/mailbox/{{ident_address}}/inbox/1/0">Inbox</a>
+            {%- else -%}
+                    Inbox
+            {%- endif -%}
+            </span>
+            <span>
+            {%- if mailbox != "sent" -%}
+                    <a class="link" href="/mailbox/{{ident_address}}/sent/1/0">Sent</a>
+            {%- else -%}
+                    Sent
+            {%- endif -%}
+            </span>
+        </div>
+
+        {% if messages_sorted|length == 0 %}
+        <div class="themed" style="padding-bottom: 0.5em; text-align: center">
+            No Messages
+        </div>
+        {% else %}
+
+        <form method="post" enctype="multipart/form-data">
+
+        <div style="width: 100%;">
+
+            <div class="themed" style="float: left; padding-right: 10px">
+                {{messages_sorted|length}} message{% if messages_sorted|length > 1 %}s{% endif %}, {{unread_mail_counts[ident_address]}} unread, Bulk:
+                <select name="bulk_action">
+                    <option value="mark_read">Mark Read</option>
+                    <option value="mark_unread">Mark Unread</option>
+                    <option value="delete">Delete</option>
+                </select>
+                <input type="submit" name="execute_bulk_action" value="Go" onclick="return confirm('Are you sure you want to perform this bulk action?')"/>
+            </div>
+
+            <div class="themed" style="float: left; padding-right: 10px">
+                Page:
+                <select name="messages_per_mailbox_page" onchange="this.form.submit()">
+                {% for each_option in config.MSGS_PER_PAGE %}
+                    <option value="{{each_option[0]}}" {% if settings.messages_per_mailbox_page == each_option[0] %} selected{% endif %}>{{each_option[1]}}</option>
+                {% endfor %}
+                </select>
+                <noscript><input type="submit" name="set_per_page" value="Set"/></noscript>
+            </div>
+
+            {% if pages|length > 1 %}
+            <div class="plaque" style="float: left; margin-left: auto; margin-right: auto; padding: 2px;">
+                {% if page > 1 %}
+                    {% if page > 2 %}
+                <a class="link page-nav" href="/mailbox/{{ident_address}}/inbox/1/0">&lt;&lt;</a>&nbsp;&nbsp;
+                    {% endif %}
+                <a class="link page-nav" href="/mailbox/{{ident_address}}/inbox/{{page - 1}}/0">&lt;</a>&nbsp;&nbsp;
+                {% endif %}
+                {% for cur_page in pages %}
+                    {% if cur_page == page %}<span class="page-nav" style="font-weight: bold">[{{cur_page}}]</span>{% else %}<a class="link page-nav" href="/mailbox/{{ident_address}}/inbox/{{cur_page}}/0">[{{cur_page}}]</a>{% endif %}{% if not loop.last or page < pages|length %}&nbsp;&nbsp;{% endif %}
+                {% endfor %}
+                {% if page < pages|length %}
+                <a class="link page-nav" href="/mailbox/{{ident_address}}/inbox//{{page + 1}}/0">&gt;</a>{% if page < total_pages - 1 %}&nbsp;&nbsp;{% endif %}
+                {% if page < total_pages - 1 %}
+                    <a class="link page-nav" href="/mailbox/{{ident_address}}/inbox/{{total_pages}}/0">&gt;&gt;</a>
+                {% endif %}
+                {% endif %}
+            </div>
+            {% endif %}
+
+        </div>
+
+        <div style="width: 100%; max-height: 20em; overflow-x: hidden; overflow-y: auto; padding-top: 2px;">
+        <table class="table themed" id="msg-list" style="width: 100%;">
+            <thead>
+                <tr class="red">
+                    <td><input type="checkbox" onClick="toggle(this)"/></td>
+            {% if mailbox == "inbox" %}<td class="themed">Read</td>{% endif %}
+                    <td>
+                        {% if mailbox == "inbox" %}
+                        From
+                        {% elif mailbox == "sent" %}
+                        To
+                        {% endif %}
+                    </td>
+                    <td>Subject</td>
+                    <td>{{time_str}}</td>
+                </tr>
+            </thead>
+            <tbody>
+
+            {% for each_msg in messages_page %}
+                {% set is_selected = msg_selected and each_msg["msgid"] == msg_selected["msgid"] %}
+                <tr class="{% if is_selected %} mail_highlight{% endif %}">
+                    <td>
+                        <input type="checkbox" name="selected_msg" value="{{each_msg["msgid"]}}"</td>
+                {% if mailbox == "inbox" %}
+                    <td class="{% if is_selected %} border-2px{% endif %}" style="text-align: center;">
+                        {% if each_msg["read"] or is_selected %}&#10004;{% endif %}
+                    </td>
+                {% endif %}
+                    <td class="{% if is_selected %} border-2px{% endif %}" style="white-space: nowrap;{% if is_selected %}{% elif mailbox == "inbox" and not each_msg["read"] %}font-weight: bold;{% endif %}">
+                {% if mailbox == "inbox" %}
+                        {% if each_msg["fromAddress"] in address_labels %}{{address_labels[each_msg["fromAddress"]]}} &lt;{{each_msg["fromAddress"]}}&gt;{% else %}{{each_msg["fromAddress"]}}{% endif %}
+                {% elif mailbox == "sent" %}
+                        {% if each_msg["toAddress"] in address_labels %}{{address_labels[each_msg["toAddress"]]}} &lt;{{each_msg["toAddress"]}}&gt;{% else %}{{each_msg["toAddress"]}}{% endif %}
+                {% endif %}
+                    </td>
+                    <td class="{% if is_selected %} border-2px{% endif %}" style="{% if is_selected %}{% elif mailbox == "inbox" and not each_msg["read"] %}font-weight: bold;{% endif %}">
+                        {{base64_decode(each_msg["subject"])}}
+                    </td>
+                    <td class="{% if is_selected %} border-2px{% endif %}" style="white-space: nowrap;{% if is_selected %}{% elif mailbox == "inbox" and not each_msg["read"] %}font-weight: bold;{% endif %}">
+                {% if msg_selected and each_msg["msgid"] == msg_selected["msgid"] %}
+                        {{timestamp_format(each_msg[time_point])}}
+                {% else %}
+                        <a class="link" href="/mailbox/{{ident_address}}/{{mailbox}}/{{page}}/{{each_msg['msgid']}}">{{timestamp_format(each_msg[time_point])}}</a>
+                {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+
+        </form>
+
+            {% if msg_selected %}
+        <table class="themed" id="border-1px" style="width: 100%;">
+            <tr>
+                <td colspan="5">
+                    <table id="border-none" style="padding-bottom: 1em">
+                        <tr>
+                            <td colspan="2">
+                                <form method="post" enctype="multipart/form-data">
+                                    <input name="message_id" value="{{msg_selected['msgid']}}" type="hidden">
+                                    {% if mailbox == "inbox" %}
+                                    <input type="submit" name="reply" value="Reply"/>
+                                    {% endif %}
+                                    <input type="submit" name="forward" value="Forward"/>
+                                    <input type="submit" name="delete" value="Delete" onclick="return confirm('Are you sure you want to delete this message?')"/>
+                                </form>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="text-decoration: underline;">From</td>
+                            <td>
+                            {% if msg_selected["fromAddress"] in address_labels %}
+                                {{address_labels[msg_selected["fromAddress"]]}} &lt;{{msg_selected["fromAddress"]}}&gt;
+                            {% else %}
+                                {{msg_selected["fromAddress"]}}
+                            {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="text-decoration: underline;">To</td>
+                            <td>
+                            {% if msg_selected["toAddress"] in address_labels %}
+                                {{address_labels[msg_selected["toAddress"]]}} &lt;{{msg_selected["toAddress"]}}&gt;
+                            {% else %}
+                                {{msg_selected["toAddress"]}}
+                            {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="text-decoration: underline;">{{time_str}}</td>
+                            <td>
+                                {{timestamp_format(msg_selected[time_point])}}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="text-decoration: underline;">Subject</td>
+                            <td>{{base64_decode(msg_selected["subject"])}}</td>
+                        </tr>
+                    </table>
+                    <hr style="margin: 0px 15px 5px 15px"/>
+                    <div style="padding: 0.3em;">
+                        {{html.escape(base64_decode(msg_selected["message"])).replace("\n", "<br/>")|safe}}
+                    </div>
+                </td>
+            </tr>
+        </table>
+            {% endif %}
+        {% endif %}
+    {% endif %}
+
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/footer_links.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

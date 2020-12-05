@@ -25,41 +25,80 @@
                 <h1 class="title themed bold">BitChan Configuration</h1>
             </div>
 
-            <form method="post">
-                <div style="max-width: 1000px; text-align: center;">
-                    <div class="heading-1 head-center">Options</div>
+            <div style="max-width: 1000px; text-align: center;">
+                <div class="heading-1 head-center themed">Options</div>
 
-                    <div class="heading-2 head-center">Export</div>
-                    <p>Useful for backing up addresses and passphrases in order to add addresses or join boards/lists at a later time.</p>
+                <div class="heading-2 head-center themed">Export</div>
+                <p class="themed">Useful for backing up addresses and passphrases in order to add addresses or join boards/lists at a later time.</p>
 
-                    <div style="padding: 1em 0 3em 0">
+                <div style="padding: 1em 0 3em 0">
+                    <form method="post">
                         <input type="submit" name="export_chans" value="Export Boards/Lists"/>
                         <input type="submit" name="export_identities" value="Export Identities"/>
                         <input type="submit" name="export_address_book" value="Export Address Book"/>
-                    </div>
-
-                    <div class="heading-1 head-center">Settings</div>
-
-                    <div class="heading-2 head-center">Theme</div>
-
-                    <div>
-                        <select name="theme">
-                        {% for theme_name in themes %}
-                            <option value="{{theme_name}}"{% if settings.theme == theme_name %} selected{% endif %}>{{theme_name}}</option>
-                        {% endfor %}
-                        </select>
-                    </div>
-
-                    <div style="padding: 3em 0">
-                        <input type="submit" name="save" value="Save"/>
-                    </div>
+                    </form>
                 </div>
-            </form>
+
+                <div class="heading-2 head-center themed">Custom Flags</div>
+                <div class="head-center themed">Maximum size of {{"%.1f"|format(config.FLAG_MAX_SIZE / 1000)}} KB and dimensions of {{config.FLAG_MAX_WIDTH}}x{{config.FLAG_MAX_HEIGHT}} pixels</div>
+
+                <div style="padding: 1em 0 3em 0">
+                    <form method="post" enctype="multipart/form-data">
+                        <div>
+                            Name
+                            <input name="flag_name" type="text"/>
+                            <input name="flag_file" type="file"/>
+                        </div>
+                        <div style="padding: 1em">
+                            <input type="submit" name="flag_upload" value="Upload Flag"/>
+                        </div>
+                    </form>
+
+                {% if custom_flags %}
+                <div class="heading-2 head-center themed">Uploaded Flags</div>
+                <table style="margin-left: auto; margin-right: auto;">
+                    {% for each_flag in custom_flags %}
+                    <tr>
+                        <td>
+                            <form method="post">
+                                <input type="hidden" name="flag_id" value="{{each_flag.id}}"/>
+                                <input type="submit" name="flag_rename" value="Rename"/>
+                                <input type="submit" name="flag_delete" value="Delete" onclick="return confirm('Are you sure you want to delete this flag?')"/>
+                                <input type="text" name="flag_name" value="{{each_flag.name}}"/>
+                            </form>
+                        </td>
+                        <td>
+                            <img src="/custom_flag_by_flag_id/{{each_flag.id}}">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </table>
+                {% endif %}
+                </div>
+
+                <div class="heading-1 head-center themed">Settings</div>
+
+                <div class="heading-2 head-center themed">Theme</div>
+
+                <form method="post">
+                <div>
+                    <select name="theme">
+                    {% for theme_name in themes %}
+                        <option value="{{theme_name}}"{% if settings.theme == theme_name %} selected{% endif %}>{{theme_name}}</option>
+                    {% endfor %}
+                    </select>
+                </div>
+
+                <div style="padding: 3em 0">
+                    <input type="submit" name="save" value="Save"/>
+                </div>
+                </form>
+            </div>
         </div>
     </div>
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/join_config.html' %}
+    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

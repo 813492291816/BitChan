@@ -71,7 +71,9 @@ Board
             var height = $(window).scrollTop();
             if (height > 100) {
                 $('#back2Top').fadeIn();
+                $('#back2Bottom').fadeOut();
             } else {
+                $('#back2Bottom').fadeIn();
                 $('#back2Top').fadeOut();
             }
         });
@@ -79,7 +81,13 @@ Board
         $(document).ready(function() {
             $("#back2Top").click(function(event) {
                 event.preventDefault();
-                $("html, body").animate({ scrollTop: 0 }, "slow");
+                $("html, body").animate({scrollTop: 0}, "slow");
+                return false;
+            });
+
+            $("#back2Bottom").click(function(event) {
+                event.preventDefault();
+                $("html, body").animate({scrollTop: $(document).height()}, "slow");
                 return false;
             });
 
@@ -103,11 +111,12 @@ Board
 {% block body %}
     <a id="back2Top" title="Back to top" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
     <br/>
 
     <center>
-        <span style="font-size: 1.5em">
+        <span class="themed" style="font-size: 1.5em">
     {% if is_private %}
             Private
     {% else %}
@@ -126,23 +135,31 @@ Board
         </center>
     </div>
 
-    {% if status_msg["status_message"] %}
-        {% include '/elements/status.html' %}
-    {% endif %}
-
     {% set thread = board["current_thread"] %}
 
     {% set message_op_steg = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
-           .filter(board["messages"].message_md5_hash == thread.op_md5_hash)
-           .filter(board["messages"].message_steg != None)
+           .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
+           .filter(board["messages"].message_steg.isnot(None))
            .first() %}
 
     {% set message_replies_steg = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
-           .filter(board["messages"].message_md5_hash != thread.op_md5_hash)
+           .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
            .filter(board["messages"].message_steg.isnot(None))
            .order_by(board["messages"].timestamp_sent.asc()) %}
+
+    {% if message_op_steg or message_replies_steg.count() %}
+    <div style="padding-top: 1em">
+        <center>
+            <h1 class="themed bold">Steganography Found</h1> <a class="link" href="/thread_steg/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">View Steg</a>
+        </center>
+    </div>
+    {% endif %}
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
 
     <hr/>
     <center>
@@ -152,19 +169,16 @@ Board
     {% else %}
         Insufficient permissions to post
     {% endif %}
-    {% if message_op_steg or message_replies_steg.count() %}
-        <p><a href="/thread_steg/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">Steg</a></p>
-    {% endif %}
     </center>
     <hr/>
 
     {% set message_op = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
-           .filter(board["messages"].message_md5_hash == thread.op_md5_hash).first() %}
+           .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash).first() %}
 
     {% set message_replies = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
-           .filter(board["messages"].message_md5_hash != thread.op_md5_hash)
+           .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
            .order_by(board["messages"].timestamp_sent.asc()) %}
 
     <div class="thread">
@@ -186,6 +200,6 @@ Board
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/join_config.html' %}
+    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

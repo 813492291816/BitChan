@@ -6,6 +6,33 @@
     -webkit-font-smoothing: antialiased !important;
 }
 
+.replace-funcs {
+    width: auto;
+    z-index: auto;
+    font-family: "Lucida Console", Monaco, monospace;
+    background: radial-gradient(circle farthest-corner, {{theme.color_replace_start}}, {{theme.color_replace_end}});
+	  background-clip: text;
+    text-fill-color: transparent;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+	  background-size: 200% auto;
+}
+
+.mail_highlight {
+    background: {{theme.mailbox_msghighlight}}
+}
+
+.card {
+    box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
+    padding: 16px;
+    text-align: center;
+    background-color: {{theme.card_bg}};
+}
+
+.card_bg {
+    background: {{theme.card_bg_inner}}
+}
+
 .button {
     -webkit-appearance: button;
     -moz-appearance: button;
@@ -21,7 +48,16 @@
 }
 
 .link:hover {
-    color: {{theme.linkhilight}};
+    color: {{theme.linkhighlight}};
+}
+
+.link_back {
+    color: {{theme.link_back}};
+    text-decoration: none;
+}
+
+.link_back:hover {
+    color: {{theme.link_backhighlight}};
 }
 
 .underlined {
@@ -120,7 +156,7 @@ tr.menu-entry:hover {
 }
 
 a:hover {
-    color: {{theme.linkhilight}};
+    color: {{theme.linkhighlight}};
     text-decoration: underline;
 }
 
@@ -248,7 +284,7 @@ div.thread {
 }
 
 span.subject {
-    color: {{theme.linkhilight}};
+    color: {{theme.linkhighlight}};
     width: 50px;
     white-space: nowrap;
     overflow: hidden;
@@ -295,7 +331,7 @@ div.post {
 }
 
 div.post:target {
-    background-color: {{theme.posthilight}};
+    background-color: {{theme.posthighlight}};
 }
 
 a.reference {

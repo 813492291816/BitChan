@@ -73,7 +73,9 @@ Board
             var height = $(window).scrollTop();
             if (height > 100) {
                 $('#back2Top').fadeIn();
+                $('#back2Bottom').fadeOut();
             } else {
+                $('#back2Bottom').fadeIn();
                 $('#back2Top').fadeOut();
             }
         });
@@ -81,7 +83,13 @@ Board
         $(document).ready(function() {
             $("#back2Top").click(function(event) {
                 event.preventDefault();
-                $("html, body").animate({ scrollTop: 0 }, "slow");
+                $("html, body").animate({scrollTop: 0}, "slow");
+                return false;
+            });
+
+            $("#back2Bottom").click(function(event) {
+                event.preventDefault();
+                $("html, body").animate({scrollTop: $(document).height()}, "slow");
                 return false;
             });
 
@@ -105,11 +113,12 @@ Board
 {% block body %}
     <a id="back2Top" title="Back to top" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
     <br/>
 
     <center>
-        <span style="font-size: 1.5em">
+        <span class="themed" style="font-size: 1.5em">
     {% if is_private %}
             Private
     {% else %}
@@ -140,6 +149,12 @@ Board
             </center>
         </div>
 
+        <div style="padding-top: 1em">
+            <center>
+                <h1 class="themed bold">Steganography Thread</h1> <a class="link" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">View Non-Steg</a>
+            </center>
+        </div>
+
         <hr/>
         <center>
     {% if not is_private or (is_private and on_any_access_list) %}
@@ -148,25 +163,24 @@ Board
     {% else %}
         Insufficient permissions to post
     {% endif %}
-            <p><a href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">Non-Steg</a></p>
         </center>
         <hr/>
         {% set thread = board["current_thread"] %}
 
         {% set message_op = board["messages"].query
                .filter(board["messages"].thread_id == thread.id)
-               .filter(board["messages"].message_md5_hash == thread.op_md5_hash)
+               .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
                .first() %}
 
         {% set message_op_steg = board["messages"].query
                .filter(board["messages"].thread_id == thread.id)
-               .filter(board["messages"].message_md5_hash == thread.op_md5_hash)
+               .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
                .filter(board["messages"].message_steg != None)
                .first() %}
 
         {% set message_replies_steg = board["messages"].query
                .filter(board["messages"].thread_id == thread.id)
-               .filter(board["messages"].message_md5_hash != thread.op_md5_hash)
+               .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
                .filter(board["messages"].message_steg.isnot(None))
                .order_by(board["messages"].timestamp_sent.asc()) %}
 
@@ -205,7 +219,6 @@ Board
     <hr/>
         <center>
             {% include '/elements/board/post_form_steg.html' %}
-            <p>Steg</p>
         </center>
     <hr/>
 
@@ -217,4 +230,5 @@ Board
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
+    {% include '/elements/footer_links.html' %}
 {% endblock %}

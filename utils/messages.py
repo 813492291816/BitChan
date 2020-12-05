@@ -19,6 +19,9 @@ def post_message(form_post, form_steg):
     return_str = None
     status_msg = {"status_message": []}
 
+    if not form_post.from_address.data:
+        status_msg['status_message'].append("A From address is required.")
+
     if form_post.is_op.data == "yes":
         if len(form_post.subject.data.strip()) == 0:
             status_msg['status_message'].append("A subject is required.")
@@ -46,8 +49,6 @@ def post_message(form_post, form_steg):
                     status_msg['status_message'].append("Steg comments require an image attachment.")
             except:
                 status_msg['status_message'].append("Error determining file extension. Is there one?")
-        if not form_steg.steg_passphrase.data:
-            status_msg['status_message'].append("Steg comments require a steg passphrase.")
 
     form_populate = {}
     if "status_message" not in status_msg or not status_msg["status_message"]:
@@ -69,8 +70,7 @@ def post_message(form_post, form_steg):
             "upload": form_post.upload.data,
             "strip_exif": form_post.strip_exif.data,
             "image_spoiler": form_post.image_spoiler.data,
-            "steg_comment": form_steg.steg_message.data,
-            "steg_passphrase": form_steg.steg_passphrase.data
+            "steg_comment": form_steg.steg_message.data
         }
 
     return status_msg, return_str, form_populate

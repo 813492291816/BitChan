@@ -1,4 +1,4 @@
-{% set isoppost = True %}
+{% set is_op_post = True %}
 
     <input type="hidden" id="type_{{post.message_id}}" name="type" value="op"/>
 
@@ -11,8 +11,9 @@
 {% if not post.file_currently_downloading and
       not post.file_do_not_download and
       (post.file_decoded or (post.file_url and post.file_download_successful)) and
-      (post.file_extension in config.FILE_EXTENSIONS_IMAGE or
-       post.file_extension in config.FILE_EXTENSIONS_VIDEO) %}
+      (post.file_extension in config.FILE_EXTENSIONS_IMAGE +
+                              config.FILE_EXTENSIONS_VIDEO +
+                              config.FILE_EXTENSIONS_AUDIO) %}
 
     {% if post.file_extension in config.FILE_EXTENSIONS_IMAGE %}
     <input type="hidden" id="src_thumb_{{post.message_id}}" name="src_thumb" value="{% if post.image_spoiler %}/static/spoiler.png{% else %}/files/thumb/{{post.message_id}}/{{post.file_filename}}{% endif %}"/>
@@ -57,8 +58,8 @@
             <input name="message_id" value="{{post.message_id}}" type="hidden">
             <input type="submit" name="start_download" value="Allow Download"/>
         </form><br/>
-{% elif post.file_md5_hash and not post.file_md5_hashes_match %}
-        File discarded (MD5 hashes don't match, likely an issue downloading)<br/>
+{% elif post.file_sha256_hash and not post.file_sha256_hashes_match %}
+        File discarded (SHA256 hashes don't match, likely an issue downloading)<br/>
         <form method="post" enctype="multipart/form-data" autocomplete="off">
             <input name="message_id" value="{{post.message_id}}" type="hidden">
             <input type="submit" name="start_download" value="Download Again"/>

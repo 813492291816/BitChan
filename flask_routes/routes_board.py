@@ -18,6 +18,7 @@ import config
 from bitchan_flask import nexus
 from database.models import Chan
 from database.models import Command
+from database.models import Flags
 from database.models import Messages
 from database.models import Threads
 from forms import forms_board
@@ -44,6 +45,7 @@ def global_var():
 def board(current_chan, current_page):
     form_post = forms_board.Post()
     form_steg = forms_board.Steg()
+    form_set = forms_board.SetChan()
 
     chan = Chan.query.filter(Chan.address == current_chan).first()
     if not chan:
@@ -65,11 +67,10 @@ def board(current_chan, current_page):
 
     def get_threads_from_page(address, page):
         thread_start = int((int(page) - 1) * config.THREADS_PER_PAGE)
-        thread_end = int(int(page) * config.THREADS_PER_PAGE)
-        chan = Chan.query.filter(
-            Chan.address == address).first()
+        thread_end = int(int(page) * config.THREADS_PER_PAGE) - 1
+        chan_ = Chan.query.filter(Chan.address == address).first()
         threads_all = Threads.query.filter(
-            Threads.chan_id == chan.id).order_by(Threads.timestamp_sent.desc()).all()
+            Threads.chan_id == chan_.id).order_by(Threads.timestamp_sent.desc()).all()
         threads = []
         for i, thread in enumerate(threads_all):
             if thread_start <= i <= thread_end:
@@ -83,17 +84,43 @@ def board(current_chan, current_page):
             session.pop('status_msg')
 
     elif request.method == 'POST':
-        if form_post.start_download.data:
+        if form_set.set_pgp_passphrase_msg.data:
+            if not form_set.pgp_passphrase_msg.data:
+                status_msg['status_message'].append("Message PGP passphrase required")
+            else:
+                chan.pgp_passphrase_msg = form_set.pgp_passphrase_msg.data
+                chan.save()
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append("Changed Message PGP Passphrase.")
+
+        elif form_set.set_pgp_passphrase_steg.data:
+            if not form_set.pgp_passphrase_steg.data:
+                status_msg['status_message'].append("Steg PGP passphrase required")
+            else:
+                chan.pgp_passphrase_steg = form_set.pgp_passphrase_steg.data
+                chan.save()
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append("Changed Steg PGP Passphrase.")
+
+        elif form_post.start_download.data:
             nexus.set_start_download(form_post.message_id.data)
             status_msg['status_title'] = "Success"
             status_msg['status_message'].append(
                 "File download initialized in the background. Give it time to download.")
 
         elif form_post.submit.data:
+            if form_post.default_from_address.data:
+                chan.default_from_address = form_post.from_address.data
+            else:
+                chan.default_from_address = None
+            chan.save()
             status_msg, result, form_populate = post_message(form_post, form_steg)
 
         session['form_populate'] = form_populate
         session['status_msg'] = status_msg
+
+        if 'status_title' not in status_msg and status_msg['status_message']:
+            status_msg['status_title'] = "Error"
 
         return redirect(url_for("routes_board.board",
                                 current_chan=current_chan,
@@ -103,6 +130,7 @@ def board(current_chan, current_page):
                            board=board,
                            form_populate=form_populate,
                            form_post=form_post,
+                           from_list=nexus.get_from_list(current_chan),
                            get_threads_from_page=get_threads_from_page,
                            status_msg=status_msg)
 
@@ -143,6 +171,11 @@ def thread(current_chan, thread_id):
                 "File download initialized in the background. Give it time to download.")
 
         elif form_post.submit.data:
+            if form_post.default_from_address.data:
+                thread.default_from_address = form_post.from_address.data
+            else:
+                thread.default_from_address = None
+            thread.save()
             status_msg, result, form_populate = post_message(form_post, form_steg)
 
         session['form_populate'] = form_populate
@@ -156,6 +189,7 @@ def thread(current_chan, thread_id):
                            board=board,
                            form_populate=form_populate,
                            form_post=form_post,
+                           from_list=nexus.get_from_list(current_chan),
                            status_msg=status_msg)
 
 
@@ -195,6 +229,11 @@ def thread_steg(current_chan, thread_id):
                 "File download initialized in the background. Give it time to download.")
 
         elif form_post.submit.data:
+            if form_post.default_from_address.data:
+                thread.default_from_address = form_post.from_address.data
+            else:
+                thread.default_from_address = None
+            thread.save()
             status_msg, result, form_populate = post_message(form_post, form_steg)
 
         session['form_populate'] = form_populate
@@ -209,6 +248,7 @@ def thread_steg(current_chan, thread_id):
                            form_populate=form_populate,
                            form_post=form_post,
                            form_steg=form_steg,
+                           from_list=nexus.get_from_list(current_chan),
                            status_msg=status_msg)
 
 
@@ -218,6 +258,30 @@ def icon_image(address):
     if not os.path.exists(path_icon):
         generate_icon(address)
     return send_file(path_icon, mimetype='image/png', cache_timeout=1440)
+
+
+@blueprint.route('/custom_flag_by_flag_id/<flag_id>')
+def custom_flag_by_flag_id(flag_id):
+    """Returns a flag image based on the flag ID"""
+    flag = Flags.query.filter(Flags.id == int(flag_id)).first()
+
+    if flag:
+        return send_file(
+            BytesIO(base64.b64decode(flag.flag_base64)),
+            mimetype='image/{}'.format(flag.flag_extension),
+            cache_timeout=1440)
+
+
+@blueprint.route('/custom_flag_by_post_id/<post_id>')
+def custom_flag_by_post_id(post_id):
+    """Returns a flag image based on the post ID"""
+    message = Messages.query.filter(Messages.message_id == post_id).first()
+
+    if message:
+        return send_file(
+            BytesIO(base64.b64decode(message.nation_base64)),
+            mimetype='image/jpg',
+            cache_timeout=1440)
 
 
 @blueprint.route('/banner/<chan_address>')
@@ -261,7 +325,7 @@ def get_image(message_id, file_filename, mime_type="image/jpg"):
             logger.error("File doesn't exist on disk")
             message = Messages.query.filter(Messages.message_id == message_id).first()
             message.file_download_successful = False
-            message.file_md5_hashes_match = False
+            message.file_sha256_hashes_match = False
             message.save()
             return ""
     else:

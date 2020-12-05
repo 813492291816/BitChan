@@ -27,6 +27,7 @@ from flask_routes import routes_admin
 from flask_routes import routes_board
 from flask_routes import routes_identities
 from flask_routes import routes_list
+from flask_routes import routes_mail
 from flask_routes import routes_main
 from flask_routes import routes_management
 
@@ -35,6 +36,7 @@ app.register_blueprint(routes_admin.blueprint)
 app.register_blueprint(routes_board.blueprint)
 app.register_blueprint(routes_identities.blueprint)
 app.register_blueprint(routes_list.blueprint)
+app.register_blueprint(routes_mail.blueprint)
 app.register_blueprint(routes_main.blueprint)
 app.register_blueprint(routes_management.blueprint)
 

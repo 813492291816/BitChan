@@ -20,14 +20,6 @@
           clear: both;
         }
 
-        /* Style the counter cards */
-        .card {
-          box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
-          padding: 16px;
-          text-align: center;
-          background-color: #f1f1f1;
-        }
-
         /* Responsive columns - one column layout (vertical) on small screens */
         @media screen and (max-width: 600px) {
           .column {
@@ -54,6 +46,8 @@
 {% endblock %}
 
 {% block body %}
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
     <br/>
 
@@ -61,13 +55,13 @@
         {% include '/elements/status.html' %}
     {% endif %}
 
-    <div class="intro bold">
+    <div class="intro bold themed">
         <p>
             <center><h1 class="title themed bold">Welcome to BitChan</h1></center>
             <br/>
-            <center>BitChan is a decentralized anonymous image board built on top of <a target="_blank" href="https://bitmessage.org">BitMessage</a> with <a target="_blank" href="https://www.torproject.org">Tor</a> and <a target="_blank" href="https://gnupg.org">GnuGP</a>.</center>
+            <center>BitChan is a decentralized anonymous image board built on top of <a class="link" target="_blank" href="https://bitmessage.org">Bitmessage</a> with <a class="link" target="_blank" href="https://www.torproject.org">Tor</a> and <a class="link" target="_blank" href="https://gnupg.org">GnuGP</a>.</center>
             <br/>
-        This is a beta release of BitChan. Some features are only partially implemented and there are likely to be bugs. Please report any issues or bugs you find with a <a href="/bug_report">Bug Report</a>. Also watch the official <a href="http://172.28.1.1/board/BM-2cVZdtgUe7uq7LbWx12W2btJybAphF3VxG/1">BitChan-Dev Board</a> for announcements, the <a href="http://172.28.1.1/list/BM-2cUYu7r41Bbnox4P8gEVtdnZGLnisgG7Yu">BitChan List</a> for other boards and lists that may appear for discussion and other purposes, and the <a href="https://www.github.com/813492291816/BitChan">BitChan GitHub page</a> for updates to the code.
+            This is a beta release of BitChan. Some features are only partially implemented and there are likely to be bugs. Please report any issues or bugs you find with a <a class="link" href="/bug_report">Bug Report</a>. Also watch the official <a class="link" href="/board/BM-2cVZdtgUe7uq7LbWx12W2btJybAphF3VxG/1">BitChan-Dev Board</a> for announcements, the <a class="link" href="/list/BM-2cUYu7r41Bbnox4P8gEVtdnZGLnisgG7Yu">BitChan List</a> for other boards and lists that may appear for discussion and other purposes, and the <a class="link" href="https://www.github.com/813492291816/BitChan">BitChan GitHub page</a> for updates to the code.
         </p>
     </div>
 
@@ -76,7 +70,7 @@
         {% for each_board in newest_posts %}
             {% if loop.index < 6 %}
         <div style="padding: {% if not loop.first %}1.5em{% else %}0{% endif %} 0 0.5em 0.5em">
-            <a style="font-size: 1.2em;" href="/board/{{each_board.address}}/1">/{{chans_board_info[each_board.address]["label"]|safe}}/ - {{chans_board_info[each_board.address]["description"]|safe}}</a>
+            <a class="link" style="font-size: 1.2em;" href="/board/{{each_board.address}}/1">/{{chans_board_info[each_board.address]["label"]|safe}}/ - {{chans_board_info[each_board.address]["description"]|safe}}</a>
         </div>
         <div class="row">
                 {% for each_thread in newest_posts[each_board]["threads"] %}
@@ -92,12 +86,12 @@
                 background-size: 100%; background-repeat: no-repeat; background-image: linear-gradient(rgba(255,255,255,0.2), rgba(255,255,255,0.2)), url({% if op_post.image_spoiler %}/static/spoiler.png{% else %}/files/thumb/{{op_post.message_id}}/{{op_post.file_filename|urlencode}}{% endif %});
                 {%- endif -%}
                 ">
-                    <div style="font-weight: bold; background: rgba(240, 240, 240, 0.7); overflow-wrap: break-word;">
-                        <a style="font-size: 1.4em;" href="/thread/{{each_board.address}}/{{each_thread.thread_hash}}">{{each_thread.subject|safe}}</a><br>
+                    <div class="card_bg themed" style="font-weight: bold; overflow-wrap: break-word;">
+                        <a class="link" style="font-size: 1.4em;" href="/thread/{{each_board.address}}/{{each_thread.thread_hash}}">{{each_thread.subject|safe}}</a><br>
                     {% for each_message in newest_posts[each_board]["threads"][each_thread] %}
                         {% set msg_str = clean_html(each_message.message) %}
                         {% if not loop.first %}
-                            (R):
+                        (<a class="link" href="/thread/{{each_board.address}}/{{each_thread.thread_hash}}#{{post_id(each_message.message_id)}}">R</a>):
                         {% endif %}
                         {% if msg_str|length > 30 %}
                             {{msg_str[:30]|safe}}...
@@ -128,6 +122,6 @@
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/join_config.html' %}
+    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

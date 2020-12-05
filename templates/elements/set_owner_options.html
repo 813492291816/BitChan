@@ -1,7 +1,7 @@
-<div>
+<div class="themed">
     <div>
         Modify Access
-        <br/>Format: "BM-Address-1,BM-Address-2,..."
+        <br/>Format (without quotes): "BM-Address-1,BM-Address-2,..."
     </div>
     <div style="padding-top: 0.5em">Admin Addresses</div>
     <div>
@@ -25,7 +25,7 @@
 
     <div style="padding-top: 1em">
         Word Replacements
-        <br/>Format: "word1,word1_replacement;word2,word2_replacement;..."</div>
+        <br/>Format (without quotes): "word1,word1_replacement;word2,word2_replacement;..."</div>
     <div>
         <textarea rows="6" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="word_replace" name="word_replace">
     {%- if board['current_chan'].address in command_options and

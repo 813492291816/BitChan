@@ -84,7 +84,9 @@ Board
             var height = $(window).scrollTop();
             if (height > 100) {
                 $('#back2Top').fadeIn();
+                $('#back2Bottom').fadeOut();
             } else {
+                $('#back2Bottom').fadeIn();
                 $('#back2Top').fadeOut();
             }
         });
@@ -92,7 +94,13 @@ Board
         $(document).ready(function() {
             $("#back2Top").click(function(event) {
                 event.preventDefault();
-                $("html, body").animate({ scrollTop: 0 }, "slow");
+                $("html, body").animate({scrollTop: 0}, "slow");
+                return false;
+            });
+
+            $("#back2Bottom").click(function(event) {
+                event.preventDefault();
+                $("html, body").animate({scrollTop: $(document).height()}, "slow");
                 return false;
             });
 
@@ -125,12 +133,14 @@ Board
 
 {% block body %}
     <a id="back2Top" title="Back to top" href="#">&GreaterGreater;</a>
+    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
     <br/>
 
     <center>
-        <span style="font-size: 1.5em">
+        <span class="themed" style="font-size: 1.5em">
     {% if is_private %}
             Private
     {% else %}
@@ -145,7 +155,7 @@ Board
 
     {% if rules and "automatic_wipe" in rules %}
     <center>
-        <div style="padding-top: 0.5em">
+        <div class="themed" style="padding-top: 0.5em">
             Content Wipe in <span id="clear_content_countdown">-</span>
         </div>
     </center>
@@ -160,36 +170,54 @@ Board
 
         <div style="max-width: 500px; padding-bottom: 1em">
             <div id="accordion-info-options" style="display: none">
-                <h3>Board Information</h3>
+                <h3 class="themed">Board Information</h3>
                 <div style="padding: 1em">
                     <div style="padding-bottom: 0.5em">
                         <img src="/icon/{{board['current_chan'].address}}" style="width: 40px; height: 40px">
                     </div>
 
-                    Address:
+                    <span class="themed">Address:</span>
                     <div style="padding-bottom: 0.5em">
-                        <span style="font-family: monospace">{{board['current_chan'].address}}</span> <button class="btn" onclick="CopyToClipboard('{{board['current_chan'].address}}')">&#128203;</button>
+                        <span class="themed" style="font-family: monospace">{{board['current_chan'].address}}</span> <button class="btn" title="Copy to Clipboard" onclick="CopyToClipboard('{{board['current_chan'].address}}')">&#128203;</button>
                     </div>
 
-                    Passphrase:
+                    <span class="themed">BitChan Board Passphrase:</span>
                     <div style="padding-bottom: 0.5em">
-                        <input type="text" id="passphrase" value="{{board['current_chan'].passphrase}}"> <button class="btn" onclick="CopyPassphrase()">&#128203;</button>
+                        <input type="text" id="passphrase" value="{{board['current_chan'].passphrase}}"> <button class="btn" title="Copy to Clipboard" onclick="CopyElemID('passphrase')">&#128203;</button>
+                    </div>
+
+                    <span class="themed">Message PGP Passphrase:</span>
+                    <div style="padding-bottom: 0.5em">
+                        <form method="post" style="display: inline-block;" enctype="multipart/form-data">
+                            <input type="text" id="pgp_passphrase_msg" name="pgp_passphrase_msg" value="{{board['current_chan'].pgp_passphrase_msg}}">
+                            <input type="submit" name="set_pgp_passphrase_msg" value="Set"/>
+                        </form>
+                        <button class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_msg')">&#128203;</button>
+                    </div>
+
+                    <span class="themed">Steg PGP Passphrase:</span>
+                    <div style="padding-bottom: 0.5em">
+                        <form method="post" style="display: inline-block;" enctype="multipart/form-data">
+                            <input type="text" id="pgp_passphrase_steg" name="pgp_passphrase_steg" value="{{board['current_chan'].pgp_passphrase_steg}}">
+                            <input type="submit" name="set_pgp_passphrase_steg" value="Set"/>
+                        </form>
+                        <button class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_steg')">&#128203;</button>
                     </div>
 
                     {% if rules %}
-                    Rules:
+                    <span class="themed">Rules:</span>
                     {% include '/elements/rules.html' %}
                     {% endif %}
 
                     {% if primary_addresses or secondary_addresses or tertiary_addresses or restricted_addresses %}
-                    <div style="padding-bottom: 0.5em">
+                    <div class="themed" style="padding-bottom: 0.5em">
                         {% include '/elements/accordion_access.html' %}
                     </div>
                     {% endif %}
 
-                    Options:
+                    <span class="themed">Options:</span>
                     <div>
-                        <a href="/leave/{{board['current_chan'].address}}" onclick="return confirm('Are you sure you want to leave this board?')">Leave Board</a>
+                        <a class="link" href="/leave/{{board['current_chan'].address}}" onclick="return confirm('Are you sure you want to leave this board?')">Leave Board</a>
                     </div>
                 </div>
             </div>
@@ -198,8 +226,8 @@ Board
         {% if primary_access %}
         <div style="max-width: 500px; padding-bottom: 1em">
             <div id="accordion-owner-options" style="display: none">
-                <h3>Owner Options</h3>
-                <div style="padding: 1em">
+                <h3 class="themed">Owner Options</h3>
+                <div class="themed" style="padding: 1em">
                     <form method="post" action="/set_owner_options/{{board['current_chan'].address}}" enctype="multipart/form-data">
                     {% include '/elements/set_owner_options.html' %}
                     <div style="padding-top: 1em">
@@ -225,20 +253,24 @@ Board
     {% if not is_private or (is_private and on_any_access_list) %}
         {% include '/elements/board/post_form.html' %}
     {% else %}
-        Insufficient permissions to post
+        <span class="themed">Insufficient permissions to post</span>
     {% endif %}
     </center>
     <hr/>
 
     {% for thread in get_threads_from_page(board['current_chan'].address, board["current_page"]) %}
 
+        {% set steg_found = board["messages"].query
+           .filter(board["messages"].thread_id == thread.id)
+           .filter(board["messages"].message_steg.isnot(None)).count() %}
+
         {% set message_op = board["messages"].query
                .filter(board["messages"].thread_id == thread.id)
-               .filter(board["messages"].message_md5_hash == thread.op_md5_hash).first() %}
+               .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash).first() %}
 
         {% set message_replies = board["messages"].query
                .filter(board["messages"].thread_id == thread.id)
-               .filter(board["messages"].message_md5_hash != thread.op_md5_hash)
+               .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
                .order_by(board["messages"].timestamp_sent.asc()) %}
 
         <div class="thread">
@@ -276,6 +308,6 @@ Board
     {% include '/elements/footer.html' %}
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/join_config.html' %}
+    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

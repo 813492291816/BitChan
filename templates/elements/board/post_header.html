@@ -1,6 +1,9 @@
-{% set isboardview = board['current_thread'] == None %}
+{% set is_board_view = board['current_thread'] == None %}
 
-{% if isoppost %}
+{% if is_op_post %}
+	{% if is_board_view and steg_found %}
+(<a class="link" href="/thread_steg/{{board['current_chan'].address}}/{{post.thread.thread_hash}}">Steg</a>)
+	{% endif %}
 <span style="overflow-wrap: break-word;" class="subject bold"><b>{{thread.subject|safe}}</b></span>
 {% endif %}
 
@@ -18,9 +21,15 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 {%- endif -%}
 ">{{get_user_name(post.address_from, board['current_chan'].address)}}</span>
 
+{% set can_send_message = [] %}
 {% set can_add_address_book = [] %}
 {% set can_ban_from_board = [] %}
 {% set can_block = [] %}
+
+{% if post.address_from not in all_chans and
+	  post.address_from not in identities %}
+	{%- do can_send_message.append(1) %}
+{% endif %}
 
 {% if post.address_from not in all_chans and
 	  post.address_from not in identities and
@@ -45,6 +54,14 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 				{{post.address_from}} <button class="btn" onclick="CopyToClipboard('{{post.address_from}}')">&#128203;</button>
 			</td>
 		</tr>
+
+		{% if can_send_message %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/compose/{{post.address_from}}">Send Message</a>
+			</td>
+		</tr>
+		{% endif %}
 
 		{% if can_add_address_book %}
 		<tr class="menu-entry">
@@ -83,6 +100,8 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 		 {%- if nations and post.nation in nations -%}
 		 	title="{{nations[post.nation]}}"
 		 {% endif %}src="/static/nations/{{post.nation}}">
+{% elif post.nation_base64 and post.nation_name %}
+	<img style="position: relative; top: 3px; width: 25; height: 15" title="{{post.nation_name}}" src="/custom_flag_by_post_id/{{post.message_id}}">
 {% endif %}
 
 {% if post.timestamp_sent %}
@@ -93,20 +112,20 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 	{% endif %}
 {% endif %}
 
-{% if isboardview %}
+{% if is_board_view %}
 	<a class="link" href="/thread/{{post.thread.chan.address}}/{{post.thread.thread_hash}}#{{post_id(post.message_id)}}">{{post_id(post.message_id)}}</a>
 {% else %}
 	<a class="link" href="#reply" onclick="javascript:document.getElementById('body_reply').value += '>>{{post_id(post.message_id)}}\n';">{{post_id(post.message_id)}}</a>
 {% endif %}
 
-{% if isboardview and isoppost %}
+{% if is_board_view and is_op_post %}
 	[<a class="link" href="/thread/{{post.thread.chan.address}}/{{post.thread.thread_hash}}">Reply</a>]
 {% endif %}
 
 <div tabindex="0" class="menu">
 	<span class="link clickable">&#9654;</span>
 	<table class="menu-content">
-	{% if isoppost %}
+	{% if is_op_post %}
 		{% if primary_access %}
 		<tr class="menu-entry">
 			<td style="white-space: nowrap;">
@@ -152,7 +171,7 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 	</table>
 </div>
 
-{% if not isboardview %}
+{% if not is_board_view %}
 	{% for reply in board["nexus_thread"].get_post_replies(post_id(post.message_id)) %}
 		<a class="reference link" href="#{{reply}}">&gt;&gt;{{reply}}</a>
 	{% endfor %}
@@ -161,7 +180,8 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 <br/>
 {%- if post.file_size is not none -%}
 	{{"(%s" % (human_readable_size(post.file_size))}}
-	{%- if not post.media_width or not post.media_height -%}
+	{%- if not (post.media_width and post.media_height) and
+           not (post.file_enc_cipher and post.file_enc_key_bytes)  -%}
 		{{")"}}
 	{%- endif -%}
 {%- endif -%}
@@ -172,9 +192,31 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 	{%- else -%}
 		{{"("}}
 	{%- endif -%}
-    {{"%dx%d)" % (post.media_width, post.media_height)}}
+    {{"%dx%d" % (post.media_width, post.media_height)}}
 {%- endif -%}
 
+{%- if post.file_enc_cipher and post.file_enc_key_bytes -%}
+	{%- if post.file_size is not none or
+           (post.media_width and post.media_height) -%}
+		{{", "}}
+	{%- else -%}
+		{{"("}}
+	{%- endif -%}
+	{{post.file_enc_key_bytes * 8}}-bit {{post.file_enc_cipher}}
+{%- endif -%}
+
+{%- if post.file_size is not none or
+	   (post.media_width and post.media_height) or
+	   (post.file_enc_cipher and post.file_enc_key_bytes) -%}
+	{{")"}}
+{%- endif %}
+
 {% if post.file_filename %}
-	<a href="/files/file/{{post.message_id}}/{{post.file_filename}}">{{post.file_filename}}</a> (<a href="/dl/{{post.message_id}}/{{post.file_filename}}">dl</a>)
+	<a href="/files/file/{{post.message_id}}/{{post.file_filename}}">
+	{%- if post.file_filename|safe|length > 75 -%}
+	{{(post.file_filename|safe)[:40]}}...{{(post.file_filename|safe)[-35:]}}
+	{%- else -%}
+	{{post.file_filename|safe}}
+	{%- endif -%}
+	</a> (<a href="/dl/{{post.message_id}}/{{post.file_filename}}">dl</a>)
 {% endif %}

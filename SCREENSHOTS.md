@@ -3,19 +3,19 @@ Screenshots
 
 Home Page
 
-![List](screenshots/page_home.jpg)
+![Home Page](screenshots/page_home.jpg)
 
 ----
 
 Board Thread
 
-![List](screenshots/thread.jpg)
+![Board Thread](screenshots/thread.jpg)
 
 ----
 
 Board Information & Board Owner Options
 
-![List](screenshots/board_owner_info.jpg)
+![Board Info and Options](screenshots/board_owner_info.jpg)
 
 ----
 
@@ -27,6 +27,16 @@ List Page
 
 Identities Page
 
-![List](screenshots/page_identities.jpg)
+![Identities](screenshots/page_identities.jpg)
 
+----
 
+Mailbox
+
+![Mailbox](screenshots/mail_mailbox.jpg)
+
+----
+
+Mail Composition
+
+![Mail Composition](screenshots/mail_compose.jpg)

@@ -3,6 +3,17 @@
 {% block title %}Status{% endblock %}
 
 {% block head %}
+    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.min.css">
+    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.theme.min.css">
+    <script src="/static/js/jquery-ui-1.12.1.min.js"></script>
+    <script>
+        $(function() {
+            $("#accordion-tor-circuits").show().accordion({
+                collapsible: true,
+                active: false
+            });
+        });
+    </script>
     <style>
         .table th, td {
             text-align: left;
@@ -20,7 +31,7 @@
     {% endif %}
 
     <div class="container">
-        <div style="max-width: 800px;">
+        <div class="themed" style="max-width: 800px;">
             <div style="width: 100%; padding-bottom: 2em;">
                 <table class="table" style="margin-left: auto; margin-right: auto;">
                     <tr>
@@ -56,8 +67,48 @@
 
                 <table class="table" style="margin-left: auto; margin-right: auto;">
                     <tr>
+                        <td colspan=3 style="text-align: center">
+                            <h3>Post Upload Progress</h3>
+                        </td>
+                    </tr>
+    {% if upload_progress %}
+                    <tr>
+                        <td>Uploading</td>
+                        <td>Filename</td>
+                        <td>Progress</td>
+                    </tr>
+        {% for each_upload in upload_progress %}
+                    <tr>
+                        <td>
+                            {{each_upload.uploading}}
+                        </td>
+                        <td>
+                        {% if each_upload.filename|length > 50 %}
+                            {{each_upload.filename[:35]}}...{{each_upload.filename[-15:]}}
+                        {% else %}
+                            {{each_upload.filename}}
+                        {% endif %}
+                        </td>
+                        <td>
+                            {{human_readable_size(each_upload.progress_size_bytes)}} /
+                            {{human_readable_size(each_upload.total_size_bytes)}}
+                            ({{"%.1f"|format(each_upload.progress_percent)}} %)
+                        </td>
+                    </tr>
+        {% endfor %}
+    {% else %}
+                    <tr>
+                        <td colspan=3 style="text-align: center">
+                            No uploads to display
+                        </td>
+                    </tr>
+    {% endif %}
+                </table>
+
+                <table class="table" style="margin-left: auto; margin-right: auto;">
+                    <tr>
                         <td colspan=2 style="text-align: center; padding-top: 2em; padding-bottom: 1em">
-                            <h1 class="title themed bold">BitMessage Status</h1>
+                            <h1 class="title themed bold">Bitmessage Status</h1>
                         </td>
                     </tr>
     {% for each_key, each_value in bm_status.items() %}
@@ -83,7 +134,7 @@
                     </tr>
                     <tr>
                         <td colspan=2 style="text-align: center;">
-                            <a target="_blank" href="https://check.torproject.org/">Check Browser IP Address at check.torproject.org</a>
+                            <a class="link" target="_blank" href="https://check.torproject.org/">Check Browser IP Address at check.torproject.org</a>
                         </td>
                     </tr>
                     <tr>
@@ -96,24 +147,39 @@
                         <td>{{each_value}}</td>
                     </tr>
     {% endfor %}
-    {% for each_id in tor_circuit_dict %}
+    {% if tor_circuit_dict %}
                     <tr>
-                        <td>Circuit {{each_id}} ({{tor_circuit_dict[each_id]["purpose"]}})</td>
-                        <td>
-        {% for each_sub_circuit in tor_circuit_dict[each_id]["subcircuits"] %}
-                            {{each_sub_circuit["div"]}}- {{each_sub_circuit["fingerprint"]}} ({{each_sub_circuit["nickname"]}}, {{each_sub_circuit["address"]}})
-                            {%- if not loop.last %}<br/>{% endif %}
+                        <td colspan="2">
+                             <div id="accordion-tor-circuits" style="display: none">
+                                <h3>Tor Circuits</h3>
+                                <div>
+                                    <table class="table" style="margin-left: auto; margin-right: auto;">
+        {% for each_id in tor_circuit_dict %}
+                                        <tr>
+                                            <td>Circuit {{each_id}} ({{tor_circuit_dict[each_id]["purpose"]}})</td>
+                                            <td>
+            {% for each_sub_circuit in tor_circuit_dict[each_id]["subcircuits"] %}
+                                                {{each_sub_circuit["div"]}}- {{each_sub_circuit["fingerprint"]}} ({{each_sub_circuit["nickname"]}}, {{each_sub_circuit["address"]}})
+                                                {%- if not loop.last %}<br/>{% endif %}
+            {% endfor %}
+                                            </td>
+                                        </tr>
         {% endfor %}
+
+                                    </table>
+                                </div>
+                            </div>
                         </td>
                     </tr>
-    {% endfor %}
+    {% endif %}
                 </table>
+
             </div>
         </div>
     </div>
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/join_config.html' %}
+    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

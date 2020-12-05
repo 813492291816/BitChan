@@ -111,8 +111,8 @@ def delete_and_replace_comment(message_id, new_comment):
             message.file_filename = None
             message.file_extension = None
             message.file_currently_downloading = None
-            message.file_md5_hash = None
-            message.file_md5_hashes_match = None
+            message.file_sha256_hash = None
+            message.file_sha256_hashes_match = None
             message.file_do_not_download = None
             message.file_download_successful = None
             new_session.commit()

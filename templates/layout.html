@@ -16,8 +16,8 @@
                 document.execCommand("copy");
                 document.body.removeChild(tmpIn);
             }
-            function CopyPassphrase() {
-                 var textToCopy = document.getElementById("passphrase");
+            function CopyElemID(id) {
+                 var textToCopy = document.getElementById(id);
                  textToCopy.select();
                  document.execCommand("copy");
             }

@@ -7,6 +7,8 @@ import string
 import time
 
 from config import DICT_PERMISSIONS
+from config import LABEL_LENGTH
+from config import DESCRIPTION_LENGTH
 
 logger = logging.getLogger('bitchan.utils.general')
 
@@ -55,10 +57,12 @@ def get_thread_id(text_str):
     return thread_id
 
 
-def get_random_alphanumeric_string(length, with_punctuation=True, with_spaces=True):
-    letters_and_digits = string.ascii_letters + string.digits
+def get_random_alphanumeric_string(length, with_punctuation=True, with_digits=True, with_spaces=True,):
+    letters_and_digits = string.ascii_letters
     if with_punctuation:
         letters_and_digits += string.punctuation
+    if with_digits:
+        letters_and_digits += string.digits
     if with_spaces:
         letters_and_digits += " "
     return ''.join((random.choice(letters_and_digits) for i in range(length)))
@@ -125,9 +129,15 @@ def process_passphrase(passphrase):
             errors.append("Label is not string: {}".format(type(list_passphrase[2])))
         elif not list_passphrase[2]:
             errors.append("Label cannot be left blank")
+        elif len(list_passphrase[2]) > LABEL_LENGTH:
+            errors.append("Label is too long ({}), must be {} or less characters.".format(
+                len(list_passphrase[2]), LABEL_LENGTH))
 
         if not isinstance(list_passphrase[3], str):
             errors.append("Description is not string: {}".format(type(list_passphrase[3])))
+        elif len(list_passphrase[3]) > DESCRIPTION_LENGTH:
+            errors.append("Description is too long ({}), must be {} or less characters.".format(
+                len(list_passphrase[3]), DESCRIPTION_LENGTH))
 
         if not isinstance(list_passphrase[4], list):
             errors.append("Restrict addresses not a list: {}".format(type(list_passphrase[4])))
@@ -255,7 +265,7 @@ def is_bitmessage_address(address):
         if (address and
                 isinstance(address, str) and
                 address.startswith("BM-") and
-                31 < len(address) < 38):
+                34 < len(address) < 38):
             return True
     except:
         return

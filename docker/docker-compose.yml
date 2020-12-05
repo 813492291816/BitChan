@@ -14,7 +14,7 @@ services:
       - bitchan:/usr/local/bitchan
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     ports:
-      - "80:80"
+      - "8000:8000"
     depends_on:
       - bitchan
 

@@ -11,7 +11,9 @@ import sqlite3
 import subprocess
 import time
 import xmlrpc.client
+from collections import OrderedDict
 from io import BytesIO
+from operator import getitem
 from threading import Thread
 from urllib.parse import urlparse
 
@@ -20,7 +22,6 @@ import bleach
 import cv2
 import gnupg
 import ntplib
-import pyminizip
 from PIL import Image
 from sqlalchemy import and_
 from sqlalchemy import or_
@@ -33,15 +34,18 @@ from database.models import AddressBook
 from database.models import Chan
 from database.models import Command
 from database.models import DeletedMessages
+from database.models import Flags
 from database.models import GlobalSettings
 from database.models import Identity
 from database.models import Messages
 from database.models import Threads
+from database.models import UploadProgress
 from database.utils import db_return
 from database.utils import session_scope
 from utils.anonfile import AnonFile
 from utils.download import download_and_extract
 from utils.download import generate_hash
+from utils.encryption import crypto_multi_enc
 from utils.encryption import decrypt_safe_size
 from utils.files import LF
 from utils.files import data_file_multiple_extract
@@ -66,6 +70,7 @@ from utils.general import version_checker
 from utils.replacements import is_post_id_reply
 from utils.replacements import process_replacements
 from utils.replacements import replace_dict_keys_with_values
+from utils.replacements import replace_lt_gt
 from utils.shared import is_access_same_as_db
 from utils.steg import check_steg
 from utils.steg import steg_encrypt
@@ -100,8 +105,8 @@ class BitChan(Thread):
         self.utc_offset = None
         self.time_last = 0
         self.is_restarting_bitmessage = False
-        self.auto_clear_first_run = True
         self.list_stats = []
+        self.first_run = True
 
         # Timers
         self.timer_check_bm_alive = time.time()
@@ -109,6 +114,8 @@ class BitChan(Thread):
         self.timer_bm_update = time.time()
         self.timer_clear_inventory = time.time()
         self.timer_message_threads = time.time()
+        self.timer_clear_uploads = time.time()
+        self.timer_unread_mail = time.time()
         self.timer_non_bitchan_message_ids = time.time()
         self.timer_get_msg_expires_time = time.time() + (60 * 10)  # 10 minutes
         self.timer_remove_deleted_msgs = time.time() + (60 * 10)   # 10 minutes
@@ -178,7 +185,7 @@ class BitChan(Thread):
                 ]
                 if self.list_stats != list_stats:
                     msg = str(len(self._posts_by_id))
-                    msg += " message, " if len(self._posts_by_id) == 1 else " messages, "
+                    msg += " post, " if len(self._posts_by_id) == 1 else " posts, "
                     msg += str(len(self._chan_board_dict))
                     msg += " board, " if len(self._chan_board_dict) == 1 else " boards, "
                     msg += str(len(self._chan_list_dict))
@@ -200,6 +207,23 @@ class BitChan(Thread):
             while self.timer_message_threads < now:
                 self.timer_message_threads += 1
             self.check_message_threads()
+
+        #
+        # Clear upload progress table
+        #
+        if self.timer_clear_uploads < now:
+            while self.timer_clear_uploads < now:
+                self.timer_clear_uploads += 600
+            with session_scope(DB_PATH) as new_session:
+                if self.first_run:
+                    upl = new_session.query(UploadProgress).all()
+                else:
+                    upl = new_session.query(UploadProgress).filter(and_(
+                        UploadProgress.progress_percent == 100,
+                        UploadProgress.uploading == False
+                        )).all()
+                for each_upl in upl:
+                    new_session.delete(each_upl)
 
         #
         # Clear inventory 10 minutes after last board/list join
@@ -257,6 +281,14 @@ class BitChan(Thread):
             self.send_commands()
 
         #
+        # Get unread mail counts
+        #
+        if self.timer_unread_mail < now:
+            while self.timer_unread_mail < now:
+                self.timer_unread_mail += 60 * 20  # 20 minutes
+            self.check_unread_mail()
+
+        #
         # Rule: Automatically Wipe Board/List
         #
         with session_scope(DB_PATH) as new_session:
@@ -275,6 +307,8 @@ class BitChan(Thread):
                         logger.error("Error clearing board/list: {}".format(err))
                         continue
 
+        self.first_run = False
+
     def send_lists(self):
         for list_address in self.get_list_chans():
             from_address = None
@@ -292,6 +326,8 @@ class BitChan(Thread):
                 logger.info("{}: Checking list {} ({})".format(
                     run_id, list_chan.address, list_chan.label))
 
+                list_access = get_access(list_address)
+
                 errors, dict_chan_info = process_passphrase(list_chan.passphrase)
                 if not dict_chan_info or errors:
                     logger.error("{}: Error(s) sending list message to {}".format(
@@ -300,30 +336,28 @@ class BitChan(Thread):
                         logger.error(err)
                     break
 
-                from_primary_secondary = self.find_sender(
+                from_primary_secondary = self.find_senders(
                     list_address, ["primary_addresses", "secondary_addresses"])
-                from_tertiary = self.find_sender(
+                from_tertiary = self.find_senders(
                     list_address, ["tertiary_addresses"])
 
-                from_non_self = None
-                requires_identity = False
                 try:
                     rules = json.loads(list_chan.rules)
                 except:
                     rules = {}
+
+                from_non_self = []
+                requires_identity = False
                 if (dict_chan_info["access"] == "public" and
                         "require_identity_to_post" in rules and
                         rules["require_identity_to_post"]):
                     requires_identity = True
+                    for each_add in self.get_all_chans():
+                        if each_add != list_address and each_add not in list_access["restricted_addresses"]:
+                            from_non_self.append(each_add)
                     for each_add in self.get_identities():
-                        if each_add != list_address:
-                            from_non_self = each_add
-                            break
-                    if not from_non_self:
-                        for each_add in self.get_all_chans():
-                            if each_add != list_address:
-                                from_non_self = each_add
-                                break
+                        if each_add != list_address and each_add not in list_access["restricted_addresses"]:
+                            from_non_self.append(each_add)
 
                 if list_chan.list_send:
                     logger.info("{}: List instructed to send.".format(run_id))
@@ -333,27 +367,36 @@ class BitChan(Thread):
                         list_mod.list_send = False
                         new_session.commit()
 
+                        allowed_addresses = []
+
                         if from_primary_secondary:
-                            from_address = from_primary_secondary
-                        elif from_tertiary:
-                            from_address = from_tertiary
-                        elif (dict_chan_info["access"] == "public" and
+                            allowed_addresses.append(from_primary_secondary)
+                        if from_tertiary:
+                            allowed_addresses.append(from_tertiary)
+                        if (dict_chan_info["access"] == "public" and
                                 requires_identity and
                                 from_non_self):
-                            from_address = from_non_self
-                        elif dict_chan_info["access"] == "public":
-                            from_address = list_address
+                            allowed_addresses.append(from_non_self)
+                        if dict_chan_info["access"] == "public":
+                            allowed_addresses.append(list_address)
+
+                        if allowed_addresses and list_chan.default_from_address in allowed_addresses:
+                            from_address = list_chan.default_from_address
+                        elif allowed_addresses:
+                            from_address = allowed_addresses[0]
+                        else:
+                            from_address = None
 
                 elif from_primary_secondary and list_chan.list_message_expires_time_owner:
                     if self.expiring_from_expires_time(run_id, list_chan.list_message_expires_time_owner):
                         logger.info("{}: List expiring for owner with expires_time.".format(run_id))
-                        from_address = from_primary_secondary
+                        from_address = from_primary_secondary[0]
                     else:
                         continue
                 elif from_tertiary and list_chan.list_message_expires_time_user:
                     if self.expiring_from_expires_time(run_id, list_chan.list_message_expires_time_user):
                         logger.info("{}: List expiring for user with expires_time.".format(run_id))
-                        from_address = from_tertiary
+                        from_address = from_tertiary[0]
                     else:
                         continue
                 elif (dict_chan_info["access"] == "public" and
@@ -363,7 +406,7 @@ class BitChan(Thread):
                     if self.expiring_from_expires_time(run_id, list_chan.list_message_expires_time_user):
                         logger.info("{}: List expiring for user with expires_time and is public "
                                     "with rule requires_identity_to_post.".format(run_id))
-                        from_address = from_non_self
+                        from_address = from_non_self[0]
                     else:
                         continue
                 elif dict_chan_info["access"] == "public" and list_chan.list_message_expires_time_user:
@@ -372,17 +415,16 @@ class BitChan(Thread):
                         from_address = list_address
                     else:
                         continue
-
                 elif from_primary_secondary and list_chan.list_message_timestamp_utc_owner:
                     if self.expiring_from_timestamp(run_id, list_chan.list_message_timestamp_utc_owner):
                         logger.info("{}: List expiring for owner with timestamp.".format(run_id))
-                        from_address = from_primary_secondary
+                        from_address = from_primary_secondary[0]
                     else:
                         continue
                 elif from_tertiary and list_chan.list_message_timestamp_utc_user:
                     if self.expiring_from_timestamp(run_id, list_chan.list_message_timestamp_utc_user):
                         logger.info("{}: List expiring for user with timestamp.".format(run_id))
-                        from_address = from_tertiary
+                        from_address = from_tertiary[0]
                     else:
                         continue
                 elif (dict_chan_info["access"] == "public" and
@@ -392,7 +434,7 @@ class BitChan(Thread):
                     if self.expiring_from_timestamp(run_id, list_chan.list_message_timestamp_utc_user):
                         logger.info("{}: List expiring for user with timestamp and is public "
                                     "with rule requires_identity_to_post.".format(run_id))
-                        from_address = from_non_self
+                        from_address = from_non_self[0]
                     else:
                         continue
                 elif dict_chan_info["access"] == "public" and list_chan.list_message_timestamp_utc_user:
@@ -415,11 +457,16 @@ class BitChan(Thread):
                     "access": list_chan.access,
                     "list": json.loads(list_chan.list)
                 }
+
+                pgp_passphrase_msg = config.PASSPHRASE_MSG
+                if list_chan.pgp_passphrase_msg:
+                    pgp_passphrase_msg = list_chan.pgp_passphrase_msg
+
                 gpg = gnupg.GPG()
                 message_encrypted = gpg.encrypt(
                     json.dumps(send_msg_dict),
-                    symmetric=True,
-                    passphrase=config.PASSPHRASE_MSG,
+                    symmetric="AES256",
+                    passphrase=pgp_passphrase_msg,
                     recipients=None)
                 message_send = base64.b64encode(message_encrypted.data).decode()
 
@@ -551,14 +598,6 @@ class BitChan(Thread):
                         logger.info("{}: No options found for Admin command to send.".format(run_id))
                         continue
 
-                    def is_expiring(ts_utc):
-                        days = (self.get_utc() - ts_utc) / 60 / 60 / 24
-                        if days > 20:
-                            logger.info("{}: {:.1f} days old.".format(run_id, days))
-                            return True, days
-                        else:
-                            return False, days
-
                     for each_option in options:
                         dict_message = {
                             "version": config.VERSION_BITCHAN,
@@ -572,24 +611,38 @@ class BitChan(Thread):
                             "options": {}
                         }
 
+                        def is_expiring(ts_utc):
+                            days = (self.get_utc() - ts_utc) / 60 / 60 / 24
+                            if days > 20:
+                                return True, days
+                            else:
+                                return False, days
+
                         option_ts = "{}_timestamp_utc".format(each_option)
                         if each_option in config.ADMIN_OPTIONS and option_ts in options:
-                            if is_expiring(options[option_ts]):
-                                logger.info("{}: {} expiring".format(run_id, each_option))
+                            expiring, days = is_expiring(options[option_ts])
+                            if expiring:
+                                logger.info("{}: {} {:.1f} days old: expiring".format(
+                                    run_id, each_option, days))
                                 dict_message["options"][each_option] = options[each_option]
                             else:
-                                logger.info("{}: {} not expiring".format(run_id, each_option))
+                                logger.info("{}: {} {:.1f} days old: not expiring".format(
+                                    run_id, each_option, days))
 
                         if not dict_message["options"]:
                             logger.info("{}: No options nearing expiration".format(run_id))
                             continue
 
+                        pgp_passphrase_msg = config.PASSPHRASE_MSG
+                        if chan.pgp_passphrase_msg:
+                            pgp_passphrase_msg = chan.pgp_passphrase_msg
+
                         str_message = json.dumps(dict_message)
                         gpg = gnupg.GPG()
                         message_encrypted = gpg.encrypt(
                             str_message,
-                            symmetric=True,
-                            passphrase=config.PASSPHRASE_MSG,
+                            symmetric="AES256",
+                            passphrase=pgp_passphrase_msg,
                             recipients=None)
                         message_send = base64.b64encode(message_encrypted.data).decode()
 
@@ -612,6 +665,35 @@ class BitChan(Thread):
                                 lf.lock_release(config.LOCKFILE_API)
         except:
             logger.exception("send_commands()")
+
+    def get_unread_mail_count(self, address):
+        lf = LF()
+        if lf.lock_acquire(config.LOCKFILE_API, to=60):
+            try:
+                messages = self._api.getInboxMessagesByReceiver(address)
+                if "inboxMessages" in messages:
+                    unread_count = 0
+                    for each_msg in messages["inboxMessages"]:
+                        if not each_msg["read"]:
+                            unread_count += 1
+                    return unread_count
+            except Exception as err:
+                logger.error("Error: {}".format(err))
+            finally:
+                lf.lock_release(config.LOCKFILE_API)
+
+    def set_unread_mail_count(self, address):
+        with session_scope(DB_PATH) as new_session:
+            ident = new_session.query(Identity).filter(
+                Identity.address == address).first()
+            ident.unread_messages = self.get_unread_mail_count(address)
+            new_session.commit()
+
+    def check_unread_mail(self):
+        """Save number of unread messages for each Identity"""
+        with session_scope(DB_PATH) as new_session:
+            for identity in new_session.query(Identity).all():
+                self.set_unread_mail_count(identity.address)
 
     def _update_identities(self):
         new_identities = {}
@@ -799,14 +881,14 @@ class BitChan(Thread):
             for each_board in board_chans:
                 board_chan_label = "[chan] {}".format(each_board.passphrase)
 
-                # Join board chan if found in database and not found in BitMessage
+                # Join board chan if found in database and not found in Bitmessage
                 if board_chan_label not in chans_labels and not each_board.is_setup:
                     logger.info("Found board chan in database that needs to be joined. Joining.")
                     address = self.join_chan(each_board.passphrase, clear_inventory=False)
                     time.sleep(1)
 
                     if address and "Chan address is already present" in address:
-                        logger.info("Board already present in BitMessage. Updating database.")
+                        logger.info("Board already present in Bitmessage. Updating database.")
                         each_board.is_setup = True
                         new_session.commit()
                     elif address and address.startswith("BM-") and not each_board.address:
@@ -832,7 +914,7 @@ class BitChan(Thread):
                         each_board.address in chans_addresses):
                     self._chan_board_dict[each_board.address] = chans_addresses[each_board.address]
 
-            # Join list chans if in database and not added to BitMessage
+            # Join list chans if in database and not added to Bitmessage
             chans_list = new_session.query(Chan).filter(Chan.type == "list").all()
             for each_list in chans_list:
                 list_chan_label = "[chan] {}".format(each_list.passphrase)
@@ -873,54 +955,56 @@ class BitChan(Thread):
 
     def queue_new_messages(self):
         """Add new messages to processing queue"""
-        lf = LF()
-        if lf.lock_acquire(config.LOCKFILE_API, to=60):
-            try:
-                str_messages = self._api.getAllInboxMessageIDs()
-                time.sleep(0.1)
-            except Exception as err:
-                logger.error("Exception getting all message IDs: {}".format(err))
+        messages = []
+        for each_address in self.get_all_chans():
+            lf = LF()
+            if lf.lock_acquire(config.LOCKFILE_API, to=60):
+                try:
+                    messages_api = self._api.getInboxMessagesByReceiver(each_address)
+                    if "inboxMessages" in messages_api and messages_api['inboxMessages']:
+                        messages.extend(messages_api['inboxMessages'])
+                    time.sleep(0.1)
+                except Exception as err:
+                    logger.error("Exception getting all message IDs: {}".format(err))
+                    return
+                finally:
+                    lf.lock_release(config.LOCKFILE_API)
+            else:
                 return
-            finally:
-                lf.lock_release(config.LOCKFILE_API)
-        else:
-            return
 
         with session_scope(DB_PATH) as new_session:
-            for message in str_messages['inboxMessageIds']:
-                message_id = message["msgid"]
+            for message in messages:
 
-                deleted = new_session.query(DeletedMessages).filter(
-                    DeletedMessages.message_id == message_id).first()
-                if deleted:
+                if new_session.query(DeletedMessages).filter(
+                        DeletedMessages.message_id == message["msgid"]).count():
                     logger.info("{}: Message labeled as deleted. Deleting.".format(
-                        message_id[0:6]))
-                    self.trash_message(message_id)
+                        message["msgid"][0:6]))
+                    self.trash_message(message["msgid"])
                     continue
 
-                if message_id in self._non_bitchan_message_ids:
+                if message["msgid"] in self._non_bitchan_message_ids:
                     continue
 
-                if (message_id in self._posts_by_id and
-                        message_id not in self.list_start_download):
+                if (message["msgid"] in self._posts_by_id and
+                        message["msgid"] not in self.list_start_download):
                     logger.debug("{}: Message already processed. return.".format(
-                        message_id[0:6]))
+                        message["msgid"][0:6]))
                     continue
 
-                message = new_session.query(Messages).filter(
-                    Messages.message_id == message_id).first()
-                if message:
-                    if (message_id in self.list_start_download and
-                            not message.file_currently_downloading):
+                message_db = new_session.query(Messages).filter(
+                    Messages.message_id == message["msgid"]).first()
+                if message_db:
+                    if (message["msgid"] in self.list_start_download and
+                            not message_db.file_currently_downloading):
                         # Download instructed to start by user. Only initiate
                         # download once, and skip further processing attempts
                         # unless download has failed. Use thread to allow new
                         # messages to continue to be processed while
                         # downloading.
-                        message.file_progress = "download starting"
-                        message.file_currently_downloading = True
+                        message_db.file_progress = "download starting"
+                        message_db.file_currently_downloading = True
                         new_session.commit()
-                        thread_download = Thread(target=self._posts_by_id[message_id].allow_download)
+                        thread_download = Thread(target=self._posts_by_id[message["msgid"]].allow_download)
                         thread_download.daemon = True
                         thread_download.start()
                         continue
@@ -929,60 +1013,46 @@ class BitChan(Thread):
                     # reset the downloading indicator when the server starts
                     # again, allowing the presentation of the Download button
                     # to the user.
-                    if (message_id not in self.list_start_download and
-                            message.file_currently_downloading):
-                        message.file_currently_downloading = False
+                    if (message["msgid"] not in self.list_start_download and
+                            message_db.file_currently_downloading):
+                        message_db.file_currently_downloading = False
                         new_session.commit()
 
                     #
                     # Create post object
                     #
-                    if message.thread and message.thread.chan:
-                        to_address = message.thread.chan.address
+                    if message_db.thread and message_db.thread.chan:
+                        to_address = message_db.thread.chan.address
                         logger.info("{}: Adding message to {} ({})".format(
-                            message_id[0:6], to_address, message.thread.chan.label))
-                        post = ChanPost(message_id)
+                            message["msgid"][0:6], to_address, message_db.thread.chan.label))
+                        post = ChanPost(message["msgid"])
 
                         if to_address not in self._board_by_chan:
                             self._board_by_chan[to_address] = ChanBoard(to_address)
-                        self._posts_by_id[message_id] = post
+                        self._posts_by_id[message["msgid"]] = post
                         chanboard = self._board_by_chan[to_address]
-                        chanboard.add_post(post, message.thread.thread_hash)
+                        chanboard.add_post(post, message_db.thread.thread_hash)
                         continue
 
-                lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=60):
-                    try:
-                        str_message = self._api.getInboxMessageByID(message_id, True)
-                        time.sleep(0.1)
-                    except Exception as err:
-                        logger.error("Exception getting message: {}".format(err))
-                        continue
-                    finally:
-                        lf.lock_release(config.LOCKFILE_API)
-                else:
-                    continue
-
-                msg_dict = str_message['inboxMessage']
-                to_address = msg_dict[0]['toAddress']
+                to_address = message['toAddress']
 
                 # Check if chan exists
                 chan = new_session.query(Chan).filter(Chan.address == to_address).first()
                 if not chan:
                     logger.info("{}: To address {} not in board or list DB. Indicative of a non-BitChan message.".format(
-                        message_id[0:6], to_address))
-                    if message_id not in self._non_bitchan_message_ids:
-                        self._non_bitchan_message_ids.append(message_id)
+                        message["msgid"][0:6], to_address))
+                    if message["msgid"] not in self._non_bitchan_message_ids:
+                        self._non_bitchan_message_ids.append(message["msgid"])
                     continue
 
-                if message_id not in self.message_threads:
-                    logger.info("{}: Adding message to processing queue".format(message_id[0:6]))
-                    self.message_threads[message_id] = {
-                        "thread": Thread(target=self.process_message, args=(message_id, msg_dict,)),
+                if message["msgid"] not in self.message_threads:
+                    logger.info("{}: Adding message to processing queue".format(message["msgid"][0:6]))
+                    self.message_threads[message["msgid"]] = {
+                        "thread": Thread(target=self.process_message, args=(message,)),
                         "started": False,
                         "completed": False
                     }
-                    self.message_threads[message_id]["thread"].setDaemon(True)
+                    self.message_threads[message["msgid"]]["thread"].setDaemon(True)
                     self.check_message_threads()
 
         #
@@ -1021,70 +1091,77 @@ class BitChan(Thread):
                 self.message_threads[thread_id]["thread"].start()
                 threads_running += 1
 
-    def process_message(self, message_id, msg_dict):
+    def process_message(self, msg_dict):
         """Parse a message to determine if it is valid and add it to bitchan"""
         if len(msg_dict) == 0:
             return
 
         with session_scope(DB_PATH) as new_session:
             message_post = new_session.query(Messages).filter(
-                Messages.message_id == message_id).first()
+                Messages.message_id == msg_dict["msgid"]).first()
             if message_post and message_post.thread and message_post.thread.chan:
                 logger.info("{}: Adding message from database to chan {}".format(
-                    message_id[0:6], message_post.thread.chan.address))
-                post = ChanPost(message_id)
+                    msg_dict["msgid"][0:6], message_post.thread.chan.address))
+                post = ChanPost(msg_dict["msgid"])
 
                 if message_post.thread.chan.address not in self._board_by_chan:
-                    self._board_by_chan[msg_dict[0]['toAddress']] = ChanBoard(
-                        msg_dict[0]['toAddress'])
+                    self._board_by_chan[msg_dict['toAddress']] = ChanBoard(
+                        msg_dict['toAddress'])
 
-                self._posts_by_id[message_id] = post
-                chanboard = self._board_by_chan[msg_dict[0]['toAddress']]
+                self._posts_by_id[msg_dict["msgid"]] = post
+                chanboard = self._board_by_chan[msg_dict['toAddress']]
                 chanboard.add_post(post, message_post.thread.thread_hash)
                 return
 
         # Decode message
-        message = base64.b64decode(msg_dict[0]['message']).decode()
+        message = base64.b64decode(msg_dict['message']).decode()
 
         # Check if message is an encrypted PGP message
         if not message.startswith("-----BEGIN PGP MESSAGE-----"):
             logger.info("{}: Message doesn't appear to be PGP message. Deleting.".format(
-                message_id[0:6]))
-            self.trash_message(message_id)
+                msg_dict["msgid"][0:6]))
+            self.trash_message(msg_dict["msgid"])
             return
+
+        pgp_passphrase_msg = config.PASSPHRASE_MSG
+        with session_scope(DB_PATH) as new_session:
+            chan = new_session.query(Chan).filter(
+                Chan.address == msg_dict['toAddress']).first()
+            if chan and chan.pgp_passphrase_msg:
+                pgp_passphrase_msg = chan.pgp_passphrase_msg
 
         # Decrypt the message
         # Protect against explosive PGP message size exploit
-        msg_decrypted = decrypt_safe_size(message, config.PASSPHRASE_MSG, 400000)
+        msg_decrypted = decrypt_safe_size(message, pgp_passphrase_msg, 400000)
 
         if msg_decrypted is not None:
-            logger.info("{}: Message decrypted".format(message_id[0:6]))
+            logger.info("{}: Message decrypted".format(msg_dict["msgid"][0:6]))
             try:
                 msg_decrypted_dict = json.loads(msg_decrypted)
             except:
-                logger.info("{}: Malformed JSON payload. Deleting.".format(message_id[0:6]))
-                self.trash_message(message_id)
+                logger.info("{}: Malformed JSON payload. Deleting.".format(msg_dict["msgid"][0:6]))
+                self.trash_message(msg_dict["msgid"])
                 return
         else:
-            logger.info("{}: Could not decrypt message. Deleting.".format(message_id[0:6]))
-            self.trash_message(message_id)
+            logger.info("{}: Could not decrypt message. Deleting.".format(msg_dict["msgid"][0:6]))
+            self.trash_message(msg_dict["msgid"])
             return
 
         if "version" not in msg_decrypted_dict:
             logger.error("{}: 'version' not found in message. Deleting.")
-            self.trash_message(message_id)
+            self.trash_message(msg_dict["msgid"])
             return
         elif version_checker(config.VERSION_BITCHAN, msg_decrypted_dict["version"])[1] == "less":
-            logger.info("{}: Message version greater than BitChan version. Deleting.".format(message_id[0:6]))
-            self.trash_message(message_id)
+            logger.info("{}: Message version greater than BitChan version. Deleting.".format(msg_dict["msgid"][0:6]))
+            self.trash_message(msg_dict["msgid"])
             with session_scope(DB_PATH) as new_session:
                 settings = new_session.query(GlobalSettings).first()
                 settings.messages_newer += 1
                 new_session.commit()
             return
         elif version_checker(msg_decrypted_dict["version"], config.VERSION_MIN_MSG)[1] == "less":
-            logger.info("{}: Message version too old. Deleting.".format(message_id[0:6]))
-            self.trash_message(message_id)
+            logger.info("{}: Message version too old. Deleting.".format(msg_dict["msgid"][0:6]))
+            self.trash_message(msg_dict["msgid"])
             with session_scope(DB_PATH) as new_session:
                 settings = new_session.query(GlobalSettings).first()
                 settings.messages_older += 1
@@ -1100,43 +1177,43 @@ class BitChan(Thread):
         # Determine the message type
         #
         if "message_type" not in msg_decrypted_dict:
-            logger.info("{}: 'message_type' missing from message. Deleting.".format(message_id[0:6]))
-            self.trash_message(message_id)
+            logger.info("{}: 'message_type' missing from message. Deleting.".format(msg_dict["msgid"][0:6]))
+            self.trash_message(msg_dict["msgid"])
         elif msg_decrypted_dict["message_type"] == "admin":
-            self.process_admin(message_id, msg_dict, msg_decrypted_dict)
+            self.process_admin(msg_dict, msg_decrypted_dict)
         elif msg_decrypted_dict["message_type"] == "post":
-            self.process_post(message_id, msg_dict, msg_decrypted_dict)
+            self.process_post(msg_dict, msg_decrypted_dict)
         elif msg_decrypted_dict["message_type"] == "list":
-            self.process_list(message_id, msg_dict, msg_decrypted_dict)
+            self.process_list(msg_dict, msg_decrypted_dict)
         else:
             logger.error("{}: Unknown message type: {}".format(
-                message_id[0:6], msg_decrypted_dict["message_type"]))
+                msg_dict["msgid"][0:6], msg_decrypted_dict["message_type"]))
 
-    def process_admin(self, message_id, msg_dict, msg_decrypted_dict):
+    def process_admin(self, msg_dict, msg_decrypted_dict):
         """Process message as an admin command"""
-        logger.info("{}: Message is an admin command".format(message_id[0:6]))
+        logger.info("{}: Message is an admin command".format(msg_dict["msgid"][0:6]))
 
         # Authenticate sender
         with session_scope(DB_PATH) as new_session:
             chan = new_session.query(Chan).filter(
-                Chan.address == msg_dict[0]['toAddress']).first()
+                Chan.address == msg_dict['toAddress']).first()
             if chan:
                 errors, dict_info = process_passphrase(chan.passphrase)
                 # Message must be from address in primary or secondary access list
-                access = get_access(msg_dict[0]['toAddress'])
-                if errors or (msg_dict[0]['fromAddress'] not in access["primary_addresses"] and
-                              msg_dict[0]['fromAddress'] not in access["secondary_addresses"]):
+                access = get_access(msg_dict['toAddress'])
+                if errors or (msg_dict['fromAddress'] not in access["primary_addresses"] and
+                              msg_dict['fromAddress'] not in access["secondary_addresses"]):
                     logger.error("{}: Unauthorized Admin message. Deleting.".format(
-                        message_id[0:6]))
-                    self.trash_message(message_id)
+                        msg_dict["msgid"][0:6]))
+                    self.trash_message(msg_dict["msgid"])
                     return
             else:
-                logger.error("{}: Admin message: Chan not found".format(message_id[0:6]))
-                self.trash_message(message_id)
+                logger.error("{}: Admin message: Chan not found".format(msg_dict["msgid"][0:6]))
+                self.trash_message(msg_dict["msgid"])
                 return
 
         logger.info("{}: Admin message received for {} is authentic".format(
-            message_id[0:6], msg_dict[0]['toAddress']))
+            msg_dict["msgid"][0:6], msg_dict['toAddress']))
 
         admin_dict = {
             "timestamp_utc": 0,
@@ -1166,20 +1243,20 @@ class BitChan(Thread):
         if "chan_address" in msg_decrypted_dict and msg_decrypted_dict["chan_address"]:
             admin_dict["chan_address"] = msg_decrypted_dict["chan_address"]
 
-        access = get_access(msg_dict[0]['toAddress'])
+        access = get_access(msg_dict['toAddress'])
 
         # (Owner): set board options
         if (admin_dict["action"] == "set" and
                 admin_dict["action_type"] == "options" and
-                msg_dict[0]['fromAddress'] in access["primary_addresses"]):
-            self.admin_set_options(message_id, msg_dict, admin_dict)
+                msg_dict['fromAddress'] in access["primary_addresses"]):
+            self.admin_set_options(msg_dict, admin_dict)
 
         # (Owner, Admin): delete board thread or post
         elif (admin_dict["action"] == "delete" and
                 admin_dict["chan_type"] == "board" and
-                (msg_dict[0]['fromAddress'] in access["primary_addresses"] or
-                 msg_dict[0]['fromAddress'] in access["secondary_addresses"])):
-            self.admin_delete_from_board(message_id, msg_dict, admin_dict)
+                (msg_dict['fromAddress'] in access["primary_addresses"] or
+                 msg_dict['fromAddress'] in access["secondary_addresses"])):
+            self.admin_delete_from_board(msg_dict, admin_dict)
 
         # (Owner, Admin): delete board post with comment
         elif (admin_dict["action"] == "delete_comment" and
@@ -1188,25 +1265,25 @@ class BitChan(Thread):
                 "delete_comment" in admin_dict["options"] and
                 "message_id" in admin_dict["options"]["delete_comment"] and
                 "comment" in admin_dict["options"]["delete_comment"] and
-                (msg_dict[0]['fromAddress'] in access["primary_addresses"] or
-                 msg_dict[0]['fromAddress'] in access["secondary_addresses"])):
-            self.admin_delete_from_board_with_comment(message_id, msg_dict, admin_dict)
+                (msg_dict['fromAddress'] in access["primary_addresses"] or
+                 msg_dict['fromAddress'] in access["secondary_addresses"])):
+            self.admin_delete_from_board_with_comment(msg_dict, admin_dict)
 
         # (Owner, Admin): Ban user
         elif (admin_dict["action"] == "ban" and
                 admin_dict["action_type"] == "ban_address" and
                 admin_dict["options"] and
                 "ban_address" in admin_dict["action_type"] and
-                (msg_dict[0]['fromAddress'] in access["primary_addresses"] or
-                 msg_dict[0]['fromAddress'] in access["secondary_addresses"])):
-            self.admin_ban_address_from_board(message_id, msg_dict, admin_dict)
+                (msg_dict['fromAddress'] in access["primary_addresses"] or
+                 msg_dict['fromAddress'] in access["secondary_addresses"])):
+            self.admin_ban_address_from_board(msg_dict, admin_dict)
 
         else:
             logger.error("{}: Unknown Admin command. Deleting. {}".format(
-                message_id[0:6], admin_dict))
-            self.trash_message(message_id)
+                msg_dict["msgid"][0:6], admin_dict))
+            self.trash_message(msg_dict["msgid"])
 
-    def admin_set_options(self, message_id, msg_dict, admin_dict):
+    def admin_set_options(self, msg_dict, admin_dict):
         """
         Set custom options for board or list
         e.g. Banner image, CSS, word replace, access
@@ -1215,13 +1292,13 @@ class BitChan(Thread):
 
         if admin_dict["timestamp_utc"] - (60 * 60 * 6) > self.get_utc():
             # message timestamp is in the distant future. Delete.
-            logger.error("{}: Command has future timestamp. Deleting.".format(message_id[0:6]))
-            self.trash_message(message_id)
+            logger.error("{}: Command has future timestamp. Deleting.".format(msg_dict["msgid"][0:6]))
+            self.trash_message(msg_dict["msgid"])
             return
 
         if "options" not in admin_dict:
-            logger.error("{}: Missing 'options' to set.".format(message_id[0:6]))
-            self.trash_message(message_id)
+            logger.error("{}: Missing 'options' to set.".format(msg_dict["msgid"][0:6]))
+            self.trash_message(msg_dict["msgid"])
             return
 
         if "banner_base64" in admin_dict["options"]:
@@ -1230,19 +1307,19 @@ class BitChan(Thread):
             media_width, media_height = im.size
             if media_width > config.BANNER_MAX_WIDTH or media_height > config.BANNER_MAX_HEIGHT:
                 logger.error("{}: Banner image too large. Discarding admin message.".format(
-                    message_id[0:6]))
-                self.trash_message(message_id)
+                    msg_dict["msgid"][0:6]))
+                self.trash_message(msg_dict["msgid"])
                 return
 
-        if not msg_dict[0]['toAddress']:
-            self.trash_message(message_id)
+        if not msg_dict['toAddress']:
+            self.trash_message(msg_dict["msgid"])
             return
 
         with session_scope(DB_PATH) as new_session:
             chan = new_session.query(Chan).filter(
-                Chan.address == msg_dict[0]['toAddress']).first()
+                Chan.address == msg_dict['toAddress']).first()
             admin_cmd = new_session.query(Command).filter(and_(
-                Command.chan_address == msg_dict[0]['toAddress'],
+                Command.chan_address == msg_dict['toAddress'],
                 Command.action == "set",
                 Command.action_type == "options")).first()
 
@@ -1349,7 +1426,7 @@ class BitChan(Thread):
             else:
                 # Create new entry
                 admin_cmd = Command()
-                admin_cmd.chan_address = msg_dict[0]['toAddress']
+                admin_cmd.chan_address = msg_dict['toAddress']
                 admin_cmd.timestamp_utc = admin_dict["timestamp_utc"]
                 admin_cmd.action = "set"
                 admin_cmd.action_type = "options"
@@ -1403,26 +1480,26 @@ class BitChan(Thread):
 
             if error:
                 logger.info("{}: Errors found while processing custom options for {}".format(
-                    message_id[0:6], msg_dict[0]['toAddress']))
+                    msg_dict["msgid"][0:6], msg_dict['toAddress']))
                 for err in error:
-                    logger.error("{}: {}".format(message_id[0:6], err))
+                    logger.error("{}: {}".format(msg_dict["msgid"][0:6], err))
             else:
                 logger.info("{}: Setting custom options for {}".format(
-                    message_id[0:6], msg_dict[0]['toAddress']))
+                    msg_dict["msgid"][0:6], msg_dict['toAddress']))
                 new_session.commit()
 
-        self.trash_message(message_id)
+        self.trash_message(msg_dict["msgid"])
 
-    def admin_delete_from_board(self, message_id, msg_dict, admin_dict):
+    def admin_delete_from_board(self, msg_dict, admin_dict):
         lf = LF()
         if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
             try:
                 logger.error("{}: Admin message contains delete request".format(
-                    message_id[0:6]))
+                    msg_dict["msgid"][0:6]))
                 with session_scope(DB_PATH) as new_session:
                     # Check if command already exists
                     commands = new_session.query(Command).filter(and_(
-                        Command.chan_address == msg_dict[0]['toAddress'],
+                        Command.chan_address == msg_dict['toAddress'],
                         Command.action == "delete",
                         Command.action_type == "delete_post")).all()
                     command_exists = False
@@ -1449,7 +1526,7 @@ class BitChan(Thread):
                                 options["delete_post_timestamp_utc"] = self.get_utc()
                             each_cmd.options = json.dumps(options)
                             logger.error("{}: Admin command already exists. Updating.".format(
-                                message_id[0:6]))
+                                msg_dict["msgid"][0:6]))
 
                     if not command_exists:
                         new_admin = Command()
@@ -1460,7 +1537,7 @@ class BitChan(Thread):
                                 "delete_post" in admin_dict["options"] and
                                 "thread_id" in admin_dict["options"]["delete_post"] and
                                 "message_id" in admin_dict["options"]["delete_post"]):
-                            new_admin.chan_address = msg_dict[0]['toAddress']
+                            new_admin.chan_address = msg_dict['toAddress']
                             new_admin.options = json.dumps({
                                 "delete_post": {
                                     "thread_id": admin_dict["options"]["delete_post"]["thread_id"],
@@ -1472,7 +1549,7 @@ class BitChan(Thread):
                                 "delete_thread" in admin_dict["options"] and
                                 "thread_id" in admin_dict["options"]["delete_thread"] and
                                 "message_id" in admin_dict["options"]["delete_thread"]):
-                            new_admin.chan_address = msg_dict[0]['toAddress']
+                            new_admin.chan_address = msg_dict['toAddress']
                             new_admin.options = json.dumps({
                                 "delete_thread": {
                                     "thread_id": admin_dict["options"]["delete_thread"]["thread_id"],
@@ -1482,23 +1559,23 @@ class BitChan(Thread):
                             })
                         else:
                             logger.error("{}: Unknown admin action type: {}".format(
-                                message_id[0:6], admin_dict["action_type"]))
-                            self.trash_message(message_id)
+                                msg_dict["msgid"][0:6], admin_dict["action_type"]))
+                            self.trash_message(msg_dict["msgid"])
                             return
                         new_session.add(new_admin)
                         new_session.commit()
 
                 # Find if thread/post exist and delete
-                if msg_dict[0]['toAddress']:
+                if msg_dict['toAddress']:
                     with session_scope(DB_PATH) as new_session:
                         admin_chan = new_session.query(Chan).filter(
-                            Chan.address == msg_dict[0]['toAddress']).first()
+                            Chan.address == msg_dict['toAddress']).first()
                         if not admin_chan:
-                            logger.error("{}: Unknown board in Admin message. Discarding.".format(message_id[0:6]))
-                            self.trash_message(message_id)
+                            logger.error("{}: Unknown board in Admin message. Discarding.".format(msg_dict["msgid"][0:6]))
+                            self.trash_message(msg_dict["msgid"])
                             return
 
-                    logger.error("{}: Admin message board found".format(message_id[0:6]))
+                    logger.error("{}: Admin message board found".format(msg_dict["msgid"][0:6]))
 
                     # Admin: Delete post
                     if (admin_dict["action_type"] == "delete_post" and
@@ -1506,11 +1583,11 @@ class BitChan(Thread):
                             "thread_id" in admin_dict["options"]["delete_post"] and
                             "message_id" in admin_dict["options"]["delete_post"]):
                         logger.error("{}: Admin message to delete post {}".format(
-                            message_id[0:6], admin_dict["options"]["delete_post"]["message_id"]))
+                            msg_dict["msgid"][0:6], admin_dict["options"]["delete_post"]["message_id"]))
                         delete_db_message(admin_dict["options"]["delete_post"]["message_id"])
                         try:
                             self.delete_message(
-                                msg_dict[0]['toAddress'],
+                                msg_dict['toAddress'],
                                 admin_dict["options"]["delete_post"]["thread_id"],
                                 admin_dict["options"]["delete_post"]["message_id"])
                         except:
@@ -1522,7 +1599,7 @@ class BitChan(Thread):
                           "thread_id" in admin_dict["options"]["delete_thread"] and
                           "message_id" in admin_dict["options"]["delete_thread"]):
                         logger.error("{}: Admin message to delete thread {}".format(
-                            message_id[0:6], admin_dict["options"]["delete_thread"]["thread_id"]))
+                            msg_dict["msgid"][0:6], admin_dict["options"]["delete_thread"]["thread_id"]))
                         # Delete all messages in thread
                         messages = new_session.query(Messages).filter(
                             Messages.thread_id == admin_dict["options"]["delete_thread"]["thread_id"]).all()
@@ -1536,31 +1613,31 @@ class BitChan(Thread):
                             new_session.commit()
                         try:
                             self.delete_thread(
-                                msg_dict[0]['toAddress'],
+                                msg_dict['toAddress'],
                                 admin_dict["options"]["delete_thread"]["thread_id"])
                         except:
                             pass
-                    self.trash_message(message_id)
+                    self.trash_message(msg_dict["msgid"])
             finally:
                 lf.lock_release(config.LOCKFILE_MSG_PROC)
 
-    def admin_delete_from_board_with_comment(self, message_id, msg_dict, admin_dict):
+    def admin_delete_from_board_with_comment(self, msg_dict, admin_dict):
         """Delete a post with comment (really just replace the message and removes attachments)"""
         try:
             logger.error("{}: Admin message contains delete with comment request".format(
-                message_id[0:6]))
+                msg_dict["msgid"][0:6]))
             with session_scope(DB_PATH) as new_session:
                 # Find if thread/post exist and delete
                 admin_chan = new_session.query(Chan).filter(
-                    Chan.address == msg_dict[0]['toAddress']).first()
+                    Chan.address == msg_dict['toAddress']).first()
                 if not admin_chan:
-                    logger.error("{}: Unknown board in Admin message. Discarding.".format(message_id[0:6]))
-                    self.trash_message(message_id)
+                    logger.error("{}: Unknown board in Admin message. Discarding.".format(msg_dict["msgid"][0:6]))
+                    self.trash_message(msg_dict["msgid"])
                     return
 
                 # Check if command already exists
                 commands = new_session.query(Command).filter(and_(
-                    Command.chan_address == msg_dict[0]['toAddress'],
+                    Command.chan_address == msg_dict['toAddress'],
                     Command.action == "delete_comment",
                     Command.action_type == "post")).all()
                 command_exists = False
@@ -1577,13 +1654,13 @@ class BitChan(Thread):
                         options["delete_comment_timestamp_utc"] = self.get_utc()
                         each_cmd.options = json.dumps(options)
                         logger.error("{}: Admin command already exists. Updating.".format(
-                            message_id[0:6]))
+                            msg_dict["msgid"][0:6]))
 
                 if not command_exists:
                     new_admin = Command()
                     new_admin.action = admin_dict["action"]
                     new_admin.action_type = admin_dict["action_type"]
-                    new_admin.chan_address = msg_dict[0]['toAddress']
+                    new_admin.chan_address = msg_dict['toAddress']
                     new_admin.options = json.dumps({
                         "delete_comment": {
                             "comment": admin_dict["options"]["delete_comment"]["comment"],
@@ -1597,24 +1674,24 @@ class BitChan(Thread):
                 if (admin_dict["options"]["delete_comment"]["message_id"] and
                         admin_dict["options"]["delete_comment"]["comment"]):
                     logger.error("{}: Admin message to delete post {} with comment".format(
-                        message_id[0:6], admin_dict["options"]["delete_comment"]["message_id"]))
+                        msg_dict["msgid"][0:6], admin_dict["options"]["delete_comment"]["message_id"]))
                     delete_and_replace_comment(
                         admin_dict["options"]["delete_comment"]["message_id"],
                         admin_dict["options"]["delete_comment"]["comment"])
         finally:
-            self.trash_message(message_id)
+            self.trash_message(msg_dict["msgid"])
 
-    def admin_ban_address_from_board(self, message_id, msg_dict, admin_dict):
+    def admin_ban_address_from_board(self, msg_dict, admin_dict):
         if admin_dict["options"]["ban_address"] in self._identity_dict:
             # Don't ban yourself, fool
-            self.trash_message(message_id)
+            self.trash_message(msg_dict["msgid"])
             return
 
         lf = LF()
         if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
             try:
                 logger.error("{}: Admin message contains ban request".format(
-                    message_id[0:6]))
+                    msg_dict["msgid"][0:6]))
                 with session_scope(DB_PATH) as new_session:
                     # Check if admin entry already exists
                     command_exists = False
@@ -1630,13 +1707,13 @@ class BitChan(Thread):
                         if ("ban_address" in options and
                                 admin_dict["options"]["ban_address"] == options["ban_address"]):
                             logger.error("{}: Ban already exists in database. Updating".format(
-                                message_id[0:6]))
+                                msg_dict["msgid"][0:6]))
                             options["ban_address_timestamp_utc"] = admin_dict["timestamp_utc"]
                             each_cmd.options = json.dumps(options)
                             command_exists = True
 
                     if not command_exists:
-                        logger.error("{}: Adding ban to database".format(message_id[0:6]))
+                        logger.error("{}: Adding ban to database".format(msg_dict["msgid"][0:6]))
                         new_admin = Command()
                         new_admin.action = admin_dict["action"]
                         new_admin.action_type = admin_dict["action_type"]
@@ -1658,20 +1735,20 @@ class BitChan(Thread):
                         for each_message in messages:
                             if each_message.thread.chan.address == admin_dict["chan_address"]:
                                 delete_db_message(each_message.message_id)
-                self.trash_message(message_id)
+                self.trash_message(msg_dict["msgid"])
             finally:
                 lf.lock_release(config.LOCKFILE_MSG_PROC)
 
-    def process_post(self, message_id, msg_dict, msg_decrypted_dict):
+    def process_post(self, msg_dict, msg_decrypted_dict):
         """Process message as a post to a board"""
-        logger.info("{}: Message is a post".format(message_id[0:6]))
+        logger.info("{}: Message is a post".format(msg_dict["msgid"][0:6]))
 
         # Determine if board is public and requires an Identity to post
         with session_scope(DB_PATH) as new_session:
             chan = new_session.query(Chan).filter(and_(
                 Chan.access == "public",
                 Chan.type == "board",
-                Chan.address == msg_dict[0]['toAddress'])).first()
+                Chan.address == msg_dict['toAddress'])).first()
             if chan:
                 try:
                     rules = json.loads(chan.rules)
@@ -1679,13 +1756,13 @@ class BitChan(Thread):
                     rules = {}
                 if ("require_identity_to_post" in rules and
                         rules["require_identity_to_post"] and
-                        msg_dict[0]['toAddress'] == msg_dict[0]['fromAddress']):
+                        msg_dict['toAddress'] == msg_dict['fromAddress']):
                     # From address is not different from board address
                     logger.info(
                         "{}: Message is from its own board's address {} but requires a "
                         "non-board address to post. Deleting.".format(
-                            message_id[0:6], msg_dict[0]['fromAddress']))
-                    self.trash_message(message_id)
+                            msg_dict["msgid"][0:6], msg_dict['fromAddress']))
+                    self.trash_message(msg_dict["msgid"])
                     return
 
         # Determine if there is a current ban in place for an address
@@ -1694,19 +1771,19 @@ class BitChan(Thread):
             admin_bans = new_session.query(Command).filter(and_(
                 Command.action == "ban",
                 Command.action_type == "ban_address",
-                Command.chan_address == msg_dict[0]['toAddress'])).all()
+                Command.chan_address == msg_dict['toAddress'])).all()
             for each_ban in admin_bans:
                 try:
                     options = json.loads(each_ban.options)
                 except:
                     options = {}
                 if ("ban_address" in options and
-                        options["ban_address"] == msg_dict[0]['fromAddress'] and
-                        msg_dict[0]['fromAddress'] not in self._identity_dict):
+                        options["ban_address"] == msg_dict['fromAddress'] and
+                        msg_dict['fromAddress'] not in self._identity_dict):
                     # If there is a ban and the banned user isn't yourself, delete post
                     logger.info("{}: Message is from address {} that's banned from board {}. Deleting.".format(
-                        message_id[0:6], msg_dict[0]['fromAddress'], msg_dict[0]['toAddress']))
-                    self.trash_message(message_id)
+                        msg_dict["msgid"][0:6], msg_dict['fromAddress'], msg_dict['toAddress']))
+                    self.trash_message(msg_dict["msgid"])
                     return
 
         # Determine if there is a current block in place for an address
@@ -1717,7 +1794,7 @@ class BitChan(Thread):
                 Command.action == "block",
                 Command.do_not_send == True,
                 Command.action_type == "block_address",
-                or_(Command.chan_address == msg_dict[0]['toAddress'],
+                or_(Command.chan_address == msg_dict['toAddress'],
                     Command.chan_address == "all"))).all()
             for each_block in blocks:
                 try:
@@ -1725,13 +1802,13 @@ class BitChan(Thread):
                 except:
                     options = {}
                 if ("block_address" in options and
-                        options["block_address"] == msg_dict[0]['fromAddress'] and
-                        each_block.chan_address in [msg_dict[0]['toAddress'], "all"] and
-                        msg_dict[0]['fromAddress'] not in self._identity_dict):
+                        options["block_address"] == msg_dict['fromAddress'] and
+                        each_block.chan_address in [msg_dict['toAddress'], "all"] and
+                        msg_dict['fromAddress'] not in self._identity_dict):
                     # If there is a block and the blocked user isn't yourself, delete post
                     logger.info("{}: Message is from address {} that's blocked from board {}. Deleting.".format(
-                        message_id[0:6], msg_dict[0]['fromAddress'], msg_dict[0]['toAddress']))
-                    self.trash_message(message_id)
+                        msg_dict["msgid"][0:6], msg_dict['fromAddress'], msg_dict['toAddress']))
+                    self.trash_message(msg_dict["msgid"])
                     return
 
         # Determine if board is public and the sender is restricted from posting
@@ -1739,40 +1816,40 @@ class BitChan(Thread):
             chan = new_session.query(Chan).filter(and_(
                 Chan.access == "public",
                 Chan.type == "board",
-                Chan.address == msg_dict[0]['toAddress'])).first()
+                Chan.address == msg_dict['toAddress'])).first()
             if chan:
                 # Check if sender in restricted list
-                access = get_access(msg_dict[0]['toAddress'])
-                if msg_dict[0]['fromAddress'] in access["restricted_addresses"]:
+                access = get_access(msg_dict['toAddress'])
+                if msg_dict['fromAddress'] in access["restricted_addresses"]:
                     logger.info("{}: Post from restricted sender: {}. Deleting.".format(
-                        message_id[0:6], msg_dict[0]['fromAddress']))
-                    self.trash_message(message_id)
+                        msg_dict["msgid"][0:6], msg_dict['fromAddress']))
+                    self.trash_message(msg_dict["msgid"])
                     return
                 else:
                     logger.info("{}: Post from unrestricted sender: {}".format(
-                        message_id[0:6], msg_dict[0]['fromAddress']))
+                        msg_dict["msgid"][0:6], msg_dict['fromAddress']))
 
         # Determine if board is private and the sender is allowed to send to the board
         with session_scope(DB_PATH) as new_session:
             chan = new_session.query(Chan).filter(and_(
                 Chan.access == "private",
                 Chan.type == "board",
-                Chan.address == msg_dict[0]['toAddress'])).first()
+                Chan.address == msg_dict['toAddress'])).first()
             if chan:
                 errors, dict_info = process_passphrase(chan.passphrase)
                 # Sender must be in at least one address list
-                access = get_access(msg_dict[0]['toAddress'])
-                if (msg_dict[0]['fromAddress'] not in
+                access = get_access(msg_dict['toAddress'])
+                if (msg_dict['fromAddress'] not in
                         access["primary_addresses"] +
                         access["secondary_addresses"] +
                         access["tertiary_addresses"]):
                     logger.info("{}: Post from unauthorized sender: {}. Deleting.".format(
-                        message_id[0:6], msg_dict[0]['fromAddress']))
-                    self.trash_message(message_id)
+                        msg_dict["msgid"][0:6], msg_dict['fromAddress']))
+                    self.trash_message(msg_dict["msgid"])
                     return
                 else:
                     logger.info("{}: Post from authorized sender: {}".format(
-                        message_id[0:6], msg_dict[0]['fromAddress']))
+                        msg_dict["msgid"][0:6], msg_dict['fromAddress']))
 
         # Pre-processing checks passed. Continue processing message.
         with session_scope(DB_PATH) as new_session:
@@ -1784,7 +1861,7 @@ class BitChan(Thread):
                 # perform admin command word replacements
                 try:
                     admin_cmd = new_session.query(Command).filter(and_(
-                        Command.chan_address == msg_dict[0]['toAddress'],
+                        Command.chan_address == msg_dict['toAddress'],
                         Command.action == "set",
                         Command.action_type == "options")).first()
                     if admin_cmd and admin_cmd.options:
@@ -1801,26 +1878,26 @@ class BitChan(Thread):
                 # Perform general text replacements/modifications before saving to the database
                 try:
                     msg_decrypted_dict["message"] = process_replacements(
-                        msg_decrypted_dict["message"], message_id, message_id)
+                        msg_decrypted_dict["message"], msg_dict["msgid"], msg_dict["msgid"])
                 except Exception as err:
                     logger.exception("Error processing replacements: {}".format(err))
 
-            msg_dict[0]['message_decrypted'] = msg_decrypted_dict
+            msg_dict['message_decrypted'] = msg_decrypted_dict
 
             #
             # Save message to database
             #
             message = new_session.query(Messages).filter(
-                Messages.message_id == message_id).first()
+                Messages.message_id == msg_dict["msgid"]).first()
             if not message:
-                logger.info("{}: Message not in DB. Start processing.".format(message_id[0:6]))
-                self.parse_message(message_id, msg_dict[0])
+                logger.info("{}: Message not in DB. Start processing.".format(msg_dict["msgid"][0:6]))
+                self.parse_message(msg_dict["msgid"], msg_dict)
 
             # Check if message was created by parse_message()
             message = new_session.query(Messages).filter(
-                Messages.message_id == message_id).first()
+                Messages.message_id == msg_dict["msgid"]).first()
             if not message:
-                logger.error("{}: Message not created. Don't create post object.".format(message_id[0:6]))
+                logger.error("{}: Message not created. Don't create post object.".format(msg_dict["msgid"][0:6]))
                 return
             elif not message.thread or not message.thread.chan:
                 # Chan or thread doesn't exist, delete thread and message
@@ -1829,24 +1906,24 @@ class BitChan(Thread):
                 if message:
                     new_session.delete(message)
                 new_session.commit()
-                logger.error("{}: Thread or board doesn't exist. Deleting DB entries.".format(message_id[0:6]))
+                logger.error("{}: Thread or board doesn't exist. Deleting DB entries.".format(msg_dict["msgid"][0:6]))
                 return
 
             #
             # Create post object
             #
-            logger.info("{}: Adding post to chan {}".format(message_id[0:6], msg_dict[0]['toAddress']))
-            post = ChanPost(message_id)
+            logger.info("{}: Adding post to chan {}".format(msg_dict["msgid"][0:6], msg_dict['toAddress']))
+            post = ChanPost(msg_dict["msgid"])
 
-            if msg_dict[0]['toAddress'] not in self._board_by_chan:
-                self._board_by_chan[msg_dict[0]['toAddress']] = ChanBoard(msg_dict[0]['toAddress'])
-            self._posts_by_id[message_id] = post
-            chan_board = self._board_by_chan[msg_dict[0]['toAddress']]
+            if msg_dict['toAddress'] not in self._board_by_chan:
+                self._board_by_chan[msg_dict['toAddress']] = ChanBoard(msg_dict['toAddress'])
+            self._posts_by_id[msg_dict["msgid"]] = post
+            chan_board = self._board_by_chan[msg_dict['toAddress']]
             chan_board.add_post(post, message.thread.thread_hash)
 
-    def process_list(self, message_id, msg_dict, msg_decrypted_dict):
+    def process_list(self, msg_dict, msg_decrypted_dict):
         """Process message as a list"""
-        logger.info("{}: Message is a list".format(message_id[0:6]))
+        logger.info("{}: Message is a list".format(msg_dict["msgid"][0:6]))
 
         # Check integrity of message
         required_keys = ["version", "timestamp_utc", "access", "list"]
@@ -1855,90 +1932,90 @@ class BitChan(Thread):
         for each_key in required_keys:
             if each_key not in msg_decrypted_dict:
                 logger.error("{}: List message missing '{}'".format(
-                    message_id[0:6], each_key))
+                    msg_dict["msgid"][0:6], each_key))
                 integrity_pass = False
 
         for each_chan in msg_decrypted_dict["list"]:
             if "passphrase" not in msg_decrypted_dict["list"][each_chan]:
-                logger.error("{}: Entry in list missing 'passphrase'".format(message_id[0:6]))
+                logger.error("{}: Entry in list missing 'passphrase'".format(msg_dict["msgid"][0:6]))
                 integrity_pass = False
                 continue
 
             errors, dict_info = process_passphrase(msg_decrypted_dict["list"][each_chan]["passphrase"])
             if not dict_info or errors:
                 logger.error("{}: List passphrase did not pass integrity check: {}".format(
-                    message_id[0:6], msg_decrypted_dict["list"][each_chan]["passphrase"]))
+                    msg_dict["msgid"][0:6], msg_decrypted_dict["list"][each_chan]["passphrase"]))
                 for err in errors:
                     logger.error(err)
                 integrity_pass = False
 
         if not integrity_pass:
-            logger.error("{}: List message failed integrity test: {}".format(message_id[0:6], msg_decrypted_dict))
-            self.trash_message(message_id)
+            logger.error("{}: List message failed integrity test: {}".format(msg_dict["msgid"][0:6], msg_decrypted_dict))
+            self.trash_message(msg_dict["msgid"])
             return
 
         if msg_decrypted_dict["timestamp_utc"] - (60 * 60 * 3) > self.get_utc():
             # message timestamp is in the distant future. Delete.
-            logger.info("{}: List message has future timestamp. Deleting.".format(message_id[0:6]))
-            self.trash_message(message_id)
+            logger.info("{}: List message has future timestamp. Deleting.".format(msg_dict["msgid"][0:6]))
+            self.trash_message(msg_dict["msgid"])
             return
 
         log_age_and_expiration(
-            message_id,
+            msg_dict["msgid"],
             self.get_utc(),
             msg_decrypted_dict["timestamp_utc"],
-            get_msg_expires_time(message_id))
+            get_msg_expires_time(msg_dict["msgid"]))
 
         if (msg_decrypted_dict["timestamp_utc"] < self.get_utc() and
                 ((self.get_utc() - msg_decrypted_dict["timestamp_utc"]) / 60 / 60 / 24) > 28):
             # message timestamp is too old. Delete.
             logger.info("{}: List message is supposedly older than 28 days. Deleting.".format(
-                message_id[0:6]))
-            self.trash_message(message_id)
+                msg_dict["msgid"][0:6]))
+            self.trash_message(msg_dict["msgid"])
             return
 
         # Check if board is set to automatically clear and message is older than the last clearing
         if chan_auto_clears_and_message_too_old(
-                msg_dict[0]['toAddress'], msg_decrypted_dict["timestamp_utc"]):
-            logger.info("{}: Message outside current auto clear period. Deleting.".format(message_id[0:6]))
-            self.trash_message(message_id)
+                msg_dict['toAddress'], msg_decrypted_dict["timestamp_utc"]):
+            logger.info("{}: Message outside current auto clear period. Deleting.".format(msg_dict["msgid"][0:6]))
+            self.trash_message(msg_dict["msgid"])
             return
 
-        logger.info("{}: List message passed integrity test".format(message_id[0:6]))
-        if msg_dict[0]['toAddress'] not in self._list_by_chan:
-            self._list_by_chan[msg_dict[0]['toAddress']] = ChanList(msg_dict[0]['toAddress'])
+        logger.info("{}: List message passed integrity test".format(msg_dict["msgid"][0:6]))
+        if msg_dict['toAddress'] not in self._list_by_chan:
+            self._list_by_chan[msg_dict['toAddress']] = ChanList(msg_dict['toAddress'])
 
-        chan_list = self._list_by_chan[msg_dict[0]['toAddress']]
+        chan_list = self._list_by_chan[msg_dict['toAddress']]
         chan_list.add_to_list(msg_decrypted_dict)
 
         with session_scope(DB_PATH) as new_session:
             list_chan = new_session.query(Chan).filter(and_(
                 Chan.type == "list",
-                Chan.address == msg_dict[0]['toAddress'])).first()
+                Chan.address == msg_dict['toAddress'])).first()
 
             if not list_chan:
                 return
 
             # Check if sending address is in primary or secondary address list
-            access = get_access(msg_dict[0]['toAddress'])
+            access = get_access(msg_dict['toAddress'])
             sender_is_primary = False
             sender_is_secondary = False
             sender_is_tertiary = False
             sender_is_restricted = False
-            if msg_dict[0]['fromAddress'] in access["primary_addresses"]:
+            if msg_dict['fromAddress'] in access["primary_addresses"]:
                 sender_is_primary = True
-            if msg_dict[0]['fromAddress'] in access["secondary_addresses"]:
+            if msg_dict['fromAddress'] in access["secondary_addresses"]:
                 sender_is_secondary = True
-            if msg_dict[0]['fromAddress'] in access["tertiary_addresses"]:
+            if msg_dict['fromAddress'] in access["tertiary_addresses"]:
                 sender_is_tertiary = True
-            if msg_dict[0]['fromAddress'] in access["restricted_addresses"]:
+            if msg_dict['fromAddress'] in access["restricted_addresses"]:
                 sender_is_restricted = True
 
             # Check if address restricted
             if list_chan.access == "public" and sender_is_restricted:
                 logger.info("{}: List from restricted sender: {}. Deleting.".format(
-                    message_id[0:6], msg_dict[0]['fromAddress']))
-                self.trash_message(message_id)
+                    msg_dict["msgid"][0:6], msg_dict['fromAddress']))
+                self.trash_message(msg_dict["msgid"])
                 return
 
             # Check if rule prevents sending from own address
@@ -1948,13 +2025,13 @@ class BitChan(Thread):
                 rules = {}
             if ("require_identity_to_post" in rules and
                     rules["require_identity_to_post"] and
-                    msg_dict[0]['toAddress'] == msg_dict[0]['fromAddress']):
+                    msg_dict['toAddress'] == msg_dict['fromAddress']):
                 # From address is not different from list address
                 logger.info(
                     "{}: List is from its own address {} but requires a "
                     "non-list address to post. Deleting.".format(
-                        message_id[0:6], msg_dict[0]['fromAddress']))
-                self.trash_message(message_id)
+                        msg_dict["msgid"][0:6], msg_dict['fromAddress']))
+                self.trash_message(msg_dict["msgid"])
                 return
 
             if list_chan.access == "public":
@@ -1965,14 +2042,14 @@ class BitChan(Thread):
                             msg_decrypted_dict["timestamp_utc"] < list_chan.list_message_timestamp_utc_owner):
                         # message timestamp is older than what's in the database
                         logger.info("{}: Owner/Admin of public list message older than DB timestamp. Deleting.".format(
-                            message_id[0:6]))
-                        self.trash_message(message_id)
+                            msg_dict["msgid"][0:6]))
+                        self.trash_message(msg_dict["msgid"])
                         return
                     else:
                         logger.info("{}: Owner/Admin of public list message newer than DB timestamp. Updating.".format(
-                            message_id[0:6]))
-                        list_chan.list_message_id_owner = message_id
-                        list_chan.list_message_expires_time_owner = get_msg_expires_time(message_id)
+                            msg_dict["msgid"][0:6]))
+                        list_chan.list_message_id_owner = msg_dict["msgid"]
+                        list_chan.list_message_expires_time_owner = get_msg_expires_time(msg_dict["msgid"])
                         list_chan.list_message_timestamp_utc_owner = msg_decrypted_dict["timestamp_utc"]
 
                         # Set user times to those of owner
@@ -1988,15 +2065,15 @@ class BitChan(Thread):
                                      list_chan.list_message_timestamp_utc_owner > list_chan.list_message_timestamp_utc_user))
                                 ):
                             logger.info("{}: Setting user timestamp/expires_time to that of Owner/Admin.".format(
-                                message_id[0:6]))
-                            list_chan.list_message_id_user = message_id
-                            list_chan.list_message_expires_time_user = get_msg_expires_time(message_id)
+                                msg_dict["msgid"][0:6]))
+                            list_chan.list_message_id_user = msg_dict["msgid"]
+                            list_chan.list_message_expires_time_user = get_msg_expires_time(msg_dict["msgid"])
                             list_chan.list_message_timestamp_utc_user = msg_decrypted_dict["timestamp_utc"]
 
                     logger.info(
                         "{}: List {} is public and From address {} "
                         "in primary or secondary access list. Replacing entire list.".format(
-                            message_id[0:6], msg_dict[0]['toAddress'], msg_dict[0]['fromAddress']))
+                            msg_dict["msgid"][0:6], msg_dict['toAddress'], msg_dict['fromAddress']))
                     list_chan.list = json.dumps(msg_decrypted_dict["list"])
                 else:
                     # store latest list timestamp from tertiary addresses
@@ -2004,14 +2081,14 @@ class BitChan(Thread):
                             msg_decrypted_dict["timestamp_utc"] < list_chan.list_message_timestamp_utc_user):
                         # message timestamp is older than what's in the database
                         logger.info("{}: User list message older than DB timestamp. Deleting.".format(
-                            message_id[0:6]))
-                        self.trash_message(message_id)
+                            msg_dict["msgid"][0:6]))
+                        self.trash_message(msg_dict["msgid"])
                         return
                     else:
                         logger.info("{}: User list message newer than DB timestamp. Updating.".format(
-                            message_id[0:6]))
-                        list_chan.list_message_id_user = message_id
-                        list_chan.list_message_expires_time_user = get_msg_expires_time(message_id)
+                            msg_dict["msgid"][0:6]))
+                        list_chan.list_message_id_user = msg_dict["msgid"]
+                        list_chan.list_message_expires_time_user = get_msg_expires_time(msg_dict["msgid"])
                         list_chan.list_message_timestamp_utc_user = msg_decrypted_dict["timestamp_utc"]
 
                     try:
@@ -2019,13 +2096,13 @@ class BitChan(Thread):
                     except:
                         dict_chan_list = {}
                     logger.info("{}: List {} is public, adding addresses to list".format(
-                        message_id[0:6], msg_dict[0]['toAddress']))
+                        msg_dict["msgid"][0:6], msg_dict['toAddress']))
                     for each_address in msg_decrypted_dict["list"]:
                         if each_address not in dict_chan_list:
-                            logger.info("{}: Adding {} to list".format(message_id[0:6], each_address))
+                            logger.info("{}: Adding {} to list".format(msg_dict["msgid"][0:6], each_address))
                             dict_chan_list[each_address] = msg_decrypted_dict["list"][each_address]
                         else:
-                            logger.info("{}: {} already in list".format(message_id[0:6], each_address))
+                            logger.info("{}: {} already in list".format(msg_dict["msgid"][0:6], each_address))
                     list_chan.list = json.dumps(dict_chan_list)
 
                 new_session.commit()
@@ -2035,7 +2112,7 @@ class BitChan(Thread):
                 if not sender_is_primary and not sender_is_secondary and not sender_is_tertiary:
                     logger.error(
                         "{}: List {} is private but From address {} not in primary, secondary, or tertiary access list".format(
-                            message_id[0:6], msg_dict[0]['toAddress'], msg_dict[0]['fromAddress']))
+                            msg_dict["msgid"][0:6], msg_dict['toAddress'], msg_dict['fromAddress']))
 
                 elif sender_is_primary or sender_is_secondary:
                     # store latest list timestamp from primary/secondary addresses
@@ -2043,22 +2120,22 @@ class BitChan(Thread):
                             msg_decrypted_dict["timestamp_utc"] < list_chan.list_message_timestamp_utc_owner):
                         # message timestamp is older than what's in the database
                         logger.info("{}: Owner/Admin of private list message older than DB timestamp. Deleting.".format(
-                            message_id[0:6]))
-                        self.trash_message(message_id)
+                            msg_dict["msgid"][0:6]))
+                        self.trash_message(msg_dict["msgid"])
                         return
                     else:
                         logger.info("{}: Owner/Admin of private list message newer than DB timestamp. Updating.".format(
-                            message_id[0:6]))
-                        list_chan.list_message_id_owner = message_id
-                        list_chan.list_message_expires_time_owner = get_msg_expires_time(message_id)
+                            msg_dict["msgid"][0:6]))
+                        list_chan.list_message_id_owner = msg_dict["msgid"]
+                        list_chan.list_message_expires_time_owner = get_msg_expires_time(msg_dict["msgid"])
                         list_chan.list_message_timestamp_utc_owner = msg_decrypted_dict["timestamp_utc"]
 
                     logger.info(
                         "{}: List {} is private and From address {} "
                         "in primary or secondary access list. Replacing entire list.".format(
-                            message_id[0:6], msg_dict[0]['toAddress'], msg_dict[0]['fromAddress']))
+                            msg_dict["msgid"][0:6], msg_dict['toAddress'], msg_dict['fromAddress']))
                     list_chan = new_session.query(Chan).filter(
-                        Chan.address == msg_dict[0]['toAddress']).first()
+                        Chan.address == msg_dict['toAddress']).first()
                     list_chan.list = json.dumps(msg_decrypted_dict["list"])
 
                 elif sender_is_tertiary:
@@ -2067,35 +2144,35 @@ class BitChan(Thread):
                             msg_decrypted_dict["timestamp_utc"] < list_chan.list_message_timestamp_utc_user):
                         # message timestamp is older than what's in the database
                         logger.info("{}: User list message older than DB timestamp. Deleting.".format(
-                            message_id[0:6]))
-                        self.trash_message(message_id)
+                            msg_dict["msgid"][0:6]))
+                        self.trash_message(msg_dict["msgid"])
                         return
                     else:
                         logger.info("{}: User list message newer than DB timestamp. Updating.".format(
-                            message_id[0:6]))
-                        list_chan.list_message_id_user = message_id
-                        list_chan.list_message_expires_time_user = get_msg_expires_time(message_id)
+                            msg_dict["msgid"][0:6]))
+                        list_chan.list_message_id_user = msg_dict["msgid"]
+                        list_chan.list_message_expires_time_user = get_msg_expires_time(msg_dict["msgid"])
                         list_chan.list_message_timestamp_utc_user = msg_decrypted_dict["timestamp_utc"]
 
                     logger.info(
                         "{}: List {} is private and From address {} "
                         "in tertiary access list. Adding addresses to list.".format(
-                            message_id[0:6], msg_dict[0]['toAddress'], msg_dict[0]['fromAddress']))
+                            msg_dict["msgid"][0:6], msg_dict['toAddress'], msg_dict['fromAddress']))
                     try:
                         dict_chan_list = json.loads(list_chan.list)
                     except:
                         dict_chan_list = {}
                     for each_address in msg_decrypted_dict["list"]:
                         if each_address not in dict_chan_list:
-                            logger.info("{}: Adding {} to list".format(message_id[0:6], each_address))
+                            logger.info("{}: Adding {} to list".format(msg_dict["msgid"][0:6], each_address))
                             dict_chan_list[each_address] = msg_decrypted_dict["list"][each_address]
                         else:
-                            logger.info("{}: {} already in list".format(message_id[0:6], each_address))
+                            logger.info("{}: {} already in list".format(msg_dict["msgid"][0:6], each_address))
                     list_chan.list = json.dumps(dict_chan_list)
 
                 new_session.commit()
 
-        self.trash_message(message_id)
+        self.trash_message(msg_dict["msgid"])
 
     def parse_message(self, message_id, json_obj):
         file_decoded = None
@@ -2105,8 +2182,11 @@ class BitChan(Thread):
         file_url = None
         file_extracts_start_base64 = None
         file_size = None
-        file_md5_hash = None
-        file_md5_hashes_match = False
+        file_sha256_hash = None
+        file_enc_cipher = None
+        file_enc_key_bytes = None
+        file_enc_password = None
+        file_sha256_hashes_match = False
         file_download_successful = False
         upload_filename = None
         saved_file_filename = None
@@ -2114,9 +2194,11 @@ class BitChan(Thread):
         media_width = None
         media_height = None
         image_spoiler = None
-        op_md5_hash = None
+        op_sha256_hash = None
         message = None
         nation = None
+        nation_base64 = None
+        nation_name = None
         message_steg = None
         file_do_not_download = False
         file_path = None
@@ -2124,12 +2206,12 @@ class BitChan(Thread):
 
         dict_msg = json_obj['message_decrypted']
 
-        # MD5 hash of the original encrypted message payload to identify the OP of the thread.
+        # SHA256 hash of the original encrypted message payload to identify the OP of the thread.
         # Each reply must identify the thread it's replying to by supplying the OP hash.
         # If the OP hash doesn't exist, a new thread is created.
         # This prevents OP hijacking by impersonating an OP with an earlier send timestamp.
-        message_md5_hash = hashlib.md5(json.dumps(json_obj['message']).encode('utf-8')).hexdigest()
-        # logger.info("Message MD5: {}".format(message_md5_hash))
+        message_sha256_hash = hashlib.sha256(json.dumps(json_obj['message']).encode('utf-8')).hexdigest()
+        # logger.info("Message SHA256: {}".format(message_sha256_hash))
 
         # Check if message properly formatted, delete if not.
         if "subject" not in dict_msg or not dict_msg["subject"]:
@@ -2138,7 +2220,7 @@ class BitChan(Thread):
             return
         else:
             subject = html.escape(base64.b64decode(dict_msg["subject"]).decode('utf-8')).strip()
-            if len(subject) > 64:
+            if len(base64.b64decode(dict_msg["subject"]).decode('utf-8')) > 64:
                 logger.error("{}: Subject too large. Deleting".format(message_id[0:6]))
                 self.trash_message(message_id)
                 return
@@ -2159,14 +2241,14 @@ class BitChan(Thread):
             is_op = False
 
         # Determine if message indicates if it's a reply to an OP by supplying OP hash
-        if "op_md5_hash" in dict_msg and dict_msg["op_md5_hash"]:
-            op_md5_hash = dict_msg["op_md5_hash"]
+        if "op_sha256_hash" in dict_msg and dict_msg["op_sha256_hash"]:
+            op_sha256_hash = dict_msg["op_sha256_hash"]
 
         # Determine if message is an OP or a reply
         if is_op:
-            thread_id = get_thread_id(message_md5_hash)
-        elif op_md5_hash:
-            thread_id = get_thread_id(op_md5_hash)
+            thread_id = get_thread_id(message_sha256_hash)
+        elif op_sha256_hash:
+            thread_id = get_thread_id(op_sha256_hash)
         else:
             logger.error("{}: Message neither OP nor reply: Deleting.".format(message_id[0:6]))
             self.trash_message(message_id)
@@ -2216,8 +2298,6 @@ class BitChan(Thread):
         if "file_filename" in dict_msg and dict_msg["file_filename"]:
             file_filename = dict_msg["file_filename"]
             logger.info("{} Filename on post: {}".format(message_id[0:6], dict_msg["file_filename"]))
-        if "nation" in dict_msg and dict_msg["nation"]:
-            nation = dict_msg["nation"]
         if "media_width" in dict_msg and dict_msg["media_width"]:
             media_width = dict_msg["media_width"]
         if "media_height" in dict_msg and dict_msg["media_height"]:
@@ -2238,8 +2318,52 @@ class BitChan(Thread):
                 file_size = len(file_decoded)
             except Exception as err:
                 logger.exception("{}: Exception decoding image: {}".format(message_id[0:6], err))
-        if "file_md5_hash" in dict_msg and dict_msg["file_md5_hash"]:
-            file_md5_hash = dict_msg["file_md5_hash"]
+        if "file_sha256_hash" in dict_msg and dict_msg["file_sha256_hash"]:
+            file_sha256_hash = dict_msg["file_sha256_hash"]
+        if "file_enc_cipher" in dict_msg and dict_msg["file_enc_cipher"]:
+            file_enc_cipher = dict_msg["file_enc_cipher"]
+        if "file_enc_key_bytes" in dict_msg and dict_msg["file_enc_key_bytes"]:
+            file_enc_key_bytes = dict_msg["file_enc_key_bytes"]
+        if "file_enc_password" in dict_msg and dict_msg["file_enc_password"]:
+            file_enc_password = dict_msg["file_enc_password"]
+
+        if "nation" in dict_msg and dict_msg["nation"]:
+            nation = dict_msg["nation"]
+        if "nation_base64" in dict_msg and dict_msg["nation_base64"]:
+            nation_base64 = dict_msg["nation_base64"]
+        if "nation_name" in dict_msg and dict_msg["nation_name"]:
+            nation_name = dict_msg["nation_name"]
+
+        if nation_base64:
+            flag_pass = True
+            try:
+                flag = Image.open(BytesIO(base64.b64decode(nation_base64)))
+                flag_width, flag_height = flag.size
+                if flag_width > config.FLAG_MAX_WIDTH or flag_height > config.FLAG_MAX_HEIGHT:
+                    flag_pass = False
+                    logger.error(
+                        "Flag dimensions is too large (max 25x15): {}x{}".format(
+                            flag_width, flag_height))
+                if len(base64.b64decode(nation_base64)) > config.FLAG_MAX_SIZE:
+                    flag_pass = False
+                    logger.error(
+                        "Flag file size is too large: {}. Must be less than or equal to 3500 bytes.".format(
+                            len(base64.b64decode(nation_base64))))
+            except:
+                flag_pass = False
+                logger.error("Error attempting to open flag image")
+
+            if not nation_name:
+                flag_pass = False
+                logger.error("{}: Flag name not found".format(message_id[0:6]))
+            elif len(nation_name) > 64:
+                flag_pass = False
+                logger.error("{}: Flag name too long: {}".format(message_id[0:6], nation_name))
+
+            if not flag_pass:
+                logger.error("{}: Base64 flag didn't pass validation. Deleting.".format(message_id[0:6]))
+                self.trash_message(message_id)
+                return
 
         if "file_url" in dict_msg and dict_msg["file_url"]:
             file_url = dict_msg["file_url"]
@@ -2270,8 +2394,6 @@ class BitChan(Thread):
             else:
                 logger.info("{}: File not found. Attempting to download.".format(message_id[0:6]))
                 logger.info("{}: Downloading file url: {}".format(message_id[0:6], dict_msg["file_url"]))
-                download_path = "/tmp/{}.zip".format(get_random_alphanumeric_string(
-                    30, with_punctuation=False, with_spaces=False))
 
                 if (upload_filename and file_url_type and
                         file_url_type in config.DICT_UPLOAD_SERVERS):
@@ -2288,26 +2410,39 @@ class BitChan(Thread):
                             (file_download_successful,
                              file_size,
                              file_do_not_download,
-                             file_md5_hashes_match,
+                             file_sha256_hashes_match,
                              media_height,
                              media_width,
                              message_steg) = download_and_extract(
+                                json_obj['toAddress'],
                                 message_id,
                                 file_url,
                                 file_extracts_start_base64,
                                 upload_filename,
-                                download_path,
                                 file_path,
                                 file_extension,
-                                file_md5_hash,
+                                file_sha256_hash,
+                                file_enc_cipher,
+                                file_enc_key_bytes,
+                                file_enc_password,
                                 img_thumb_filename)
                         finally:
                             lf.lock_release(lockfile)
 
         if file_decoded:
             # If decoded image, check for steg message
-            message_steg = check_steg(
-                message_id, file_extension, file_decoded=file_decoded)
+            with session_scope(DB_PATH) as new_session:
+                pgp_passphrase_steg = config.PASSPHRASE_STEG
+                chan = new_session.query(Chan).filter(
+                    Chan.address == json_obj['toAddress']).first()
+                if chan and chan.pgp_passphrase_steg:
+                    pgp_passphrase_steg = chan.pgp_passphrase_steg
+
+                message_steg = check_steg(
+                    message_id,
+                    file_extension,
+                    passphrase=pgp_passphrase_steg,
+                    file_decoded=file_decoded)
 
         # Check for post replies
         replies = []
@@ -2328,7 +2463,7 @@ class BitChan(Thread):
                     Chan.address == json_obj['toAddress']).first()
                 new_thread = Threads()
                 new_thread.thread_hash = thread_id
-                new_thread.op_md5_hash = message_md5_hash
+                new_thread.op_sha256_hash = message_sha256_hash
                 if chan:
                     new_thread.chan_id = chan.id
                 new_thread.subject = subject
@@ -2342,7 +2477,7 @@ class BitChan(Thread):
                     Chan.address == json_obj['toAddress']).first()
                 new_thread = Threads()
                 new_thread.thread_hash = thread_id
-                new_thread.op_md5_hash = op_md5_hash
+                new_thread.op_sha256_hash = op_sha256_hash
                 if chan:
                     new_thread.chan_id = chan.id
                 new_thread.subject = subject
@@ -2371,11 +2506,13 @@ class BitChan(Thread):
             new_msg.expires_time = get_msg_expires_time(message_id)
             new_msg.thread_id = id_thread
             new_msg.address_from = bleach.clean(json_obj['fromAddress'])
-            new_msg.message_md5_hash = message_md5_hash
+            new_msg.message_sha256_hash = message_sha256_hash
             new_msg.is_op = is_op
             new_msg.message = message
             new_msg.subject = subject
             new_msg.nation = nation
+            new_msg.nation_base64 = nation_base64
+            new_msg.nation_name = nation_name
             if file_decoded == b"":  # Empty file
                 new_msg.file_decoded = b" "
             else:
@@ -2386,8 +2523,11 @@ class BitChan(Thread):
             new_msg.file_extracts_start_base64 = json.dumps(file_extracts_start_base64)
             new_msg.file_size = file_size
             new_msg.file_do_not_download = file_do_not_download
-            new_msg.file_md5_hash = file_md5_hash
-            new_msg.file_md5_hashes_match = file_md5_hashes_match
+            new_msg.file_sha256_hash = file_sha256_hash
+            new_msg.file_enc_cipher = file_enc_cipher
+            new_msg.file_enc_key_bytes = file_enc_key_bytes
+            new_msg.file_enc_password = file_enc_password
+            new_msg.file_sha256_hashes_match = file_sha256_hashes_match
             new_msg.file_download_successful = file_download_successful
             new_msg.upload_filename = upload_filename
             new_msg.saved_file_filename = saved_file_filename
@@ -2398,8 +2538,6 @@ class BitChan(Thread):
             new_msg.timestamp_received = int(json_obj['receivedTime'])
             new_msg.timestamp_sent = timestamp_sent
             new_msg.message_original = json_obj["message"]
-            new_msg.passphrase_pgp = config.PASSPHRASE_MSG
-            new_msg.decrypted_pgp = True
             new_msg.message_steg = message_steg
             new_msg.replies = json.dumps(replies)
             new_session.add(new_msg)
@@ -2437,15 +2575,20 @@ class BitChan(Thread):
             "file_url_type": None,
             "file_url": None,
             "file_extracts_start_base64": None,
-            "file_md5_hash": None,
+            "file_sha256_hash": None,
+            "file_enc_cipher": None,
+            "file_enc_key_bytes": None,
+            "file_enc_password": None,
             "media_height": None,
             "media_width": None,
             "file_uploaded": None,
             "upload_filename": None,
-            "op_md5_hash": None,
+            "op_sha256_hash": None,
             "subject": None,
             "message": None,
             "nation": None,
+            "nation_base64": None,
+            "nation_name": None,
             "post_id": get_random_alphanumeric_string(6, with_punctuation=False, with_spaces=False)
         }
 
@@ -2480,18 +2623,27 @@ class BitChan(Thread):
             dict_send["subject"] = base64.b64encode(subject_test).decode()
 
         if form_post.nation.data:
-            dict_send["nation"] = form_post.nation.data
+            if (form_post.nation.data.startswith("customflag") and
+                    len(form_post.nation.data.split("_")) == 2):
+                flag_id = int(form_post.nation.data.split("_")[1])
+                with session_scope(DB_PATH) as new_session:
+                    flag = new_session.query(Flags).filter(Flags.id == flag_id).first()
+                    if flag:
+                        dict_send["nation_name"] = flag.name
+                        dict_send["nation_base64"] = flag.flag_base64
+            else:
+                dict_send["nation"] = form_post.nation.data
 
         if form_post.body.data:
             dict_send["message"] = form_post.body.data.encode('utf-8').strip().decode()
 
-        if form_post.is_op.data == "no" and form_post.op_md5_hash.data:
-            dict_send["op_md5_hash"] = form_post.op_md5_hash.data
+        if form_post.is_op.data == "no" and form_post.op_sha256_hash.data:
+            dict_send["op_sha256_hash"] = form_post.op_sha256_hash.data
 
         if form_post.file.data:
             try:
-                dict_send["file_filename"] = form_post.file.data.filename
-                dict_send["file_extension"] = os.path.splitext(dict_send["file_filename"])[1].split(".")[1].lower()
+                dict_send["file_filename"] = html.escape(form_post.file.data.filename)
+                dict_send["file_extension"] = html.escape(os.path.splitext(dict_send["file_filename"])[1].split(".")[1].lower())
             except Exception as e:
                 msg = "Error determining file extension: {}".format(e)
                 logger.error("{}: {}".format(dict_send["post_id"], msg))
@@ -2532,9 +2684,9 @@ class BitChan(Thread):
             msg_send.start()
             msg = "Your file that will be uploaded is {}, which is above the {} size to wait " \
                   "for the upload to finish. Instead, a thread was spawned to handle the upload " \
-                  "and this message was generated to let you know your post is uploading in the" \
-                  "background. Depending on the size of your upload and the service it's being" \
-                  "uploaded to, the time it takes to send your post will vary. Give your post ample" \
+                  "and this message was generated to let you know your post is uploading in the " \
+                  "background. Depending on the size of your upload and the service it's being " \
+                  "uploaded to, the time it takes to send your post will vary. Give your post ample " \
                   "time to send so you don't make duplicate posts.".format(
                     human_readable_size(save_file_size),
                     human_readable_size(config.UPLOAD_SIZE_TO_THREAD))
@@ -2575,11 +2727,18 @@ class BitChan(Thread):
             if form_steg and dict_send["file_extension"] in config.FILE_EXTENSIONS_IMAGE:
                 logger.info("{}: Adding steg message to image".format(dict_send["post_id"]))
 
+                pgp_passphrase_steg = config.PASSPHRASE_STEG
+                with session_scope(DB_PATH) as new_session:
+                    chan = new_session.query(Chan).filter(
+                        Chan.address == form_post.board_id.data).first()
+                    if chan and chan.pgp_passphrase_steg:
+                        pgp_passphrase_steg = chan.pgp_passphrase_steg
+
                 steg_status = steg_encrypt(
                     dict_send["save_file_path"],
                     dict_send["save_file_path"],
                     form_steg.steg_message.data,
-                    form_steg.steg_passphrase.data)
+                    pgp_passphrase_steg)
 
                 if steg_status != "success":
                     errors.append(steg_status)
@@ -2589,26 +2748,60 @@ class BitChan(Thread):
                 form_post.upload.data in config.DICT_UPLOAD_SERVERS):
             dict_send["file_url_type"] = form_post.upload.data
 
+            # Generate random filename and extension
             dict_send["upload_filename"] = "{}.{}".format(
                 get_random_alphanumeric_string(
                     30, with_punctuation=False, with_spaces=False),
                 get_random_alphanumeric_string(
-                    3, with_punctuation=False, with_spaces=False).lower())
-            save_zip_path = "/tmp/{}".format(dict_send["upload_filename"])
+                    3, with_punctuation=False, with_digits=False, with_spaces=False).lower())
+
+            save_encrypted_path = "/tmp/{}".format(dict_send["upload_filename"])
+
+            # encrypt file
+            try:
+                dict_send["file_enc_cipher"] = form_post.upload_cipher_and_key.data.split(",")[0]
+                dict_send["file_enc_key_bytes"] = int(form_post.upload_cipher_and_key.data.split(",")[1])
+            except:
+                msg = "Unknown cannot parse cipher and key length: {}".format(form_post.upload_cipher_and_key.data)
+                errors.append(msg)
+                logger.error("{}: {}".format(dict_send["post_id"], msg))
+                return "Error", errors
+
+            dict_send["file_enc_password"] = get_random_alphanumeric_string(300)
+            logger.info("{}: Encrypting file with {} and {}-bit key".format(
+                dict_send["post_id"],
+                dict_send["file_enc_cipher"],
+                dict_send["file_enc_key_bytes"] * 8))
+            ret_crypto = crypto_multi_enc(
+                dict_send["file_enc_cipher"],
+                dict_send["file_enc_password"],
+                dict_send["save_file_path"],
+                save_encrypted_path,
+                key_bytes=dict_send["file_enc_key_bytes"])
+            if not ret_crypto:
+                msg = "Unknown encryption cipher: {}".format(dict_send["file_enc_cipher"])
+                errors.append(msg)
+                logger.error("{}: {}".format(dict_send["post_id"], msg))
+                return "Error", errors
 
             # Add image to password protected zip
-            logger.info("{}: Creating ZIP file".format(dict_send["post_id"]))
-            pyminizip.compress(
-                dict_send["save_file_path"],
-                None,
-                save_zip_path,
-                config.PASSPHRASE_ZIP, 1)
+            # logger.info("{}: Creating ZIP file".format(dict_send["post_id"]))
+            # pyminizip.compress(
+            #     dict_send["save_file_path"],
+            #     None,
+            #     save_encrypted_path,
+            #     config.PASSPHRASE_ZIP, 1)
+
             delete_file(dict_send["save_file_path"])
 
-            file_size = os.path.getsize(save_zip_path)
+            # Generate hash before parts removed
+            dict_send["file_sha256_hash"] = generate_hash(save_encrypted_path)
+            if dict_send["file_sha256_hash"]:
+                logger.info("{}: File hash generated: {}".format(
+                    dict_send["post_id"], dict_send["file_sha256_hash"]))
 
+            file_size = os.path.getsize(save_encrypted_path)
             number_of_extracts = 3
-
             if file_size < 2000:
                 extract_starts_sizes = [{
                     "start": 0,
@@ -2619,66 +2812,85 @@ class BitChan(Thread):
                     "start": 0,
                     "size": 200
                 }]
-
                 sequences = return_non_overlapping_sequences(
                     number_of_extracts, 200, file_size - 200, 200, 1000)
-
                 for pos, size in sequences:
                     extract_starts_sizes.append({
                         "start": pos,
                         "size": size
                     })
-
                 extract_starts_sizes.append({
                     "start": file_size - 200,
                     "size": 200
                 })
-
             logger.info("{}: File extraction positions and sizes: {}".format(
                 dict_send["post_id"], extract_starts_sizes))
             logger.info("{}: File size before: {}".format(
-                dict_send["post_id"], os.path.getsize(save_zip_path)))
+                dict_send["post_id"], os.path.getsize(save_encrypted_path)))
 
             data_extracted_start_base64 = data_file_multiple_extract(
-                save_zip_path, extract_starts_sizes, chunk=4096)
+                save_encrypted_path, extract_starts_sizes, chunk=4096)
 
             logger.info("{}: File size after: {}".format(
-                dict_send["post_id"], os.path.getsize(save_zip_path)))
+                dict_send["post_id"], os.path.getsize(save_encrypted_path)))
 
             dict_send["file_extracts_start_base64"] = json.dumps(data_extracted_start_base64)
 
-            dict_send["file_md5_hash"] = generate_hash(save_zip_path)
-            if dict_send["file_md5_hash"]:
-                logger.info("{}: ZIP file hash generated: {}".format(
-                    dict_send["post_id"], dict_send["file_md5_hash"]))
-
-            # Upload zip
+            # Upload file
+            upload_id = get_random_alphanumeric_string(
+                12, with_spaces=False, with_punctuation=False)
             try:
+                with session_scope(DB_PATH) as new_session:
+                    upl = UploadProgress()
+                    upl.upload_id = upload_id
+                    upl.uploading = True
+                    upl.filename = dict_send["file_filename"]
+                    upl.total_size_bytes = os.path.getsize(save_encrypted_path)
+                    new_session.add(upl)
+                    new_session.commit()
+
                 upload_success = None
                 if config.DICT_UPLOAD_SERVERS[form_post.upload.data]["uri"]:
                     anon = AnonFile(
                         proxies=config.TOR_PROXIES,
-                        custom_timeout=600,
-                        uri=config.DICT_UPLOAD_SERVERS[form_post.upload.data]["uri"])
+                        custom_timeout=432000,
+                        uri=config.DICT_UPLOAD_SERVERS[form_post.upload.data]["uri"],
+                        upload_id=upload_id)
                 else:
                     anon = AnonFile(
                         proxies=config.TOR_PROXIES,
-                        custom_timeout=600,
-                        server=form_post.upload.data)
+                        custom_timeout=432000,
+                        server=form_post.upload.data,
+                        upload_id=upload_id)
+
                 for i in range(3):
-                    logger.info("{}: Uploading {} ZIP file".format(
+                    logger.info("{}: Uploading {} file".format(
                         dict_send["post_id"],
-                        human_readable_size(os.path.getsize(save_zip_path))))
-                    status, web_url = anon.upload_file(save_zip_path)
+                        human_readable_size(os.path.getsize(save_encrypted_path))))
+                    status, web_url = anon.upload_file(save_encrypted_path)
                     if not status:
-                        logger.error("{}: ZIP file upload failed".format(dict_send["post_id"]))
+                        logger.error("{}: File upload failed".format(dict_send["post_id"]))
                     else:
                         logger.info("{}: Upload success: URL: {}".format(dict_send["post_id"], web_url))
                         upload_success = web_url
+                        with session_scope(DB_PATH) as new_session:
+                            upl = new_session.query(UploadProgress).filter(
+                                UploadProgress.upload_id == upload_id).first()
+                            if upl:
+                                upl.progress_size_bytes = os.path.getsize(save_encrypted_path)
+                                upl.progress_percent = 100
+                                upl.uploading = False
+                                new_session.commit()
                         break
                     time.sleep(15)
             finally:
-                delete_file(save_zip_path)
+                delete_file(save_encrypted_path)
+                with session_scope(DB_PATH) as new_session:
+                    upl = new_session.query(UploadProgress).filter(
+                        UploadProgress.upload_id == upload_id).first()
+                    if upl:
+                        upl.uploading = False
+                        new_session.commit()
 
             if upload_success:
                 dict_send["file_url"] = upload_success
@@ -2696,7 +2908,7 @@ class BitChan(Thread):
             "version": config.VERSION_BITCHAN,
             "message_type": "post",
             "is_op": form_post.is_op.data == "yes",
-            "op_md5_hash": dict_send["op_md5_hash"],
+            "op_sha256_hash": dict_send["op_sha256_hash"],
             "timestamp_utc": self.get_utc(),
             "file_filename": dict_send["file_filename"],
             "file_extension": dict_send["file_extension"],
@@ -2704,24 +2916,36 @@ class BitChan(Thread):
             "file_url": dict_send["file_url"],
             "file_extracts_start_base64": dict_send["file_extracts_start_base64"],
             "file_base64": dict_send["file_uploaded"],
-            "file_md5_hash": dict_send["file_md5_hash"],
+            "file_sha256_hash": dict_send["file_sha256_hash"],
+            "file_enc_cipher": dict_send["file_enc_cipher"],
+            "file_enc_key_bytes": dict_send["file_enc_key_bytes"],
+            "file_enc_password": dict_send["file_enc_password"],
             "media_width": dict_send["media_width"],
             "media_height": dict_send["media_height"],
             "image_spoiler": form_post.image_spoiler.data,
             "upload_filename": dict_send["upload_filename"],
             "subject": dict_send["subject"],
             "message": dict_send["message"],
-            "nation": dict_send["nation"]
+            "nation": dict_send["nation"],
+            "nation_base64": dict_send["nation_base64"],
+            "nation_name": dict_send["nation_name"],
         }
 
         if dict_send["save_file_path"]:
             delete_file(dict_send["save_file_path"])
 
+        pgp_passphrase_msg = config.PASSPHRASE_MSG
+        with session_scope(DB_PATH) as new_session:
+            chan = new_session.query(Chan).filter(
+                Chan.address == form_post.board_id.data).first()
+            if chan and chan.pgp_passphrase_msg:
+                pgp_passphrase_msg = chan.pgp_passphrase_msg
+
         gpg = gnupg.GPG()
         message_encrypted = gpg.encrypt(
             json.dumps(dict_message),
-            symmetric=True,
-            passphrase=config.PASSPHRASE_MSG,
+            symmetric="AES256",
+            passphrase=pgp_passphrase_msg,
             recipients=None)
 
         message_send = base64.b64encode(message_encrypted.data).decode()
@@ -2735,6 +2959,11 @@ class BitChan(Thread):
             return "Error", errors
         else:
             logger.info("{}: Message size: {}".format(dict_send["post_id"], len(message_send)))
+
+        # prolong inventory clear if sending a message
+        now = time.time()
+        if self.timer_clear_inventory > now:
+            self.timer_clear_inventory = now + config.CLEAR_INVENTORY_WAIT
 
         lf = LF()
         if lf.lock_acquire(config.LOCKFILE_API, to=60):
@@ -2756,11 +2985,12 @@ class BitChan(Thread):
                 pass
             finally:
                 lf.lock_release(config.LOCKFILE_API)
-                return_msg = "Post of size {} sent. The time it takes to send a message is " \
-                             "related to the size of the message due to the proof of work " \
-                             "required to send a message. Generally, the larger the message, " \
-                             "the longer it takes to send. Messages ~10 KB take around a minute " \
-                             "to send, whereas messages >= 100 KB can take several minutes to " \
+                return_msg = "Post of size {} placed in send queue. The time it " \
+                             "takes to send a message is related to the size of the " \
+                             "post due to the proof of work required to send. " \
+                             "Generally, the larger the post, the longer it takes to " \
+                             "send. Posts ~10 KB take around a minute or less to send, " \
+                             "whereas messages >= 100 KB can take several minutes to " \
                              "send. BM returned: {}".format(
                                 human_readable_size(len(message_send)), return_str)
                 return return_msg, errors
@@ -2860,15 +3090,17 @@ class BitChan(Thread):
             finally:
                 lf.lock_release(config.LOCKFILE_API)
     
-    def find_sender(self, address, list_send):
+    def find_senders(self, address, list_send):
+        list_senders = []
         access = get_access(address)
         for each_sender in list_send:
-            for each_ident in self.get_identities():
-                if each_ident in access[each_sender]:
-                    return each_ident
             for each_chan in self.get_all_chans():
-                if each_chan in access[each_sender]:
-                    return each_chan
+                if each_chan in access[each_sender] and each_chan not in access["restricted_addresses"]:
+                    list_senders.append(each_chan)
+            for each_ident in self.get_identities():
+                if each_ident in access[each_sender] and each_ident not in access["restricted_addresses"]:
+                    list_senders.append(each_ident)
+        return list_senders
 
     def expiring_from_expires_time(self, msgid, expire_time):
         """Determine from expires_time if the list is expiring"""
@@ -2976,13 +3208,236 @@ class BitChan(Thread):
             logger.exception("Exception deleting thread: {}".format(err))
         return "Thread {} deleted".format(repr(thread_id))
 
+    def get_address_labels(self):
+        address_labels = {}
+        list_name_objects = [self.get_address_book(),
+                             self.get_all_chans(),
+                             self.get_identities()]
+        for each_name_repo in list_name_objects:
+            for each_address in each_name_repo:
+                if "label_short" in each_name_repo[each_address]:
+                    address_labels[each_address] = each_name_repo[each_address]["label_short"]
+        return address_labels
+
+    def get_chans_board_info(self):
+        chans_board_unsorted = {}
+        for each_chan in self.get_board_chans():
+            with session_scope(DB_PATH) as new_session:
+                chan = new_session.query(Chan).filter(and_(
+                    Chan.address == each_chan,
+                    Chan.type == "board")).first()
+                if chan:
+                    chans_board_unsorted[each_chan] = {}
+                    chans_board_unsorted[each_chan]["db"] = chan
+                    chans_board_unsorted[each_chan]["bm_label"] = self.get_board_chans()[each_chan]
+                    chans_board_unsorted[each_chan]["label"] = html.escape(chan.label)
+                    chans_board_unsorted[each_chan]["description"] = replace_lt_gt(chan.description)
+                    chans_board_unsorted[each_chan]["rules"] = json.loads(chan.rules)
+
+                    access = get_access(chan.address)
+                    chans_board_unsorted[each_chan]["primary_addresses"] = access["primary_addresses"]
+                    chans_board_unsorted[each_chan]["secondary_addresses"] = access["secondary_addresses"]
+                    chans_board_unsorted[each_chan]["tertiary_addresses"] = access["tertiary_addresses"]
+                    chans_board_unsorted[each_chan]["restricted_addresses"] = access["restricted_addresses"]
+
+                    if len(chan.label) > config.LABEL_LENGTH:
+                        chans_board_unsorted[each_chan]["label_short"] = html.escape(chan.label[:config.LABEL_LENGTH])
+                    else:
+                        chans_board_unsorted[each_chan]["label_short"] = html.escape(chan.label)
+        return OrderedDict(
+            sorted(chans_board_unsorted.items(), key=lambda x: getitem(x[1], 'label')))
+
+    def get_chans_list_info(self):
+        chans_list_unsorted = {}
+        for each_chan in self.get_list_chans():
+            with session_scope(DB_PATH) as new_session:
+                chan = new_session.query(Chan).filter(and_(
+                    Chan.address == each_chan,
+                    Chan.type == "list")).first()
+                if chan:
+                    chans_list_unsorted[each_chan] = {}
+                    chans_list_unsorted[each_chan]["db"] = chan
+                    chans_list_unsorted[each_chan]["bm_label"] = self.get_list_chans()[each_chan]
+                    chans_list_unsorted[each_chan]["label"] = html.escape(chan.label)
+                    chans_list_unsorted[each_chan]["description"] = html.escape(chan.description)
+                    chans_list_unsorted[each_chan]["rules"] = json.loads(chan.rules)
+                    chans_list_unsorted[each_chan]["primary_addresses"] = json.loads(chan.primary_addresses)
+
+                    access = get_access(chan.address)
+                    chans_list_unsorted[each_chan]["primary_addresses"] = access["primary_addresses"]
+                    chans_list_unsorted[each_chan]["secondary_addresses"] = access["secondary_addresses"]
+                    chans_list_unsorted[each_chan]["tertiary_addresses"] = access["tertiary_addresses"]
+                    chans_list_unsorted[each_chan]["restricted_addresses"] = access["restricted_addresses"]
+
+                    if len(chan.label) > config.LABEL_LENGTH:
+                        chans_list_unsorted[each_chan]["label_short"] = html.escape(chan.label[:config.LABEL_LENGTH])
+                    else:
+                        chans_list_unsorted[each_chan]["label_short"] = html.escape(chan.label)
+        return OrderedDict(
+            sorted(chans_list_unsorted.items(), key=lambda x: getitem(x[1], 'label')))
+
+    def get_from_list(self, address):
+        from_addresses = {}
+        anon_post = False
+
+        with session_scope(DB_PATH) as new_session:
+            address_labels = self.get_address_labels()
+            all_chans = self.get_all_chans()
+            identities = self.get_identities()
+
+            chan = new_session.query(Chan).filter(Chan.address == address).first()
+            if chan.type == "board":
+                chans_info = self.get_chans_board_info()
+            elif chan.type == "list":
+                chans_info = self.get_chans_list_info()
+
+            primary_addresses = chans_info[address]["primary_addresses"]
+            secondary_addresses = chans_info[address]["secondary_addresses"]
+            tertiary_addresses = chans_info[address]["tertiary_addresses"]
+            restricted_addresses = chans_info[address]["restricted_addresses"]
+            rules = chans_info[address]["rules"]
+            require_identity_to_post = ("require_identity_to_post" in rules and
+                                        rules["require_identity_to_post"])
+
+            if (chan.access == "public" and
+                    not require_identity_to_post and
+                    address not in restricted_addresses):
+                anon_post = address
+                from_addresses[address] = "Anonymous (this {})".format(chan.type)
+
+            for each_address in identities:
+                if each_address in from_addresses:
+                    continue
+
+                if identities[each_address]['enabled'] and (
+                        (chan.access == "private" and
+                         (each_address in primary_addresses or
+                          each_address in secondary_addresses or
+                          each_address in tertiary_addresses)
+                        ) or
+                        (chan.access == "public" and
+                         each_address not in restricted_addresses)):
+
+                    if each_address in primary_addresses:
+                        from_addresses[each_address] = "[Owner] "
+                    elif each_address in secondary_addresses:
+                        from_addresses[each_address] = "[Admin] "
+                    elif each_address in tertiary_addresses:
+                        from_addresses[each_address] = "[User] "
+                    else:
+                        from_addresses[each_address] = "[Other] "
+                    from_addresses[each_address] += "Identity: "
+                    if each_address in address_labels:
+                        from_addresses[each_address] += "{} ".format(address_labels[each_address])
+                    from_addresses[each_address] += "({}...{})".format(
+                        each_address[:9], each_address[-6:])
+
+            for each_address in all_chans:
+                if each_address in from_addresses:
+                    continue
+
+                if all_chans[each_address]['enabled'] and (
+                        (chan.access == "private" and
+                         (each_address in primary_addresses or
+                          each_address in secondary_addresses or
+                          each_address in tertiary_addresses)
+                        ) or
+                        (chan.access == "public" and
+                         each_address != address and
+                         each_address not in restricted_addresses)):
+
+                    if each_address in primary_addresses:
+                        from_addresses[each_address] = "[Owner] "
+                    elif each_address in secondary_addresses:
+                        from_addresses[each_address] = "[Admin] "
+                    elif each_address in tertiary_addresses:
+                        from_addresses[each_address] = "[User] "
+                    else:
+                        from_addresses[each_address] = "[Other] "
+                    if new_session.query(Chan).filter(Chan.address == each_address).first().type == "board":
+                        from_addresses[each_address] += "Board: "
+                    elif new_session.query(Chan).filter(Chan.address == each_address).first().type == "list":
+                        from_addresses[each_address] += "List: "
+                    if each_address in address_labels:
+                        from_addresses[each_address] += "{} ".format(address_labels[each_address])
+                    from_addresses[each_address] += "({}...{})".format(each_address[:9], each_address[-6:])
+
+        # sort
+        owners = {"board": {}, "list": {}, "ident": {}}
+        admins = {"board": {}, "list": {}, "ident": {}}
+        users = {"board": {}, "list": {}, "ident": {}}
+        others = {"board": {}, "list": {}, "ident": {}}
+
+        for each_address in from_addresses:
+            if from_addresses[each_address].startswith("[Owner] Board:"):
+                owners["board"][each_address] = from_addresses[each_address]
+            elif from_addresses[each_address].startswith("[Owner] List:"):
+                owners["list"][each_address] = from_addresses[each_address]
+            elif from_addresses[each_address].startswith("[Owner] Identity:"):
+                owners["ident"][each_address] = from_addresses[each_address]
+
+            elif from_addresses[each_address].startswith("[Admin] Board:"):
+                admins["board"][each_address] = from_addresses[each_address]
+            elif from_addresses[each_address].startswith("[Admin] List:"):
+                admins["list"][each_address] = from_addresses[each_address]
+            elif from_addresses[each_address].startswith("[Admin] Identity:"):
+                admins["ident"][each_address] = from_addresses[each_address]
+
+            elif from_addresses[each_address].startswith("[User] Board:"):
+                users["board"][each_address] = from_addresses[each_address]
+            elif from_addresses[each_address].startswith("[User] List:"):
+                users["list"][each_address] = from_addresses[each_address]
+            elif from_addresses[each_address].startswith("[User] Identity:"):
+                users["ident"][each_address] = from_addresses[each_address]
+
+            elif from_addresses[each_address].startswith("[Other] Board:"):
+                others["board"][each_address] = from_addresses[each_address]
+            elif from_addresses[each_address].startswith("[Other] List:"):
+                others["list"][each_address] = from_addresses[each_address]
+            elif from_addresses[each_address].startswith("[Other] Identity:"):
+                others["ident"][each_address] = from_addresses[each_address]
+
+        owners["board"] = OrderedDict(sorted(owners["board"].items(), key=lambda x: x[1].lower()))
+        owners["list"] = OrderedDict(sorted(owners["list"].items(), key=lambda x: x[1].lower()))
+        owners["ident"] = OrderedDict(sorted(owners["ident"].items(), key=lambda x: x[1].lower()))
+
+        admins["board"] = OrderedDict(sorted(admins["board"].items(), key=lambda x: x[1].lower()))
+        admins["list"] = OrderedDict(sorted(admins["list"].items(), key=lambda x: x[1].lower()))
+        admins["ident"] = OrderedDict(sorted(admins["ident"].items(), key=lambda x: x[1].lower()))
+
+        users["board"] = OrderedDict(sorted(users["board"].items(), key=lambda x: x[1].lower()))
+        users["list"] = OrderedDict(sorted(users["list"].items(), key=lambda x: x[1].lower()))
+        users["ident"] = OrderedDict(sorted(users["ident"].items(), key=lambda x: x[1].lower()))
+
+        others["board"] = OrderedDict(sorted(others["board"].items(), key=lambda x: x[1].lower()))
+        others["list"] = OrderedDict(sorted(others["list"].items(), key=lambda x: x[1].lower()))
+        others["ident"] = OrderedDict(sorted(others["ident"].items(), key=lambda x: x[1].lower()))
+
+        combined_dict = OrderedDict()
+        if anon_post:
+            combined_dict.update({anon_post: from_addresses[anon_post]})
+        combined_dict.update(owners["board"])
+        combined_dict.update(owners["list"])
+        combined_dict.update(owners["ident"])
+        combined_dict.update(admins["board"])
+        combined_dict.update(admins["list"])
+        combined_dict.update(admins["ident"])
+        combined_dict.update(users["board"])
+        combined_dict.update(users["list"])
+        combined_dict.update(users["ident"])
+        combined_dict.update(others["board"])
+        combined_dict.update(others["list"])
+        combined_dict.update(others["ident"])
+
+        return combined_dict
+
     def clear_bm_inventory(self):
-        logger.info("Deleting BitMessage inventory")
         try:
             self.is_restarting_bitmessage = True
             self.bitmessage_stop()
             time.sleep(20)
 
+            logger.info("Deleting Bitmessage inventory")
             conn = sqlite3.connect('file:{}'.format(config.messages_dat), uri=True)
             c = conn.cursor()
             c.execute('DELETE FROM inventory')
@@ -2990,19 +3445,19 @@ class BitChan(Thread):
             conn.close()
 
             self.bitmessage_start()
-            time.sleep(10)
+            time.sleep(20)
         finally:
             self.is_restarting_bitmessage = False
 
     def delete_and_vacuum(self):
-        logger.info("Deleting BitMessage Trash items")
+        logger.info("Deleting Bitmessage Trash items")
         try:
             self._api.deleteAndVacuum()
         except:
             logger.exception("delete_and_vacuum()")
 
     def signal_clear_inventory(self):
-        logger.info("Signaling deletion of BitMessage inventory in {} minutes".format(
+        logger.info("Signaling deletion of Bitmessage inventory in {} minutes".format(
             config.CLEAR_INVENTORY_WAIT / 60))
         self.timer_clear_inventory = time.time() + config.CLEAR_INVENTORY_WAIT
         with session_scope(DB_PATH) as new_session:
@@ -3069,7 +3524,7 @@ class BitChan(Thread):
                 subprocess.Popen('docker stop -t 15 bitmessage 2>&1', shell=True)
                 time.sleep(15)
         except Exception as err:
-            logger.error("Exception stopping BitMessage: {}".format(err))
+            logger.error("Exception stopping Bitmessage: {}".format(err))
 
     @staticmethod
     def bitmessage_start():
@@ -3079,7 +3534,7 @@ class BitChan(Thread):
                 subprocess.Popen('docker start bitmessage 2>&1', shell=True)
                 time.sleep(15)
         except Exception as err:
-            logger.error("Exception starting BitMessage: {}".format(err))
+            logger.error("Exception starting Bitmessage: {}".format(err))
 
     def get_utc(self):
         if self.utc_offset:

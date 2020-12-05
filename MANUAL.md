@@ -1,50 +1,56 @@
 <h1 align="center">BitChan Manual</h1>
 
-- [About](#about)
-- [Boards and Lists](#boards-and-lists)
-- [Permissions](#permissions)
-- [Posts](#posts)
-  - [Composing Posts](#composing-posts)
-  - [Text Modifications](#text-modifications)
-    - [Formatting](#formatting)
-    - [Functions](#functions)
-  - [Supported File Types](#supported-file-types)
-- [Threads](#threads)
-- [Board and List Creation](#board-and-list-creation)
-  - [Rules](#rules)
-    - [Automatic Wipe](#automatic-wipe)
-    - [Require Identity to Post](#require-identity-to-post)
-  - [Creating Public Boards and Lists](#creating-public-boards-and-lists)
-  - [Creating Private Boards and Lists](#creating-private-boards-and-lists)
-- [Identities](#identities)
-- [Address Book](#address-book)
-- [Developer Information](#developer-information)
+- [About](#about){.link}
+- [Boards and Lists](#boards-and-lists){.link}
+- [Permissions](#permissions){.link}
+- [Posts](#posts){.link}
+  - [Composing Posts](#composing-posts){.link}
+  - [Text Modifications](#text-modifications){.link}
+    - [Formatting](#formatting){.link}
+    - [Functions](#functions){.link}
+  - [Supported File Types](#supported-file-types){.link}
+  - [Steganography](#steganography){.link}
+- [Threads](#threads){.link}
+- [Board and List Creation](#board-and-list-creation){.link}
+  - [Rules](#rules){.link}
+    - [Automatic Wipe](#automatic-wipe){.link}
+    - [Require Identity to Post](#require-identity-to-post){.link}
+  - [Creating Public Boards and Lists](#creating-public-boards-and-lists){.link}
+  - [Creating Private Boards and Lists](#creating-private-boards-and-lists){.link}
+- [Identities](#identities){.link}
+  - [Mailboxes](#mailboxes){.link}
+- [Address Book](#address-book){.link}
+- [Configuration](#configuration){.link}
+  - [Export](Export){.link}
+  - [Custom Flags](#custom-flags){.link}
+  - [Theme](#theme){.link}
+- [Developer Information](#developer-information){.link}
 
 # About
 
-BitChan is a decentralized anonymous image board inspired by Bitboard and built on top of [BitMessage](https://bitmessage.org) with [Tor](https://www.torproject.org) and [GnuGP](https://gnupg.org).
+BitChan is a decentralized anonymous image board inspired by Bitboard and built on top of [Bitmessage](https://bitmessage.org){.link} with [Tor](https://www.torproject.org){.link} and [GnuGP](https://gnupg.org){.link}.
 
-BitMessage is a decentralized, text-based encrypted messaging application. It relies on public key encryption similar to PGP and decentralized message delivery, which due to the nature of every message being distributed to every client also provides plausible deniability (i.e. no one knows who the message was intended to go to). BitChan runs on top of BitMessage to enhance its functionality and security. BitChan features boards for forum-like discussions with image and file sharing, lists to organize and share other boards and lists, along with a host of additional features to enhance posts and provide board/list management with the use of owner, admin, and user permissions. Boards and lists can be public or private, with or without owners or admins, allowing a full range of options from completely unmoderatable to strictly allowing only select addresses to post or modify list contents.
+Bitmessage is a decentralized, text-based encrypted messaging application. It relies on public key encryption similar to PGP and decentralized message delivery, which due to the nature of every message being distributed to every client also provides plausible deniability (i.e. no one knows who the message was intended to go to). BitChan runs on top of Bitmessage to enhance its functionality and security. BitChan features boards for forum-like discussions with image and file sharing, lists to organize and share other boards and lists, along with a host of additional features to enhance posts and provide board/list management with the use of owner, admin, and user permissions. Boards and lists can be public or private, with or without owners or admins, allowing a full range of options from completely unmoderatable to strictly allowing only select addresses to post or modify list contents.
 
 # Boards and Lists
 
-Both boards and lists are built from channels, or chans, in BitMessage. Each BitMessage chan is an address that acts like an inbox that messages can be sent to. Message sent to a chan are encrypted so only members of that chan can decrypt and read them. To become a member of a chan, you must know the passphrase used to generate the chan's address. Anyone that has the passphrase that generates the address of the chan can decrypt the messages sent to the chan, allowing multiple people to read messages sent to the chan, and multiple people to send messages to the chan. You can use any address to send messages to the chan, including the same chan's address that's receiving it, your own identity addresses (personal addresses), or other chan addresses.
+Both boards and lists are built from channels, or chans, in Bitmessage. Each Bitmessage chan is an address that acts like an inbox that messages can be sent to. Message sent to a chan are encrypted so only members of that chan can decrypt and read them. To become a member of a chan, you must know the passphrase used to generate the chan's address. Anyone that has the passphrase that generates the address of the chan can decrypt the messages sent to the chan, allowing multiple people to read messages sent to the chan, and multiple people to send messages to the chan. You can use any address to send messages to the chan, including the same chan's address that's receiving it, your own identity addresses (personal addresses), or other chan addresses.
 
 Although the functionality of boards and lists are very different, they both are operate on a simple chan. The messages received in chans are processed to determine if they originated from BitChan by their format and the decryptability of their contents. BitChan interprets the contents of the messages and presents the data in a meaningful way that extends the functionality of mere text communication.
 
-Boards act as communication platforms for producing threads of one or more posts, with added functionality, including text formatting, file attachments (any format, with in-browser embedding for image, audio, and video), admin modertion, among others. Public boards allow anyone to post, including from the address of the board itself (an anonymous post) or from a different address. Private boards allow only specific addresses to post, while public boards allow any address to post (with some caveats). If a public board does not have an owner or admin set, it is completely unmoderatable and posts cannot be removed (unless an [automatic wipe rule](#automatic-wipe) was set when it was created).
+Boards act as communication platforms for producing threads of one or more posts, with added functionality, including text formatting, file attachments (any format, with in-browser embedding for image, audio, and video), admin moderation, among others. Public boards allow anyone to post, including from the address of the board itself (an anonymous post) or from a different address. Private boards allow only specific addresses to post, while public boards allow any address to post (with some caveats). If a public board does not have an owner or admin set, it is completely unmoderatable and posts cannot be removed (unless an [automatic wipe rule](#automatic-wipe){.link} was set when it was created).
 
-Lists act as a medium to compile a lists of other boards and lists that can be modified and shared with others. Users can join any of the boards or lists on the list. Any user can add to a public list, but only authorized users may add to a private list. Owners and admins may delete items from both public and private lists. If a public list does not have an owner or admin set, it is completely unmoderatable and can only grow in size (unless an [automatic wipe rule](#automatic-wipe) was set when it was created).
+Lists act as a medium to compile a lists of other boards and lists that can be modified and shared with others. Users can join any of the boards or lists on the list. Any user can add to a public list, but only authorized users may add to a private list. Owners and admins may delete items from both public and private lists. If a public list does not have an owner or admin set, it is completely unmoderatable and can only grow in size (unless an [automatic wipe rule](#automatic-wipe){.link} was set when it was created).
 
 Information about a board or list can be found in the "Information" dropdown box near the top of their page. This information includes:
 
 ***Address***
 
-Every board and list has a unique and permanent BitMessage address. To the right of the address is a button to copy it to your clipboard. This is provided for easier cross-linking (see [Functions](#functions)).
+Every board and list has a unique and permanent Bitmessage address. To the right of the address is a button to copy it to your clipboard. This is provided for easier cross-linking (see [Functions](#functions)).
 
 ***Passphrase***
 
-Every board and list has a unique and permanent passphrase that is used to generate the address of the board or list. This passphrase is required to join the board or list and decrypt the messages sent to the address. Any user with the passphrase can join the board or list and begin interacting with it, depending on its [Permissions](#permissions) and [Rules](#rules). To the right of the passphrase is a button to copy it to your clipboard for easier sharing with others. As the passphrase is necessary for joining a board or list and decrypting messages, if you want to share a board with someone, but don't want to share it via a list, you must provide the user with the passphrase.
+Every board and list has a unique and permanent passphrase that is used to generate the address of the board or list. This passphrase is required to join the board or list and decrypt the messages sent to the address. Any user with the passphrase can join the board or list and begin interacting with it, depending on its [Permissions](#permissions){.link} and [Rules](#rules){.link}. To the right of the passphrase is a button to copy it to your clipboard for easier sharing with others. As the passphrase is necessary for joining a board or list and decrypting messages, if you want to share a board with someone, but don't want to share it via a list, you must provide the user with the passphrase.
 
 ***Owner Addresses***
 
@@ -88,7 +94,7 @@ Add to List |  X | X | X |
 
 # Posts
 
-Posts are text-based messages on a board that can contain a file attachment. If the file attachment is a supported image or video, the media is displayed with the message. User-entered HTML is not allowed, but text can be stylized with various formatting tags. There are also several tags that provide the ability to execute functions (for example, dice rolls and coin flips, that because of the use of a seed, appear the same to all users). More about these functions can be found in [Text Modifications](#text-modifications).
+Posts are text-based messages on a board that can contain a file attachment. If the file attachment is a supported image or video, the media is displayed with the message. User-entered HTML is not allowed, but text can be stylized with various formatting tags. There are also several tags that provide the ability to execute functions (for example, dice rolls and coin flips, that because of the use of a seed, appear the same to all users). More about these functions can be found in [Text Modifications](#text-modifications){.link}.
 
 ## Composing Posts
 
@@ -108,15 +114,15 @@ If your post is an original post (OP) you can provide a subject. The subject lin
 
 ***Comment***
 
-This is where the body of your post is written, where several [Text Modifications](#text-modifications) can be used.
+This is where the body of your post is written, where several [Text Modifications](#text-modifications){.link} can be used.
 
 ***Post Formatting***
 
-This menu contains buttons to facilitate formatting text in the comment. To use it, highlight text in the comment and press one of the buttons. This will surround the selected text with the formatting tags. More about formatting can be found in [Formatting](#formatting).
+This menu contains buttons to facilitate formatting text in the comment. To use it, highlight text in the comment and press one of the buttons. This will surround the selected text with the formatting tags. More about formatting can be found in [Formatting](#formatting){.link}.
 
 ***Image/File***
 
-This is where you can select a file attachment. You can attach any file type, but only certain types will display as embedded media (see [Supported File Types](#supported-file-types)).
+Select a file attachment to upload with your post. You can attach any file type, but only certain types will display as embedded media (see [Supported File Types](#supported-file-types){.link}). Since Bitmessage only supports sending messages of up to ~300 KB, any attachments larger than this will need to use one of the alternate, external upload sites. All files have their filename obscured and their contents encrypted prior to upload. If the attached file is greater than 5 MB, it will be uploaded in the background and the post will be sent following a successful upload. The upload progress will be displayed on the status page.
 
 ***Image Spoiler***
 
@@ -128,15 +134,11 @@ This option removes EXIF data from .jpg and .png files prior to posting to a boa
 
 ***Upload***
 
-Select the desired file transfer method. BitMessage is the most secure method of sending a file, but there is a ~300 KB limit due to the message size limitations of BitMessage (and a drawback for sending large file sizes due to the required proof of work to send a message that significantly increases how long it takes to send your message). Several external upload sites are supported, and additional measures have been taken to ensure the privacy of your file when uploaded to these sites. First, the attachment is added to a compressed and password-protected ZIP archive. Then, the headers of the archive are taken out of the file, along with several random-sized segments at random places from the file, and inserted into the message transmitted over BitMessage. The file is then uploaded to the external site, and once the file has been downloaded by the user, these pieces are placed back into the archive and the file is extracted. Additionally, and like all BitMessage communication, all uploads and downloads are routed through tor.
+Select the desired file transfer method. Bitmessage is the most secure method of sending a file, but there is a ~300 KB limit due to the message size limitations of Bitmessage (and a drawback for sending large file sizes due to the required proof of work to send a message that significantly increases how long it takes to send your message). Several external upload sites are supported, and additional measures have been taken to ensure the privacy of your file when uploaded to these sites. First, the attachment is added to a compressed and password-protected ZIP archive. Then, the headers of the archive are taken out of the file, along with several random-sized segments at random places from the file, and inserted into the message transmitted over Bitmessage. The file is then uploaded to the external site, and once the file has been downloaded by the user, these pieces are placed back into the archive and the file is extracted. Additionally, and like all Bitmessage communication, all uploads and downloads are routed through tor.
 
 ***Steg Comment (JPG/PNG only)***
 
 Enter any text you desire to hide in your image with steganography. Some images may not work due to limitations of the software or a characteristic of the particular image. You should receive an error if it's unable to be performed.
-
-***Steg Passphrase***
-
-The password to use to PGP-encrypt the message being inserted into the image. A default password is auto-populated here to allow for proof-of-concept testing of the steganography feature. In a future release, BitChan will allow the user to set the passphrase(s) to decrypt the message.
 
 ## Text Modifications
 
@@ -165,6 +167,10 @@ The file types below have native support in most modern web browsers:
 **Images**: .jpg, .jpeg, .png, .gif, .webp
 
 **Video**: .mp4, .webm, .ogg
+
+## Steganography
+
+Steganography is used to insert text messages into images attached to posts. A passphrase is used to PGP-encrypt the message being inserted into the image. You can use the default passphrase or set your own when creating or joining a board. If not using the default passphrase, be aware that any posts that contain an image with a message encrypted using the default passphrase will not be able to be read. That is, messages encrypted with a passphrase that's different than the one currently set to decrypt with will not be able to be read. Therefore, if using a non-default passphrase, others must also be using the same non-default passphrase as you if you want to communicate with them.
 
 # Threads
 
@@ -231,7 +237,7 @@ Require that all posts originate from an address that is not the board or list a
 
 ## Creating Public Boards and Lists
 
-Public boards are the closest to an unmoderated board you can get on BitChan. Any address except those on the restricted address list can create threads and posts. Addresses can be restricted after board creation by the owner, but because of the freedom afforded by BitMessage to create an arbitrary number of unique addresses, if your address is restricted, you can simply make another one.
+Public boards are the closest to an unmoderated board you can get on BitChan. Any address except those on the restricted address list can create threads and posts. Addresses can be restricted after board creation by the owner, but because of the freedom afforded by Bitmessage to create an arbitrary number of unique addresses, if your address is restricted, you can simply make another one.
 
 Similarly for public lists, you can create a list to which any address except those on the restricted address list can add their own boards or lists to the public list.
 
@@ -245,74 +251,69 @@ Identities are addresses that only you have the ability to control. The passphra
 
 Not every circumstance demands that you use an identity address to post or modify a list. Unless a board/list requires specific addresses (e.g. public boards which have the rule *Require Identity to Post* enabled), you can use the address of the board/list itself. This can be considered an anonymous way to use BitChan, as all posts to a board are coming from the board's own address.
 
+## Mailboxes
+
+Mailboxes allow identity-to-identity communication. You will have a mailbox for every identity you control. The link to the mailbox is found at the bottom of every page and includes a count of your unread messages. When you go to the mailbox, you will see a **Compose Message** link and a list of your identities with their labels and unread message count. Clicking the **Compose Message** link will bring you to the mail composition page. Clicking any of your identity links will bring you to that identity's mailbox. A mailbox contains an inbox folder and a sent folder.
+
+Since board and list addresses are indistinguishable from identity addresses, there's nothing preventing a message to be sent to a board or list address. This will merely cause BitChan to delete the message, once received, as it's not properly formatted to be interpreted by the board/list. However, if a user has another instance of Bitmessage running and has joined a chan using the board/list passphrase, the messages can be received and read. This is not a recommended use of the BitChan messaging platform, but only included here to allow the user to understand there exists the possibility you may be sending a message to a non-identity address for which there is no mechanism to allow it to be read within BitChan. Therefore, when considering messaging a user address on BitChan, understand there exists the possibility you will be messaging a non-identity address. Therefore, it may be beneficial to ask whether the address you desire to message is an identity, ask specifically for an identity address to message, or provide your own identity address and request it be messaged.
+
 # Address Book
 
 When you find an address that you want to associate with a name you can add it to the address book with a label. To do this, locate and click the arrow to the right of the name in a post, select *Add to Address Book*, enter a label, then select *Save*. You can access the address book at any time by clicking the *Address Book* link, where you can add, rename, and delete address book entries.
 
 By default the BitChan Developer address will be entered in your address book so you can identify official communications.
 
+# Configuration
+
+The configuration page contains BitChan functions such as exporting comma separated lists of BitChan information, uploading, naming and deleting custom flags, and a theme selector.
+
+## Export
+
+Backups of BitChan information can be performed for boards/lists, identities, and the address book, in comma-separated value format. The following is the information that is backed up:
+
+- **Export Boards/Lists**
+    - board or list type
+    - label
+    - description
+    - access
+    - address
+    - passphrase
+- **Export Identities**
+    - label
+    - address
+    - passphrase
+- **Export Address Book**
+    - label
+    - address
+
+**Note: This does not backup board posts or items on lists.**
+
+## Custom Flags
+
+BitChan comes with the flags of 258 nations, but you can also add your own. The name you use will appear as a tooltip when a user hovers over your custom flag in a post. Flags can only added if they meet certain criteria:
+
+- Maximum size of 3.5 KB
+- Maximum width of 25 pixels
+- Maximum height of 15 pixels
+
+When composing a message, custom flags will appear at the top of the flag dropdown menu with the prefix **Custom**.
+
+## Theme
+
+The theme can be changed to affect the text style on pages. The following themes are available:
+
+- Dark: a dark color theme
+- Classic: A red theme, similar to Yotsuba
+- Frosty: A blue theme, similar to Yousuba B
+
 # Developer Information
 
-GitHub Repository: [github.com/813492291816/BitChan](https://github.com/813492291816/BitChan)
+GitHub Repository: [github.com/813492291816/BitChan](https://github.com/813492291816/BitChan){.link}
 
-BitMessage Address: ```BM-2cWyqGJHrwCPLtaRvs3f67xsnj8NmPvRWZ```
+Bitmessage Address: ```BM-2cWyqGJHrwCPLtaRvs3f67xsnj8NmPvRWZ```
 
-E-Mail (can only receive, no sending): [BitChan@mailchuck.com](mailto:bitchan@mailchuck.com)
+E-Mail (can only receive, no sending): [BitChan@mailchuck.com](mailto:bitchan@mailchuck.com){.link}
 
-*This email is not considered secure and it's recommended to PGP-encrypt your messages when corresponding. If you would like a response, it's recommended to provide a BitMessage address you can receive messages to and a PGP public key.*
+*This email is not considered secure and it's recommended to PGP-encrypt your messages when corresponding. If you would like a response, it's recommended to provide a Bitmessage address you can receive messages to and a PGP public key.*
 
-PGP Public Key:
-
-```
------BEGIN PGP PUBLIC KEY BLOCK-----
-
-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
-=dZAw
------END PGP PUBLIC KEY BLOCK-----
-```
+PGP Public Key: [keys.openpgp.org/vks/v1/by-fingerprint/E90B33C4C0E73AF537F2C2E9B14DF20410E5A5BC](https://keys.openpgp.org/vks/v1/by-fingerprint/E90B33C4C0E73AF537F2C2E9B14DF20410E5A5BC){.link}

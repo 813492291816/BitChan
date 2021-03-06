@@ -1,4 +1,6 @@
 import hashlib
+import html
+import json
 import logging
 import os.path
 import shutil
@@ -14,12 +16,15 @@ from PIL import UnidentifiedImageError
 from user_agent import generate_user_agent
 
 import config
-from database.models import Chan
+from database.models import GlobalSettings
 from database.models import Messages
 from database.utils import session_scope
 from utils.encryption import crypto_multi_decrypt
+from utils.files import count_files_in_zip
 from utils.files import data_file_multiple_insert
 from utils.files import delete_file
+from utils.files import delete_files_recursive
+from utils.files import extract_zip
 from utils.files import generate_thumbnail
 from utils.files import human_readable_size
 from utils.general import get_random_alphanumeric_string
@@ -27,7 +32,7 @@ from utils.steg import check_steg
 
 DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 
-logger = logging.getLogger('bitchan.utils.download')
+logger = logging.getLogger('bitchan.download')
 
 
 def generate_hash(file_path):
@@ -103,15 +108,16 @@ def download_with_resume(message_id, url, file_path, hash=None, timeout=15):
         first_byte = os.path.getsize(tmp_file_path)
     file_mode = 'ab' if first_byte else 'wb'
     if first_byte:
-        logger.info('Resuming download from {:.1f} MB'.format(first_byte / 1e6))
+        logger.info('{}: Resuming download from {:.1f} MB'.format(
+            message_id[-config.ID_LENGTH:].upper(), first_byte / 1e6))
     else:
-        logger.info('Starting download')
+        logger.info('{}: Starting download'.format(message_id[-config.ID_LENGTH:].upper()))
     file_size = -1
     try:
         file_size = int(requests.head(
             url,
             headers={'User-Agent': generate_user_agent()}).headers['Content-length'])
-        logger.debug('File size is {}'.format(file_size))
+        logger.debug('{}: File size is {}'.format(message_id[-config.ID_LENGTH:].upper(), file_size))
 
         if not os.path.exists(tmp_file_path):
             Path(tmp_file_path).touch()
@@ -135,153 +141,272 @@ def download_with_resume(message_id, url, file_path, hash=None, timeout=15):
                 if chunk:  # filter out keep-alive new chunks
                     f.write(chunk)
     except IOError as e:
-        logger.error('IO Error: {}'.format(e))
+        logger.error('{}: IO Error: {}'.format(message_id[-config.ID_LENGTH:].upper(), e))
+    except Exception as e:
+        logger.error('{}: Error: {}'.format(message_id[-config.ID_LENGTH:].upper(), e))
     finally:
         # rename the temp download file to the correct name if fully downloaded
         if file_size == os.path.getsize(tmp_file_path):
             # if there's a hash value, validate the file
             if hash and not validate_file(tmp_file_path, hash):
-                raise Exception('Error validating the file against its SHA256 hash')
+                raise Exception('{}: Error validating the file against its SHA256 hash'.format(
+                    message_id[-config.ID_LENGTH:].upper()))
             shutil.move(tmp_file_path, file_path)
             return file_path
         elif file_size == -1:
-            logger.error('Error getting Content-Length from server: {}'.format(url))
+            logger.error('{}: Error getting Content-Length from server: {}'.format(
+                message_id[-config.ID_LENGTH:].upper(), url))
 
 
 def download_and_extract(
         address,
         message_id,
         file_url,
+        file_upload_settings,
         file_extracts_start_base64,
         upload_filename,
         file_path,
-        file_extension,
         file_sha256_hash,
         file_enc_cipher,
         file_enc_key_bytes,
-        file_enc_password,
-        img_thumb_filename):
+        file_enc_password):
+    from bitchan_flask import nexus
 
-    logger.info("download_and_extract({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, password={}".format(
+    logger.info("download_and_extract {}, {}, {}, {}, {}, {}, {}, {}, {}, password={}".format(
         address,
         message_id,
         file_url,
+        file_upload_settings,
         upload_filename,
         file_path,
-        file_extension,
         file_sha256_hash,
-        img_thumb_filename,
         file_enc_cipher,
         file_enc_key_bytes,
         file_enc_password))
 
     file_sha256_hashes_match = False
     file_size = None
+    file_amount = None
     file_do_not_download = None
     file_download_successful = None
-    media_height = None
-    media_width = None
-    message_steg = None
     downloaded = None
     force_allow_download = False
     download_url = None
+    media_info = {}
+    message_steg = {}
+    resume_start_download = False
+
+    if message_id in nexus.get_start_download() or resume_start_download:
+        resume_start_download = True
+        force_allow_download = True
+        file_do_not_download = False
+        nexus.remove_start_download(message_id)
 
     # save downloaded file to /tmp/
     # filename has been randomly generated, so no risk of collisions
     download_path = "/tmp/{}".format(upload_filename)
 
+    with session_scope(DB_PATH) as new_session:
+        settings = new_session.query(GlobalSettings).first()
+
+        if (file_enc_cipher == "NONE" and
+                settings.never_auto_download_unencrypted and
+                not force_allow_download):
+            logger.info(
+                "{}: Instructed to never auto-download unencrypted attachments. "
+                "Manual override needed.".format(
+                    message_id[-config.ID_LENGTH:].upper()))
+            return (file_download_successful,
+                    file_size,
+                    file_amount,
+                    file_do_not_download,
+                    file_sha256_hashes_match,
+                    media_info,
+                    message_steg)
+
+        if not settings.allow_net_file_size_check and not force_allow_download:
+            logger.info("{}: Not connecting to determine file size. Manual override needed.".format(
+                message_id[-config.ID_LENGTH:].upper()))
+            file_do_not_download = True
+            message = new_session.query(Messages).filter(
+                Messages.message_id == message_id).first()
+            if message:
+                message.file_progress = "Configuration doesn't allow getting file size. Manual override required."
+                new_session.commit()
+            return (file_download_successful,
+                    file_size,
+                    file_amount,
+                    file_do_not_download,
+                    file_sha256_hashes_match,
+                    media_info,
+                    message_steg)
+        else:
+            logger.info("{}: Getting URL and file size...".format(message_id[-config.ID_LENGTH:].upper()))
+
     # Parse page for URL to direct download zip
-    try:
-        html_return = requests.get(
-            file_url,
-            headers={'User-Agent': generate_user_agent()})
-        soup = bs4.BeautifulSoup(html_return.text, "html.parser")
-        for link in soup.find_all('a', href=True):
-            href = link.get('href')
-            if href and href.endswith(upload_filename):
-                download_url = href
-                break
-    except:
-        logger.error("{}: Error getting upload page".format(message_id[0:6]))
+    if "direct_dl_url" in file_upload_settings and file_upload_settings["direct_dl_url"]:
+        download_url = file_url
+    else:
+        try:
+            logger.info("{}: Finding download URL on upload page".format(message_id[-config.ID_LENGTH:].upper()))
+            html_return = requests.get(
+                file_url,
+                headers={'User-Agent': generate_user_agent()})
+            soup = bs4.BeautifulSoup(html_return.text, "html.parser")
+            for link in soup.find_all('a', href=True):
+                href = link.get('href')
+                if href and href.endswith(upload_filename):
+                    download_url = href
+                    break
+        except:
+            logger.error("{}: Error getting upload page".format(message_id[-config.ID_LENGTH:].upper()))
 
     if not download_url:
         logger.error("{}: Could not find URL for {}".format(
-            message_id[0:6], upload_filename))
+            message_id[-config.ID_LENGTH:].upper(), upload_filename))
+        nexus.remove_start_download(message_id)
+        with session_scope(DB_PATH) as new_session:
+            message = new_session.query(Messages).filter(
+                Messages.message_id == message_id).first()
+            if message:
+                message.file_progress = "Could not find download URL. Try again."
+                new_session.commit()
+        return (file_download_successful,
+                file_size,
+                file_amount,
+                file_do_not_download,
+                file_sha256_hashes_match,
+                media_info,
+                message_steg)
     else:
-        logger.info("{}: Found URL, checking size".format(message_id[0:6]))
+        logger.info("{}: Found URL".format(message_id[-config.ID_LENGTH:].upper()))
+        time.sleep(5)
         for _ in range(3):
-            from bitchan_flask import nexus
-            if message_id in nexus.get_start_download():
-                force_allow_download = True
-                file_do_not_download = False
-                nexus.remove_start_download(message_id)
-            else:
-                try:
-                    file_size = int(requests.head(
+            logger.info("{}: Getting file size".format(message_id[-config.ID_LENGTH:].upper()))
+            try:
+                if resume_start_download:
+                    headers = requests.head(
                         download_url,
-                        headers={'User-Agent': generate_user_agent()}).headers['Content-length'])
-                    if file_size and file_size > config.DOWNLOAD_MAX_AUTO:
-                        downloaded = "too_large"
-                        file_do_not_download = True
-                        logger.info(
-                            "{}: File size ({}) is greater than max allowed "
-                            "to auto-download ({}). Not downloading.".format(
-                                message_id[0:6],
-                                human_readable_size(file_size),
-                                human_readable_size(config.DOWNLOAD_MAX_AUTO)))
+                        headers={'User-Agent': generate_user_agent()}).headers
+                    logger.info("{}: Headers: {}".format(message_id[-config.ID_LENGTH:].upper(), headers))
+                    if 'Content-length' in headers:
+                        file_size = int(headers['Content-length'])
+                        logger.info("{}: File size acquired: {}".format(
+                            message_id[-config.ID_LENGTH:].upper(), human_readable_size(file_size)))
                         break
                     else:
-                        logger.info(
-                            "{}: File size ({}) is less than max allowed "
-                            "to auto-download ({}). Downloading.".format(
-                                message_id[0:6],
-                                human_readable_size(file_size),
-                                human_readable_size(config.DOWNLOAD_MAX_AUTO)))
-                        break
-                except:
-                    logger.error("{}: Could not get file size".format(message_id[0:6]))
-                    file_do_not_download = True
-                    break
-            time.sleep(5)
+                        logger.error("{}: 'content-length' not in header".format(message_id[-config.ID_LENGTH:].upper()))
+                else:
+                    with session_scope(DB_PATH) as new_session:
+                        settings = new_session.query(GlobalSettings).first()
+                        # Don't download file if user set to 0
+                        if settings.max_download_size == 0:
+                            downloaded = "prohibited"
+                            file_do_not_download = True
+                            logger.info("{}: File prevented from being auto-download.".format(
+                                message_id[-config.ID_LENGTH:].upper()))
+                            break
+
+                        # Check file size and auto-download if less than user-set size
+                        headers = requests.head(
+                            download_url,
+                            headers={'User-Agent': generate_user_agent()}).headers
+                        logger.info("{}: Headers: {}".format(message_id[-config.ID_LENGTH:].upper(), headers))
+                        if 'Content-length' in headers:
+                            file_size = int(headers['Content-length'])
+                            if file_size and file_size > settings.max_download_size * 1000000:
+                                downloaded = "too_large"
+                                file_do_not_download = True
+                                logger.info(
+                                    "{}: File size ({}) is greater than max allowed "
+                                    "to auto-download ({}). Not downloading.".format(
+                                        message_id[-config.ID_LENGTH:].upper(),
+                                        human_readable_size(file_size),
+                                        human_readable_size(settings.max_download_size * 1000000)))
+                                break
+                            else:
+                                file_do_not_download = False
+                                logger.info(
+                                    "{}: File size ({}) is less than max allowed "
+                                    "to auto-download ({}). Downloading.".format(
+                                        message_id[-config.ID_LENGTH:].upper(),
+                                        human_readable_size(file_size),
+                                        human_readable_size(settings.max_download_size * 1000000)))
+                                break
+                        else:
+                            logger.error("{}: 'content-length' not in header".format(
+                                message_id[-config.ID_LENGTH:].upper()))
+                time.sleep(15)
+            except Exception as err:
+                logger.exception("{}: Could not get file size: {}".format(
+                    message_id[-config.ID_LENGTH:].upper(), err))
+                file_do_not_download = True
+                time.sleep(15)
 
         if file_do_not_download and not force_allow_download:
+            logger.info("{}: Not downloading.".format(message_id[-config.ID_LENGTH:].upper()))
+            with session_scope(DB_PATH) as new_session:
+                message = new_session.query(Messages).filter(
+                    Messages.message_id == message_id).first()
+                if message:
+                    message.file_progress = "Configuration doesn't allow auto-downloading of this file. Manual override required."
+                    new_session.commit()
             return (file_download_successful,
                     file_size,
+                    file_amount,
                     file_do_not_download,
                     file_sha256_hashes_match,
-                    media_height,
-                    media_width,
+                    media_info,
                     message_steg)
         else:
+            logger.info("{}: Downloading...".format(message_id[-config.ID_LENGTH:].upper()))
             file_do_not_download = False
+            time.sleep(5)
 
         for _ in range(config.DOWNLOAD_ATTEMPTS):
             try:
                 download_with_resume(message_id, download_url, download_path)
                 if file_size == os.path.getsize(download_path):
                     break
+                logger.error("{}: File size does not match what's expected".format(message_id[-config.ID_LENGTH:].upper()))
+            except IOError:
+                logger.error("{}: Could not download".format(message_id[-config.ID_LENGTH:].upper()))
             except Exception as err:
-                logger.error("Exception downloading: {}".format(err))
+                logger.error("{}: Exception downloading: {}".format(message_id[-config.ID_LENGTH:].upper(), err))
             time.sleep(60)
 
         try:
             if file_size == os.path.getsize(download_path):
-                logger.info("{}: Download completed".format(message_id[0:6]))
+                logger.info("{}: Download completed".format(message_id[-config.ID_LENGTH:].upper()))
                 downloaded = "downloaded"
             else:
-                logger.error("Issue downloading file")
+                logger.error("{}: Download not complete".format(message_id[-config.ID_LENGTH:].upper()))
         except:
-            logger.error("Issue downloading file")
+            logger.error("{}: Issue downloading file".format(message_id[-config.ID_LENGTH:].upper()))
 
-        if downloaded == "too_large":
-            logger.info("{}: File size ({}) is larger than allowed to auto-download ({})".format(
-                message_id[0:6], file_size, human_readable_size(config.DOWNLOAD_MAX_AUTO)))
+        if downloaded == "prohibited":
+            logger.info("{}: File prohibited from auto-downloading".format(
+                message_id[-config.ID_LENGTH:].upper()))
+        elif downloaded == "too_large":
+            with session_scope(DB_PATH) as new_session:
+                settings = new_session.query(GlobalSettings).first()
+                logger.info("{}: File size ({}) is larger than allowed to auto-download ({})".format(
+                    message_id[-config.ID_LENGTH:].upper(),
+                    human_readable_size(file_size),
+                    human_readable_size(settings.max_download_size * 1000000)))
         elif downloaded == "downloaded":
-            logger.info("{}: File successfully downloaded".format(message_id[0:6]))
+            logger.info("{}: File successfully downloaded".format(message_id[-config.ID_LENGTH:].upper()))
             file_download_successful = True
         elif downloaded is None:
-            logger.error("{}: Could not download zip after {} attempts".format(
-                message_id[0:6], config.DOWNLOAD_ATTEMPTS))
+            logger.error("{}: Could not download file after {} attempts".format(
+                message_id[-config.ID_LENGTH:].upper(), config.DOWNLOAD_ATTEMPTS))
+            with session_scope(DB_PATH) as new_session:
+                message = new_session.query(Messages).filter(
+                    Messages.message_id == message_id).first()
+                if message:
+                    message.file_progress = "Could not download file after {} attempts".format(
+                        config.DOWNLOAD_ATTEMPTS)
+                    new_session.commit()
             file_download_successful = False
 
         if file_download_successful:
@@ -290,7 +415,7 @@ def download_and_extract(
                 size_before = os.path.getsize(download_path)
                 data_file_multiple_insert(download_path, file_extracts_start_base64, chunk=4096)
                 logger.info("{}: File data insertion. Before: {}, After: {}".format(
-                    message_id[0:6], size_before, os.path.getsize(download_path)))
+                    message_id[-config.ID_LENGTH:].upper(), size_before, os.path.getsize(download_path)))
 
             # compare SHA256 hashes
             if file_sha256_hash:
@@ -298,7 +423,7 @@ def download_and_extract(
                     logger.info(
                         "{}: File SHA256 hash ({}) does not match provided SHA256"
                         " hash ({}). Deleting.".format(
-                            message_id[0:6],
+                            message_id[-config.ID_LENGTH:].upper(),
                             generate_hash(download_path),
                             file_sha256_hash))
                     file_sha256_hashes_match = False
@@ -306,52 +431,168 @@ def download_and_extract(
                     delete_file(download_path)
                     return (file_download_successful,
                             file_size,
+                            file_amount,
                             file_do_not_download,
                             file_sha256_hashes_match,
-                            media_height,
-                            media_width,
+                            media_info,
                             message_steg)
                 else:
                     file_sha256_hashes_match = True
                     logger.info("{}: File SHA256 hashes match ({})".format(
-                        message_id[0:6], file_sha256_hash))
+                        message_id[-config.ID_LENGTH:].upper(), file_sha256_hash))
 
-            # decrypt file
-            logger.info("{}: Decrypting file".format(message_id[0:6]))
-            extract_filename = "{}.{}".format(
-                get_random_alphanumeric_string(12, with_punctuation=False, with_spaces=False),
-                file_extension)
-            extract_path = "/tmp"
-            full_path_filename = os.path.join(extract_path, extract_filename)
-            delete_file(full_path_filename)  # make sure no file already exists
+            if file_enc_cipher == "NONE":
+                logger.info("{}: File not encrypted".format(message_id[-config.ID_LENGTH:].upper()))
+                full_path_filename = download_path
+            else:
+                # decrypt file
+                full_path_filename = "/tmp/{}.zip".format(
+                    get_random_alphanumeric_string(12, with_punctuation=False, with_spaces=False))
+                delete_file(full_path_filename)  # make sure no file already exists
+                logger.info("{}: Decrypting file".format(message_id[-config.ID_LENGTH:].upper()))
+                with session_scope(DB_PATH) as new_session:
+                    message = new_session.query(Messages).filter(
+                        Messages.message_id == message_id).first()
+                    if message:
+                        message.file_progress = "Decrypting file"
+                        new_session.commit()
+
+                try:
+                    ret_crypto = crypto_multi_decrypt(
+                        file_enc_cipher,
+                        file_enc_password + config.PGP_PASSPHRASE_ATTACH,
+                        download_path,
+                        full_path_filename,
+                        key_bytes=file_enc_key_bytes)
+                    if not ret_crypto:
+                        logger.error("{}: Issue decrypting file")
+                        with session_scope(DB_PATH) as new_session:
+                            message = new_session.query(Messages).filter(
+                                Messages.message_id == message_id).first()
+                            if message:
+                                message.file_progress = "Issue decrypting file"
+                                new_session.commit()
+                            file_download_successful = False
+                            return (file_download_successful,
+                                    file_size,
+                                    file_amount,
+                                    file_do_not_download,
+                                    file_sha256_hashes_match,
+                                    media_info,
+                                    message_steg)
+                    logger.info("{}: Finished decrypting file".format(message_id[-config.ID_LENGTH:].upper()))
+
+                    # z = zipfile.ZipFile(download_path)
+                    # z.setpassword(config.PGP_PASSPHRASE_ATTACH.encode())
+                    # z.extract(extract_filename, path=extract_path)
+                except Exception:
+                    logger.exception("Error decrypting file")
+
+            # Get the number of files in the zip archive
+            file_amount_test = count_files_in_zip(message_id, full_path_filename)
+            if file_amount_test:
+                file_amount = file_amount_test
+
+            if file_amount > config.FILE_ATTACHMENTS_MAX:
+                logger.info("{}: Number of attachments ({}) exceed the maximum ({}).".format(
+                    message_id[-config.ID_LENGTH:].upper(), file_amount, config.FILE_ATTACHMENTS_MAX))
+                file_do_not_download = True
+                return (file_download_successful,
+                        file_size,
+                        file_amount,
+                        file_do_not_download,
+                        file_sha256_hashes_match,
+                        media_info,
+                        message_steg)
+
+            # Extract zip archive
+            extract_path = "{}/{}".format(config.FILE_DIRECTORY, message_id)
+            extract_zip(message_id, full_path_filename, extract_path)
+            delete_file(full_path_filename)  # Secure delete
+
+            errors_files, media_info, message_steg = process_attachments(message_id, extract_path)
+
+            if errors_files:
+                delete_files_recursive(extract_path)
+                file_do_not_download = True
+                return (file_download_successful,
+                        file_size,
+                        file_amount,
+                        file_do_not_download,
+                        file_sha256_hashes_match,
+                        media_info,
+                        message_steg)
 
             with session_scope(DB_PATH) as new_session:
                 message = new_session.query(Messages).filter(
                     Messages.message_id == message_id).first()
                 if message:
-                    message.file_progress = "Decrypting file"
+                    message.file_progress = "Attachment processing successful"
                     new_session.commit()
 
+        delete_file(download_path)
+
+    return (file_download_successful,
+            file_size,
+            file_amount,
+            file_do_not_download,
+            file_sha256_hashes_match,
+            media_info,
+            message_steg)
+
+
+def process_attachments(message_id, extract_path):
+    media_info = {}
+    message_steg = {}
+    errors = []
+
+    for dirpath, dirnames, filenames in os.walk(extract_path):
+        for f in filenames:
             try:
-                ret_crypto = crypto_multi_decrypt(
-                    file_enc_cipher,
-                    file_enc_password,
-                    download_path,
-                    full_path_filename,
-                    key_bytes=file_enc_key_bytes)
-                if not ret_crypto:
-                    logger.error("{}: Issue decrypting file")
+                fp = os.path.join(dirpath, f)
+                if os.path.islink(fp):  # skip symbolic links
+                    continue
 
-                # z = zipfile.ZipFile(download_path)
-                # z.setpassword(config.PASSPHRASE_ZIP.encode())
-                # z.extract(extract_filename, path=extract_path)
+                file_extension = html.escape(os.path.splitext(f)[1].split(".")[-1].lower())
+                attachment_size = os.path.getsize(fp)
+                media_height = None
+                media_width = None
+                steg_msg = None
 
-                shutil.copy(full_path_filename, file_path)  # Copy
-                delete_file(full_path_filename)  # Secure delete
-                logger.info("{}: Finished decrypting file".format(message_id[0:6]))
+                if len(file_extension) >= config.MAX_FILE_EXT_LENGTH:
+                    errors.append("File extension lengths must be less than {}: {}".format(
+                        config.MAX_FILE_EXT_LENGTH, f))
 
-                # Verify image and video dimensions
-                if file_extension in config.FILE_EXTENSIONS_IMAGE:
+                elif file_extension in config.FILE_EXTENSIONS_IMAGE:
+                    # If image file, check for steg message
+                    with session_scope(DB_PATH) as new_session:
+                        pgp_passphrase_steg = config.PGP_PASSPHRASE_STEG
+                        message = new_session.query(Messages).filter(
+                            Messages.message_id == message_id).first()
+                        if message and message.thread.chan.pgp_passphrase_steg:
+                            pgp_passphrase_steg = message.thread.chan.pgp_passphrase_steg
+
+                        steg_msg = check_steg(
+                            message_id,
+                            file_extension,
+                            passphrase=pgp_passphrase_steg,
+                            file_path=fp)
+
+                        if message:
+                            message.file_progress = "Generating image thumbnail"
+                            new_session.commit()
+
+                    thumb_dir = "{}_thumb".format(extract_path)
+                    try:
+                        os.mkdir(thumb_dir)
+                    except:
+                        pass
+                    img_thumb_filename = "{}/{}".format(thumb_dir, f)
+                    logger.info("{}: Generating thumbnail {} with {}".format(
+                        message_id[-config.ID_LENGTH:].upper(), img_thumb_filename, fp))
+                    generate_thumbnail(
+                        message_id, fp, img_thumb_filename, file_extension)
+
                     try:
                         with session_scope(DB_PATH) as new_session:
                             message = new_session.query(Messages).filter(
@@ -359,14 +600,15 @@ def download_and_extract(
                             if message:
                                 message.file_progress = "Calculating image dimensions"
                                 new_session.commit()
-                        logger.info("{}: Determining image dimensions".format(message_id[0:6]))
+                        logger.info("{}: Determining image dimensions".format(message_id[-config.ID_LENGTH:].upper()))
                         Image.MAX_IMAGE_PIXELS = 500000000
-                        im = Image.open(file_path)
+                        im = Image.open(fp)
                         media_width, media_height = im.size
                     except UnidentifiedImageError as e:
-                        logger.exception("{}: Error identifying image: {}".format(message_id[0:6], e))
+                        logger.exception("{}: Error identifying image: {}".format(message_id[-config.ID_LENGTH:].upper(), e))
                     except Exception as e:
-                        logger.exception("{}: Error opening/stripping image: {}".format(message_id[0:6], e))
+                        logger.exception("{}: Error opening/stripping image: {}".format(message_id[-config.ID_LENGTH:].upper(), e))
+
                 elif file_extension in config.FILE_EXTENSIONS_VIDEO:
                     try:
                         with session_scope(DB_PATH) as new_session:
@@ -375,55 +617,36 @@ def download_and_extract(
                             if message:
                                 message.file_progress = "Calculating video dimensions"
                                 new_session.commit()
-                        logger.info("{}: Determining video dimensions".format(message_id[0:6]))
-                        vid = cv2.VideoCapture(file_path)
+                        logger.info("{}: Determining video dimensions".format(message_id[-config.ID_LENGTH:].upper()))
+                        vid = cv2.VideoCapture(fp)
                         media_height = vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
                         media_width = vid.get(cv2.CAP_PROP_FRAME_WIDTH)
                         logger.info("{}: Video dimensions: {}x{}".format(
-                            message_id[0:6], media_width, media_height))
+                            message_id[-config.ID_LENGTH:].upper(), media_width, media_height))
                     except Exception as e:
-                        logger.exception("{}: Error getting video dimensions: {}".format(message_id[0:6], e))
+                        logger.exception("{}: Error getting video dimensions: {}".format(message_id[-config.ID_LENGTH:].upper(), e))
 
-                file_size = os.path.getsize(file_path)
-                if file_extension in config.FILE_EXTENSIONS_IMAGE:
-                    # If image file, check for steg message
-                    with session_scope(DB_PATH) as new_session:
-                        pgp_passphrase_steg = config.PASSPHRASE_STEG
-                        chan = new_session.query(Chan).filter(
-                            Chan.address == address).first()
-                        if chan and chan.pgp_passphrase_steg:
-                            pgp_passphrase_steg = chan.pgp_passphrase_steg
+                media_info[f] = {}
+                if media_height:
+                    media_info[f]["height"] = media_height
+                if media_width:
+                    media_info[f]["width"] = media_width
+                media_info[f]["size"] = attachment_size
+                media_info[f]["extension"] = file_extension
 
-                        message_steg = check_steg(
-                            message_id,
-                            file_extension,
-                            passphrase=pgp_passphrase_steg,
-                            file_path=file_path)
+                if steg_msg:
+                    message_steg[f] = steg_msg
 
-                        message = new_session.query(Messages).filter(
-                            Messages.message_id == message_id).first()
-                        if message:
-                            message.file_progress = "generating image thumbnail"
-                            new_session.commit()
-
-                    generate_thumbnail(
-                        message_id, file_path, img_thumb_filename, file_extension)
-
-                with session_scope(DB_PATH) as new_session:
-                    message = new_session.query(Messages).filter(
-                        Messages.message_id == message_id).first()
-                    if message:
-                        message.file_progress = "file download/saving complete"
-                        new_session.commit()
             except Exception:
-                logger.exception("Error processing file")
+                logger.exception("{}: Error processing file: {}".format(message_id[-config.ID_LENGTH:].upper(), f))
 
-        delete_file(download_path)
+    # Add media info to database
+    with session_scope(DB_PATH) as new_session:
+        message = new_session.query(Messages).filter(
+            Messages.message_id == message_id).first()
+        if message:
+            message.media_info = json.dumps(media_info)
+            message.message_steg = json.dumps(message_steg)
+            new_session.commit()
 
-    return (file_download_successful,
-            file_size,
-            file_do_not_download,
-            file_sha256_hashes_match,
-            media_height,
-            media_width,
-            message_steg)
+    return errors, media_info, message_steg

@@ -12,6 +12,7 @@ from flask.blueprints import Blueprint
 import config
 from bitchan_flask import nexus
 from database.models import AddressBook
+from forms import forms_board
 from forms import forms_settings
 from utils.files import LF
 from utils.routes import page_dict
@@ -32,6 +33,7 @@ def global_var():
 @blueprint.route('/address_book', methods=('GET', 'POST'))
 def address_book():
     form_addres_book = forms_settings.AddressBook()
+    form_confirm = forms_board.Confirm()
 
     status_msg = session.get('status_msg', {"status_message": []})
 
@@ -98,8 +100,17 @@ def address_book():
                         "Give the system a few seconds for the change to take effect.")
 
         elif form_addres_book.delete.data:
+            add_book = None
             if not form_addres_book.address.data:
                 status_msg['status_message'].append("Address required")
+            else:
+                add_book = AddressBook.query.filter(
+                    AddressBook.address == form_addres_book.address.data).first()
+
+            if not form_confirm.confirm.data:
+                return render_template("pages/confirm.html",
+                                       action="delete_address_book",
+                                       add_book=add_book)
 
             if not status_msg['status_message']:
                 lf = LF()
@@ -107,8 +118,6 @@ def address_book():
                     try:
                         return_str = nexus._api.deleteAddressBookEntry(form_addres_book.address.data)
                         if "Deleted address book entry" in return_str:
-                            add_book = AddressBook.query.filter(
-                                AddressBook.address == form_addres_book.address.data).first()
                             if add_book:
                                 add_book.delete()
                             nexus._refresh_address_book = True

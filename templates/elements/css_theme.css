@@ -194,8 +194,8 @@ img.banner {
     width: 300px;
     height: auto;
     padding: 10px;
-    margin-top: 25px;
-    border: 1px solid {{theme.textcolor}};
+    margin-top: 5px;
+    /*border: 1px solid {{theme.textcolor}};*/
     /*background-color: {{theme.textcolor}};*/
 
     /* Chrome, Safari, Opera */
@@ -296,17 +296,15 @@ span.poster {
 }
 
 img.opimg {
-    float: left;
-    margin: 1px 10px 10px 10px;
-    width: 250px;
-    height: auto;
+    margin: 3px 3px 0px 0px;
+    width: auto;
+    max-height: 200px;
 }
 
 img.postimg {
-    float: left;
-    width: 190px;
-    margin-right: 6px;
-    height: auto;
+    margin: 3px 3px 0px 0px;
+    width: auto;
+    max-height: 130px;
 }
 
 div.plaque {
@@ -341,6 +339,7 @@ a.reference {
 
 blockquote.post {
     margin: 10px 10px 10px 10px;
+    word-wrap: break-word;
 }
 
 p.post {

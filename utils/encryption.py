@@ -12,7 +12,7 @@ from Crypto.Random import get_random_bytes
 from utils.files import delete_file
 from utils.general import get_random_alphanumeric_string
 
-logger = logging.getLogger('bitchan.utils.encryption')
+logger = logging.getLogger('bitchan.encryption')
 
 
 def decrypt_safe_size(message, passphrase, max_size):

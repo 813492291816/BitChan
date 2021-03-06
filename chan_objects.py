@@ -11,7 +11,6 @@ from database.models import Messages
 from database.utils import session_scope
 from utils.download import download_and_extract
 from utils.files import LF
-from utils.general import get_random_alphanumeric_string
 
 DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 
@@ -44,14 +43,13 @@ class ChanPost:
 
     def allow_download(self):
         try:
+            logger.info("{}: Allowing download".format(self.message_id[-config.ID_LENGTH:].upper()))
             with session_scope(DB_PATH) as new_session:
                 message = new_session.query(Messages).filter(
                     Messages.message_id == self.message_id).first()
                 if message:
                     file_path = "{}/{}".format(
                         config.FILE_DIRECTORY, message.saved_file_filename)
-                    img_thumb_filename = "{}/{}".format(
-                        config.FILE_DIRECTORY, message.saved_image_thumb_filename)
 
                     # Pick a download slot to fill (2 slots per domain)
                     domain = urlparse(message.file_url).netloc
@@ -64,37 +62,38 @@ class ChanPost:
                         try:
                             (file_download_successful,
                              file_size,
+                             file_amount,
                              file_do_not_download,
                              file_sha256_hashes_match,
-                             media_height,
-                             media_width,
+                             media_info,
                              message_steg) = download_and_extract(
                                 message.thread.chan.address,
                                 self.message_id,
                                 message.file_url,
+                                json.loads(message.file_upload_settings),
                                 json.loads(message.file_extracts_start_base64),
                                 message.upload_filename,
                                 file_path,
-                                message.file_extension,
                                 message.file_sha256_hash,
                                 message.file_enc_cipher,
                                 message.file_enc_key_bytes,
-                                message.file_enc_password,
-                                img_thumb_filename)
+                                message.file_enc_password)
                         finally:
                             lf.lock_release(lockfile)
 
                     if file_download_successful:
-                        message.file_size = file_size
-                        message.media_height = media_height
-                        message.media_width = media_width
+                        if file_size:
+                            message.file_size = file_size
+                        if file_amount:
+                            message.file_amount = file_amount
                         message.file_download_successful = file_download_successful
                         message.file_do_not_download = file_do_not_download
                         message.file_sha256_hashes_match = file_sha256_hashes_match
-                        message.message_steg = message_steg
+                        message.media_info = json.dumps(media_info)
+                        message.message_steg = json.dumps(message_steg)
                         new_session.commit()
         except Exception as e:
-            logger.error("Error allowing download: {}".format(e))
+            logger.error("{}: Error allowing download: {}".format(self.message_id[-config.ID_LENGTH:].upper(), e))
         finally:
             with session_scope(DB_PATH) as new_session:
                 message = new_session.query(Messages).filter(

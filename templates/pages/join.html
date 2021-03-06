@@ -34,8 +34,113 @@
                 </div>
             </div>
 
+    {% elif stage == "join_passphrase" and chan_exists %}
+
+            <div class="themed" style="text-align: center;">
+                You are already a member of <a class="link" href="
+                    {%- if dict_chan_info['type'] == 'board' -%}
+                    /board/{{chan_exists.address}}/1
+                    {%- elif dict_chan_info['type'] == 'list' -%}
+                    /list/{{chan_exists.address}}
+                    {%- endif -%}
+                    ">/{{dict_chan_info["label"]|safe}}/ - {{dict_chan_info["description"]|safe}}</a>
+            </div>
+
+    {% elif stage == "join_passphrase" %}
+
+        <div style="max-width: 800px">
+
+            <input name="stage" value="join_passphrase" type="hidden">
+            <div style="text-align: center;">
+                <h1 class="title themed bold">
+                    Join
+            {% if dict_chan_info["access"] == "public" %}
+                    Public
+            {% elif dict_chan_info["access"] == "private" %}
+                    Private
+            {% endif %}
+            {% if dict_chan_info["type"] == "board" %}
+                    Board
+            {% elif dict_chan_info["type"] == "list" %}
+                    List
+            {% endif %}
+                </h1>
+            </div>
+            <div style="text-align: center;">
+                <h1 class="title themed bold">
+                    /{{dict_chan_info["label"]|safe}}/ - {{dict_chan_info["description"]|safe}}
+                </h1>
+            </div>
+
+            {% set rules = dict_chan_info["rules"] %}
+            {% set primary_addresses = dict_chan_info["primary_addresses"] %}
+            {% set secondary_addresses = dict_chan_info["secondary_addresses"] %}
+            {% set tertiary_addresses = dict_chan_info["tertiary_addresses"] %}
+            {% set restricted_addresses = dict_chan_info["restricted_addresses"] %}
+
+            {% if rules %}
+            <span class="themed">Rules:</span>
+            {% include '/elements/rules.html' %}
+            {% endif %}
+
+            {% if primary_addresses or secondary_addresses or tertiary_addresses or restricted_addresses %}
+            <div class="themed" style="padding-bottom: 0.5em">
+                {% include '/elements/accordion_access.html' %}
+            </div>
+            {% endif %}
+
+            {% if dict_chan_info["extra_string"] %}
+            <div class="themed" style="padding-bottom: 0.5em">
+                <div>Extra String</div>
+                <div>{{dict_chan_info["extra_string"]}}</div>
+            </div>
+            {% endif %}
+
+            <div class="themed" style="padding-top: 0.5em">
+                <div>Message PGP Passphrase</div>
+                <div>Warning: Only change this if you know what you are doing.</div>
+                {% if pgp_passphrase_msg == config.PGP_PASSPHRASE_MSG %}
+                <div>Note: This is the default passphrase. A non-default passphrase was not supplied by the join link.</div>
+                {% else %}
+                <div>Note: This is a non-default passphrase that was supplied by the join link.</div>
+                {% endif %}
+                <input style="width: 100%" name="pgp_passphrase_msg" value="{{pgp_passphrase_msg}}">
+            </div>
+
+            {% if dict_chan_info["type"] == "board" %}
+            <div class="themed" style="padding-top: 0.5em">
+                <div>Attachment PGP Passphrase</div>
+                <div>Warning: Only change this if you know what you are doing.</div>
+                {% if pgp_passphrase_attach == config.PGP_PASSPHRASE_ATTACH %}
+                <div>Note: This is the default passphrase. A non-default passphrase was not supplied by the join link.</div>
+                {% else %}
+                <div>Note: This is a non-default passphrase that was supplied by the join link.</div>
+                {% endif %}
+                <input style="width: 100%" name="pgp_passphrase_attach" value="{{pgp_passphrase_attach}}">
+            </div>
+            <div class="themed" style="padding-top: 0.5em">
+                <div>Steg PGP Passphrase</div>
+                <div>Warning: Only change this if you know what you are doing.</div>
+                {% if pgp_passphrase_steg == config.PGP_PASSPHRASE_STEG %}
+                <div>Note: This is the default passphrase. A non-default passphrase was not supplied by the join link.</div>
+                {% else %}
+                <div>Note: This is a non-default passphrase that was supplied by the join link.</div>
+                {% endif %}
+                <input style="width: 100%" name="pgp_passphrase_steg" value="{{pgp_passphrase_steg}}">
+            </div>
+            {% endif %}
+
+            <div class="themed" style="padding-top: 0.5em">
+                <input type="checkbox" id="resync" name="resync" checked value="y"> <label for="resync">Resync to download any available messages sent prior to joining.</label>
+            </div>
+            <div style="padding-top: 1em">
+                <input type="submit" name="join" value="Join"/>
+            </div>
+        </div>
+
     {% elif stage == "join" %}
 
+        <div style="max-width: 800px">
             <input name="stage" value="join" type="hidden">
             <div style="text-align: center;">
                 <h1 class="title themed bold">Join a Board or List</h1>
@@ -49,17 +154,29 @@
                 <div>Message PGP Passphrase</div>
                 <div>Only change this if you want to use a non-default PGP passphrase for messages.</div>
                 <div>Warning: If changed, you won't be able to communicate with anyone using the default passphrase.</div>
-                <input style="width: 100%" name="pgp_passphrase_msg" value="{{config.PASSPHRASE_MSG}}">
+                <input style="width: 100%" name="pgp_passphrase_msg" value="{{config.PGP_PASSPHRASE_MSG}}">
+            </div>
+            <div class="themed" style="padding-top: 0.5em">
+                <div>Attachment PGP Passphrase</div>
+                <div>Only change this if you want to use a non-default PGP passphrase for attachments.</div>
+                <div>Warning: If changed, you won't be able to communicate with anyone using the default passphrase.</div>
+                <div>Note: Attacmhent PGP Passphrases are only used for boards. This will be ignored if joining a list.</div>
+                <input style="width: 100%" name="pgp_passphrase_attach" value="{{config.PGP_PASSPHRASE_ATTACH}}">
             </div>
             <div class="themed" style="padding-top: 0.5em">
                 <div>Steg PGP Passphrase</div>
                 <div>Only change this if you want to use a non-default PGP passphrase for <a class="link" href="/help#steganography">steganography</a>.</div>
                 <div>Warning: If changed, you won't be able to communicate with anyone using the default passphrase.</div>
-                <input style="width: 100%" name="pgp_passphrase_steg" value="{{config.PASSPHRASE_STEG}}">
+                <div>Note: Steg PGP Passphrases are only used for boards. This will be ignored if joining a list.</div>
+                <input style="width: 100%" name="pgp_passphrase_steg" value="{{config.PGP_PASSPHRASE_STEG}}">
+            </div>
+            <div class="themed" style="padding-top: 0.5em">
+                <input type="checkbox" id="resync" name="resync" checked value="y"> <label for="resync">Resync to download any available messages sent prior to joining.</label>
             </div>
             <div style="padding-top: 1em">
                 <input type="submit" name="join" value="Join"/>
             </div>
+        </div>
 
     {% elif stage in ["public_board", "private_board", "public_list", "private_list"] %}
 
@@ -99,38 +216,51 @@
                 </div>
 
                 <div class="themed" style="padding-top: 0.5em">
-                    <div>{{chan_type}} Label (Required)</div>
+                    <div>{{chan_type}} Label (Required, max {{config.LABEL_LENGTH}} characters)</div>
                     <input style="width: 100%" name="label" value="">
                 </div>
 
                 <div class="themed" style="padding-top: 0.5em">
-                    <div>{{chan_type}} Description (Required)</div>
+                    <div>{{chan_type}} Description (Required, max {{config.DESCRIPTION_LENGTH}} characters)</div>
                     <input style="width: 100%" name="description" value="">
                 </div>
 
                 <div class="themed" style="padding-top: 0.5em">
-                    <div>Message PGP Passphrase</div>
+                    <div>Message PGP Passphrase (max {{config.PGP_PASSPHRASE_LENGTH}} characters)</div>
                     <div>Only change this if you want to use a non-default PGP passphrase for messages.</div>
                     <div>Warning: If changed, you will need to somehow give this PGP passphrase to users joining your board/list.</div>
-                    <input style="width: 100%" name="pgp_passphrase_msg" value="{{config.PASSPHRASE_MSG}}">
+                    <input style="width: 100%" name="pgp_passphrase_msg" value="{{config.PGP_PASSPHRASE_MSG}}">
                 </div>
 
                 {% if stage in ["public_board", "private_board"] %}
                 <div class="themed" style="padding-top: 0.5em">
-                    <div>Steg PGP Passphrase (only for boards)</div>
+                    <div>Attachment PGP Passphrase (max {{config.PGP_PASSPHRASE_LENGTH}} characters)</div>
+                    <div>Only change this if you want to use a non-default PGP passphrase for attachments.</div>
+                    <div>Warning: If changed, you will need to somehow give this PGP passphrase to users joining your board/list.</div>
+                    <input style="width: 100%" name="pgp_passphrase_attach" value="{{config.PGP_PASSPHRASE_ATTACH}}">
+                </div>
+
+                <div class="themed" style="padding-top: 0.5em">
+                    <div>Steg PGP Passphrase (max {{config.PGP_PASSPHRASE_LENGTH}} characters)</div>
                     <div>Only change this if you want to use a non-default PGP passphrase for <a class="link" href="/help#steganography">steganography</a>.</div>
                     <div>Warning: If changed, you won't be able to communicate with anyone using the default passphrase.</div>
-                    <input style="width: 100%" name="pgp_passphrase_steg" value="{{config.PASSPHRASE_STEG}}">
+                    <input style="width: 100%" name="pgp_passphrase_steg" value="{{config.PGP_PASSPHRASE_STEG}}">
                 </div>
                 {% endif %}
 
                 <div class="themed" style="padding-top: 0.5em">
                     <input type="checkbox" id="require_identity_to_post" name="require_identity_to_post" value="y"> <label for="require_identity_to_post">{{config.DICT_PERMISSIONS["require_identity_to_post"]}}</label>
                 </div>
-
                 <div class="themed" style="padding-top: 0.5em">
                     <input type="checkbox" id="automatic_wipe" name="automatic_wipe" value="y"> <label for="automatic_wipe">{{config.DICT_PERMISSIONS["automatic_wipe"]}}</label>
                 </div>
+
+                {% if stage in ["public_list", "private_list"] %}
+                <div class="themed" style="padding-top: 0.5em">
+                    <input type="checkbox" id="allow_list_pgp_metadata" name="allow_list_pgp_metadata" value="y"> <label for="allow_list_pgp_metadata">{{config.DICT_PERMISSIONS["allow_list_pgp_metadata"]}}</label>
+                </div>
+                {% endif %}
+
                 <div class="themed">
                     <input name="wipe_epoch" id="wipe_epoch" value="{{time.time()|int}}"> <label for="wipe_epoch">Time of First Clear (Epoch, see <a class="link" target="_blank" href="https://www.epochconverter.com/">Epoch Converter</a>)</label>
                 </div>
@@ -192,7 +322,7 @@
         {% endif %}
 
                 <div class="themed" style="padding-top: 0.5em">
-                    <div>Additional Addresses (comma-separated)</div>
+                    <div>Additional Addresses (comma-separated, max {{config.PASSPHRASE_ADDRESSES_LENGTH}} characters)</div>
                     <input style="width: 100%" name="primary_additional" value="">
                 </div>
 
@@ -249,7 +379,7 @@
         {% endif %}
 
                 <div class="themed" style="padding-top: 0.5em">
-                    <div>Additional Addresses (comma-separated)</div>
+                    <div>Additional Addresses (comma-separated, max {{config.PASSPHRASE_ADDRESSES_LENGTH}} characters)</div>
                     <input style="width: 100%" name="secondary_additional" value="">
                 </div>
 
@@ -308,7 +438,7 @@
         {% endif %}
 
                 <div class="themed" style="padding-top: 0.5em">
-                    <div>Additional Addresses (comma-separated)</div>
+                    <div>Additional Addresses (comma-separated, max {{config.PASSPHRASE_ADDRESSES_LENGTH}} characters)</div>
                     <input style="width: 100%" name="tertiary_additional" value="">
                 </div>
 
@@ -357,15 +487,19 @@
         {% endif %}
 
                 <div class="themed" style="padding-top: 0.5em">
-                    <div>Additional Addresses (comma-separated)</div>
+                    <div>Additional Addresses (comma-separated, max {{config.PASSPHRASE_ADDRESSES_LENGTH}} characters)</div>
                     <input style="width: 100%" name="restricted_additional" value="">
                 </div>
 
         {% endif %}
 
                 <div class="themed" style="padding-top: 0.5em">
-                    <div>Extra String (add passphrase entropy)</div>
+                    <div>Extra String (add passphrase entropy, max {{config.PASSPHRASE_EXTRA_STRING_LENGTH}} characters)</div>
                     <input style="width: 100%" name="extra_string" value="">
+                </div>
+
+                <div class="themed" style="padding-top: 0.5em">
+                    <input type="checkbox" id="resync" name="resync" checked value="y"> <label for="resync">Resync to download any available messages sent prior to joining.</label>
                 </div>
 
                 <div style="padding-top: 1em">

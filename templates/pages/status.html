@@ -74,7 +74,7 @@
     {% if upload_progress %}
                     <tr>
                         <td>Uploading</td>
-                        <td>Filename</td>
+                        <td>Thread Subject</td>
                         <td>Progress</td>
                     </tr>
         {% for each_upload in upload_progress %}
@@ -83,10 +83,10 @@
                             {{each_upload.uploading}}
                         </td>
                         <td>
-                        {% if each_upload.filename|length > 50 %}
-                            {{each_upload.filename[:35]}}...{{each_upload.filename[-15:]}}
+                        {% if each_upload.subject|length > 50 %}
+                            {{each_upload.subject[:35]}}...{{each_upload.subject[-15:]}}
                         {% else %}
-                            {{each_upload.filename}}
+                            {{each_upload.subject}}
                         {% endif %}
                         </td>
                         <td>
@@ -117,9 +117,13 @@
                         <td>{{each_value}}</td>
                     </tr>
     {% endfor %}
+                    <tr>
+                        <td>Sync Complete</td>
+                        <td>{{bitmessage.bm_sync_complete}}</td>
+                    </tr>
                 </table>
 
-                <table class="table" style="margin-left: auto; margin-right: auto;">
+                <table class="table themed" style="margin-left: auto; margin-right: auto;">
                     <tr>
                         <td colspan=2 style="text-align: center; padding-top: 2em; padding-bottom: 1em">
                             <h1 class="title themed bold">Tor Status</h1>
@@ -150,10 +154,10 @@
     {% if tor_circuit_dict %}
                     <tr>
                         <td colspan="2">
-                             <div id="accordion-tor-circuits" style="display: none">
+                             <div id="accordion-tor-circuits">
                                 <h3>Tor Circuits</h3>
                                 <div>
-                                    <table class="table" style="margin-left: auto; margin-right: auto;">
+                                    <table class="table themed" style="margin-left: auto; margin-right: auto;">
         {% for each_id in tor_circuit_dict %}
                                         <tr>
                                             <td>Circuit {{each_id}} ({{tor_circuit_dict[each_id]["purpose"]}})</td>

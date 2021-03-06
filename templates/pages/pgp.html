@@ -1,0 +1,191 @@
+{% extends "layout.html" %}
+
+{% block title %}PGP{% endblock %}
+
+{% block head %}
+    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.min.css">
+    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.theme.min.css">
+    <script src="/static/js/jquery-ui-1.12.1.min.js"></script>
+    <script>
+        $(function() {
+            $("#accordion-create-key").show().accordion({
+                collapsible: true,
+                active: false
+            });
+            {% for each_key in public_keys %}
+            $("#accordion-key-public-{{each_key['fingerprint']}}").show().accordion({
+                collapsible: true,
+                active: false
+            });
+            {% endfor %}
+            {% for each_key in private_keys %}
+            $("#accordion-key-private-{{each_key['fingerprint']}}").show().accordion({
+                collapsible: true,
+                active: false
+            });
+            {% endfor %}
+        });
+    </script>
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.1em;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div style="width: 100%; text-align: center;">
+        <h1 class="title themed bold">PGP</h1>
+    </div>
+
+    {% if private_keys %}
+    <div class="themed" style="text-align: center; padding-bottom: 1em">
+        <div style="display: inline-block; text-align: left">
+            Private Keys:
+        {% for each_key in private_keys %}
+            <div id="accordion-key-private-{{each_key['fingerprint']}}">
+                <h3>{{each_key["uids"][0]}} - {{each_key["keyid"]}}</h3>
+                <div>
+                    <table class="themed">
+            {% for each_option, each_value in each_key.items() %}
+                        <tr>
+                            <td>{{each_option}}</td>
+                            <td>
+                {% if each_option == "subkey_info" and each_value %}
+                    {% for subkey_id, subkey_info in each_value.items() %}
+                                <table>
+                        {% for sk_option, sk_value in subkey_info.items() %}
+                                    <tr>
+                                        <td>{{sk_option}}</td>
+                                        <td>{{sk_value}}</td>
+                                    </tr>
+                        {% endfor %}
+                                </table>
+                    {% endfor %}
+                {% else %}
+                                {{each_value}}
+                {% endif %}
+                            </td>
+                        </tr>
+            {% endfor %}
+                {% if each_key["keyid"] in exported_public_keys %}
+                        <tr>
+                            <td colspan="2">{{exported_public_keys[each_key["keyid"]].replace("\n", "<br/>")|safe}}</td>
+                        </tr>
+                {% endif %}
+                    </table>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if public_keys %}
+    <div class="themed" style="text-align: center; padding-bottom: 1em">
+        <div style="display: inline-block; text-align: left">
+            Public Keys:
+        {% for each_key in public_keys if each_key["keyid"] in public_key_ids %}
+            <div id="accordion-key-public-{{each_key['fingerprint']}}">
+                <h3>{{each_key["uids"][0]}} - {{each_key["keyid"]}}</h3>
+                <div>
+                    <table>
+            {% for each_option, each_value in each_key.items() %}
+                        <tr>
+                            <td>{{each_option}}</td>
+                            <td>
+                {% if each_option == "subkey_info" and each_value %}
+                    {% for subkey_id, subkey_info in each_value.items() %}
+                                <table>
+                        {% for sk_option, sk_value in subkey_info.items() %}
+                                    <tr>
+                                        <td>{{sk_option}}</td>
+                                        <td>{{sk_value}}</td>
+                                    </tr>
+                        {% endfor %}
+                                </table>
+                    {% endfor %}
+                {% else %}
+                                {{each_value}}
+                {% endif %}
+                            </td>
+                        </tr>
+            {% endfor %}
+                        <tr>
+                            <td colspan="2">{{exported_public_keys[each_key["keyid"]].replace("\n", "<br/>")|safe}}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data">
+        <div class="themed" style="text-align: center; padding-bottom: 1em">
+            <div id="accordion-create-key" style="display: inline-block; text-align: left">
+                <h3>Generate Key</h3>
+                <div>
+                    <table class="table" style="margin-left: auto; margin-right: auto;">
+                        <tr>
+                            <td>Name</td>
+                            <td>
+                                <input type="text" name="name"/>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Email</td>
+                            <td>
+                                <input type="text" name="email"/>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Comment</td>
+                            <td>
+                                <input type="text" name="comment"/>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Key Type/Length</td>
+                            <td>
+                                <select name="key_type_length">
+                                    <option value="RSA,4096">RSA 4096</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Passphrase</td>
+                            <td>
+                                <input type="password" name="passphrase"/>
+                            </td>
+                        </tr>
+                    </table>
+                    <div style="padding: 0.5em">
+                        <input type="submit" name="create_master_key" value="Create"/>
+                    </div>
+                </div>
+            </div>
+
+            <div class="themed" style="text-align: center; padding-bottom: 1em">
+                <div style="display: inline-block; text-align: left">
+                    <h2>Diagnostics</h2>
+                    <input type="submit" name="delete_all" value="Delete All"/>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/footer_links.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

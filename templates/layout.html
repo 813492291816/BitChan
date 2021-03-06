@@ -21,6 +21,10 @@
                  textToCopy.select();
                  document.execCommand("copy");
             }
+            function ClearFile(value) {
+                clear_id = "#" + value;
+                $(clear_id).val('');
+            }
         </script>
         <style>
             {% include '/elements/css_theme.css' %}

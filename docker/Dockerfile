@@ -25,7 +25,7 @@ RUN chown -R bitchan /usr/local/bitmessage
 
 # BitChan apt dependencies
 RUN apt-get update && apt-get install -yq --no-install-suggests --no-install-recommends \
-    secure-delete gnupg2 build-essential ffmpeg libsm6 libxext6 docker.io \
+    curl secure-delete gnupg2 build-essential ffmpeg libsm6 libxext6 docker.io \
     python3-dev python3-setuptools python3-distutils python3-pip netbase libjpeg-dev zlib1g-dev
 
 # Bitmessage apt dependencies

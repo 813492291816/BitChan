@@ -1,0 +1,135 @@
+{% extends "layout.html" %}
+
+{% block title %}Confirm Action{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    <div class="container">
+
+        {% if action == "delete_identity" %}
+
+        <form method="post" enctype="multipart/form-data" autocomplete="off" action="/identities">
+            <input name="address" value="{{ident.address}}" type="hidden">
+            <input name="delete" value="1" type="hidden">
+            <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
+                Delete Identity {{replace_lt_gt(ident.label)|safe}} ({{ident.address}})?
+            </div>
+            <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
+                This will delete all mail for this address.
+            </div>
+            <div style="padding-top: 1em; text-align: center;">
+                <input type="submit" name="confirm" value="Confirm"/>
+            </div>
+        </form>
+
+        {% elif action == "delete_address_book" %}
+
+        <form method="post" enctype="multipart/form-data" autocomplete="off" action="/address_book">
+            <input name="address" value="{{add_book.address}}" type="hidden">
+            <input name="delete" value="1" type="hidden">
+            <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
+                Delete Address Book entry {{replace_lt_gt(add_book.label)|safe}} ({{add_book.address}})?
+            </div>
+            <div style="padding-top: 1em; text-align: center;">
+                <input type="submit" name="confirm" value="Confirm"/>
+            </div>
+        </form>
+
+        {% elif action == "leave" %}
+
+        <form method="post" enctype="multipart/form-data" autocomplete="off" action="/leave/{{address}}">
+            <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
+                Leave <a class="link" href="/board/{{chan.address}}/1">/{{replace_lt_gt(chan.label)|safe}}/ - {{replace_lt_gt(chan.description)|safe}} ({{address}})</a>?
+            </div>
+            <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
+                This will delete all content and cannot be undone.
+            </div>
+            <div style="padding-top: 1em; text-align: center;">
+                <input type="submit" name="confirm" value="Confirm"/>
+            </div>
+        </form>
+
+        {% elif action == "block_address" %}
+
+        <form method="post" enctype="multipart/form-data" autocomplete="off" action="/block_address/{{chan_address}}/{{block_address}}/{{block_type}}">
+            <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
+                Confirm blocking the address {{block_address}}{% if block_address in address_labels %} ({{address_labels[block_address]}}){% endif %}?
+            </div>
+            <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
+                {% if block_type == "single_board" %}
+                This will delete posts from this address only on <a class="link" href="/board/{{chan.address}}/1">/{{replace_lt_gt(chan.label)|safe}}/</a>, now and into the future, and affects only your instance of BitChan. Blocking is permanent and irreversible.
+                {% elif block_type == "global" %}
+                This will delete posts from this address on ALL boards, now and into the future, and affects only your instance of BitChan. Blocking is permanent and irreversible.
+                {% endif %}
+            </div>
+            <div style="padding-top: 1em; text-align: center;">
+                <input type="submit" name="confirm" value="Confirm"/>
+            </div>
+        </form>
+
+        {% elif action == "admin_board_ban_address" %}
+
+        <form method="post" enctype="multipart/form-data" autocomplete="off" action="/admin_board_ban_address/{{chan_address}}/{{ban_address}}">
+            <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
+                Confirm Admin banning the address {{ban_address}}{% if ban_address in address_labels %} ({{address_labels[ban_address]}}){% endif %} from <a class="link" href="/board/{{chan_address}}/1">/{{replace_lt_gt(chan.label)|safe}}/ - {{replace_lt_gt(chan.description)|safe}}</a>?
+            </div>
+            <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
+                This will delete all posts associated with this address from <a class="link" href="/board/{{chan_address}}/1">/{{replace_lt_gt(chan.label)|safe}}/</a> for everyone, including you, and prevent any future posts from appearing. Banning is permanent and irreversible.
+            </div>
+            <div style="padding-top: 1em; text-align: center;">
+                <input type="submit" name="confirm" value="Confirm"/>
+            </div>
+        </form>
+
+        {% elif action == "delete" %}
+
+        <form method="post" enctype="multipart/form-data" autocomplete="off" action="/delete/{{current_chan}}/{{message_id}}/{{thread_id}}/{{delete_type}}">
+            <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
+                Confirm deleting this
+                {% if delete_type == "post" -%}
+                post for just you
+                {%- elif delete_type == "post_all" -%}
+                post for everyone
+                {%- elif delete_type == "thread" -%}
+                thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash}}">{{replace_lt_gt(thread.subject)|safe}}</a> for just you
+                {%- elif delete_type == "thread_all" -%}
+                thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash}}">{{replace_lt_gt(thread.subject)|safe}}</a> for everyone
+                {%- endif -%}
+                ?
+            </div>
+            <div class="themed bold" style="padding-top: 0.5em; text-align: center;">
+                {% if delete_type in ["post", "post_all"] %}
+                Post ID {{post_id(message_id)}}
+                <br/>From thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash}}">{{replace_lt_gt(thread.subject)|safe}}</a><br/>
+                {% endif %}
+                From
+                {% if chan.access == "public" %}
+                Public
+                {% elif chan.access == "private" %}
+                Private
+                {% endif %}
+                Board <a class="link" href="/board/{{chan.address}}/1">/{{replace_lt_gt(chan.label)|safe}}/ - {{replace_lt_gt(chan.description)|safe}}</a>
+            </div>
+            <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
+                {% if delete_type == "post" -%}
+                This will not delete the post for anyone but you. Deletion is only reversible if you leave the board and rejoin it. However, any expired posts will be irrecoverable.
+                {%- elif delete_type == "post_all" -%}
+                This will delete the post for everyone including you. Deletion is permanent and irreversible.
+                {%- elif delete_type == "thread" -%}
+                This will not delete the thread for anyone but you. Deletion is only reversible if you leave the board and rejoin it. However, any expired posts will be irrecoverable.
+                {%- elif delete_type == "thread_all" -%}
+                This will delete the thread for everyone including you. Deletion is permanent and irreversible.
+                {%- endif -%}
+            </div>
+            <div style="padding-top: 1em; text-align: center;">
+                <input type="submit" name="confirm" value="Confirm"/>
+            </div>
+        </form>
+
+        {% endif %}
+
+    </div>
+
+{% endblock %}

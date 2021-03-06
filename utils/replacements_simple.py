@@ -2,20 +2,28 @@ import logging
 import random
 import re
 import time
-from utils import replacements_data
+
 import htmllistparse
 import requests
 from bs4 import BeautifulSoup
 from requests.exceptions import ConnectTimeout
+from requests.exceptions import ConnectionError
 from user_agent import generate_user_agent
 
+import config
 from config import FILE_DIRECTORY
 from config import TOR_PROXIES
+from database.models import GlobalSettings
+from database.utils import session_scope
+from utils import replacements_data
 from utils.files import LF
+from utils.general import get_random_alphanumeric_string
 from utils.general import is_int
 from utils.god_song_01 import make_god_song_01
 
-logger = logging.getLogger("bitchan.utils.replacements_simple")
+DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
+
+logger = logging.getLogger("bitchan.replacements_simple")
 
 
 class IterFinds:
@@ -64,7 +72,6 @@ def get_book_url_from_id(book_id):
     mirror_index = 0
 
     mirrors = [
-        "https://aleph.gutenberg.org",
         "https://gutenberg.pglaf.org",
         "https://mirrors.xmission.com/gutenberg",
         "https://mirror.csclub.uwaterloo.ca/gutenberg",
@@ -82,6 +89,7 @@ def get_book_url_from_id(book_id):
     for _ in range(len(mirrors)):
         try:
             book_directory = mirrors[mirror_index] + url_append
+            logger.info("Trying book URL: {}".format(book_directory))
             book_url_content = requests.get(
                 book_directory,
                 proxies=TOR_PROXIES,
@@ -89,11 +97,18 @@ def get_book_url_from_id(book_id):
                 allow_redirects=True,
                 timeout=10)
             break
-        except ConnectTimeout:
+        except (ConnectTimeout, ConnectionError) as err:
+            logger.error("Mirror {} error: {}".format(book_directory, err))
             if mirror_index + 1 < len(mirrors):
                 mirror_index += 1
+                logger.info("Trying next mirror")
             else:
+                logger.info("Returning to first mirror")
                 mirror_index = 0
+
+    if not book_url_content:
+        logger.error("Could not connect to any mirrors")
+        return
 
     soup = BeautifulSoup(book_url_content.text, "html.parser")
     wd, listing = htmllistparse.parse(soup)
@@ -223,6 +238,65 @@ def replace_card_pulls(text, seed):
     return "\n".join(lines)
 
 
+def replace_countdown(text):
+    regex = r"\#countdown\((\d*)\)"
+    lines = text.split("\n")
+
+    find_count = 1
+    lines_finds = IterFinds(lines, regex)
+    for line_index, i in lines_finds:
+        for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
+            if find_count > 3:  # Process max of 25 per message
+                return "\n".join(lines)
+            elif match_index == i:
+                try:
+                    match_epoch = int(each_find.groups()[0])
+                except:
+                    continue
+                start_string = lines[line_index][:each_find.start()]
+                end_string = lines[line_index][each_find.end():]
+                rand_str = get_random_alphanumeric_string(
+                    12, with_punctuation=False, with_spaces=False)
+
+                middle_string = """<span class="replace-funcs">#countdown(</span><span class="replace-funcs" id="countdown_{rand_str}"></span><span class="replace-funcs">)</span><script type="text/javascript">
+var countDownDate_{rand_str} = {epoch_end} * 1000;
+var x_{rand_str} = setInterval(function() {{
+    var now = new Date().getTime();
+    var distance = countDownDate_{rand_str} - now;
+
+    var days = Math.floor(distance / (1000 * 60 * 60 * 24));
+    var hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    var minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+    var seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+    var str_return = "";
+    if (days) {{
+        str_return += days;
+        if (days > 1)  str_return += " Days, ";
+        else str_return += " Day, ";
+    }};
+    if (hours || days) {{
+        str_return += hours;
+        if (hours > 1) str_return += " Hours, ";
+        else str_return += " Hour, ";
+    }};
+    if (minutes || hours || days) str_return += minutes + " Min, ";
+    if (seconds || minutes || hours || days) str_return += seconds + " Sec";
+
+    if (distance < 0) {{
+        clearInterval(x_{rand_str});
+        document.getElementById("countdown_{rand_str}").innerHTML = "Expired";
+    }} else {{
+        document.getElementById("countdown_{rand_str}").innerHTML = str_return;
+    }};
+}}, 1000);
+</script>""".format(rand_str=rand_str, epoch_end=match_epoch).replace("\n", " ")
+                find_count += 1
+                lines[line_index] = start_string + middle_string + end_string
+
+    return "\n".join(lines)
+
+
 def replace_dice_rolls(text, seed):
     lines = text.split("\n")
     regex = r"(?i)#(\d*)d(\d+)"
@@ -343,7 +417,7 @@ def replace_god_song(text, seed, message_id):
                         if author and "Various" not in author:
                             title_str += " by {}".format(title, author)
 
-                        book_link = '<a target="_blank" href="{url}">{name}, {title}</a>'.format(
+                        book_link = '<a class="link" target="_blank" href="{url}">{name}, {title}</a>'.format(
                             url=book_url,
                             name=replacements_data.bible_books[previous_line],
                             title=title_str)
@@ -438,6 +512,34 @@ def replace_iching(text, seed):
                 middle_string = '<span class="replace-funcs">{}({})</span>'.format(
                     match, str_return)
 
+                find_count += 1
+                lines[line_index] = start_string + middle_string + end_string
+
+    return "\n".join(lines)
+
+
+def replace_rock_paper_scissors(text, seed):
+    dict_rps = {
+        0: "rock",
+        1: "paper",
+        2: "scissors"
+    }
+    regex = r"(?i)#rps"
+    lines = text.split("\n")
+
+    find_count = 1
+    lines_finds = IterFinds(lines, regex)
+    for line_index, i in lines_finds:
+        for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
+            if find_count > 25:  # Process max of 25 per message
+                return "\n".join(lines)
+            elif match_index == i:
+                random.seed(seed + str(line_index) + str(match_index))
+                match = lines[line_index][each_find.start():each_find.end()]
+                start_string = lines[line_index][:each_find.start()]
+                end_string = lines[line_index][each_find.end():]
+                middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    match, dict_rps[random.randint(0, 2)])
                 find_count += 1
                 lines[line_index] = start_string + middle_string + end_string
 
@@ -569,6 +671,8 @@ def replace_stich(text, message_id):
                         if lf.lock_acquire(stichomancy_lf, to=600):
                             try:
                                 _, quote, url, title, author = stichomancy_pull(new_seed)
+                            except:
+                                logger.exception("getting quote")
                             finally:
                                 lf.lock_release(stichomancy_lf)
                         if quote:
@@ -576,7 +680,7 @@ def replace_stich(text, message_id):
                             if author and "Various" not in author:
                                 title_str += " by {}".format(author)
 
-                            random_quote = "\"{quote}\" -<a href=\"{url}\">{title}</a>".format(
+                            random_quote = "\"{quote}\" -<a class=\"link\" href=\"{url}\">{title}</a>".format(
                                 quote=quote, url=url, title=title_str)
                         if random_quote or count > 5:
                             break
@@ -732,21 +836,34 @@ def split_into_sentences(text):
 
 
 def stichomancy_pull(seed, select_book_id=None):
-    random.seed(seed)
+    with session_scope(DB_PATH) as new_session:
+        settings = new_session.query(GlobalSettings).first()
+        if not settings.allow_net_book_quote:
+            # Don't allow connecting to get random quote if setting is False
+            return None, None, None, None, None
 
     author = None
     title = None
     language = None
     lines_book = None
 
+    random.seed(seed)
+
     full_book_url = None
     for _ in range(7):
+        author = None
+        title = None
+        language = None
+
+        logger.info("Getting book URL")
         if select_book_id:
             book_id = select_book_id
         else:
             book_id = random.randrange(0, 60000)
 
         full_book_url = get_book_url_from_id(book_id)
+
+        logger.info("Got book URL: {}".format(full_book_url))
 
         try:
             book = requests.get(
@@ -767,12 +884,18 @@ def stichomancy_pull(seed, select_book_id=None):
             if not language and each_line.strip().startswith("Language: "):
                 language = each_line.strip().split(": ", 1)[1]
             if author and title and language:
+                logger.info("author and title and language")
                 break
 
+        logger.info("Info: {}, {}, {}".format(language, title, author))
+
         if select_book_id:
+            logger.info("select_book_id")
             break
         if (language and "English" in language) and author and title:
+            logger.info("English and author and title")
             break
+        logger.info("Repeat loop")
         time.sleep(3)
 
     if (not select_book_id and
@@ -782,7 +905,7 @@ def stichomancy_pull(seed, select_book_id=None):
              not title or
              not lines_book)):
         logger.error("missing required content: {}, {}, {}, {}, {}".format(
-            select_book_id, language, author, title, lines_book))
+            select_book_id, language, author, title, len(lines_book)))
         return None, None, None, None, None
 
     line_number, quote = make_quote_from_book(lines_book, random)

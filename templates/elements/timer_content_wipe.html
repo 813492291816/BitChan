@@ -10,17 +10,17 @@ var x = setInterval(function() {
 
     var str_return = "";
     if (days) {
-        str_return += days
+        str_return += days;
         if (days > 1)  str_return += " Days, ";
         else str_return += " Day, ";
     }
     if (hours || days) {
-        str_return += + hours
+        str_return += hours;
         if (hours > 1) str_return += " Hours, ";
         else str_return += " Hour, ";
     }
-    if (minutes || hours || days) str_return += minutes + " Min., ";
-    if (seconds || minutes || hours || days) str_return += seconds + " Sec.";
+    if (minutes || hours || days) str_return += minutes + " Min, ";
+    if (seconds || minutes || hours || days) str_return += seconds + " Sec";
 
     document.getElementById("clear_content_countdown").innerHTML = str_return;
 

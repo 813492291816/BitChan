@@ -19,6 +19,7 @@ from database.models import Identity
 from forms import forms_mailbox
 from utils.files import LF
 from utils.routes import page_dict
+from utils.shared import get_msg_expires_time
 
 logger = logging.getLogger('bitchan.routes_mail')
 
@@ -110,6 +111,9 @@ def mailbox(ident_address, mailbox, page, msg_id):
                     msg_selected = nexus._api.getInboxMessageById(msg_id, True)
                     if "inboxMessage" in msg_selected:
                         msg_selected = msg_selected["inboxMessage"][0]
+                        expires = get_msg_expires_time(msg_id)
+                        if expires:
+                            msg_selected["expires_time"] = expires
                 except Exception as err:
                     logger.error("Error: {}".format(err))
                 finally:
@@ -122,6 +126,9 @@ def mailbox(ident_address, mailbox, page, msg_id):
                     msg_selected = nexus._api.getSentMessageById(msg_id)
                     if "sentMessage" in msg_selected:
                         msg_selected = msg_selected["sentMessage"][0]
+                        expires = get_msg_expires_time(msg_id)
+                        if expires:
+                            msg_selected["expires_time"] = expires
                 except Exception as err:
                     logger.error("Error: {}".format(err))
                 finally:
@@ -288,13 +295,16 @@ def get_from_list_all():
         from_addresses[each_address] += "({})".format(each_address)
 
     for each_address in all_chans:
-        if Chan.query.filter(Chan.address == each_address).first().type == "board":
-            from_addresses[each_address] = "Board: "
-        elif Chan.query.filter(Chan.address == each_address).first().type == "list":
-            from_addresses[each_address] = "List: "
-        if each_address in address_labels:
-            from_addresses[each_address] += "{} ".format(address_labels[each_address])
-        from_addresses[each_address] += "({})".format(each_address)
+        if Chan.query.filter(Chan.address == each_address).first():
+            if Chan.query.filter(Chan.address == each_address).first().type == "board":
+                from_addresses[each_address] = "Board: "
+            elif Chan.query.filter(Chan.address == each_address).first().type == "list":
+                from_addresses[each_address] = "List: "
+
+        if each_address in from_addresses:
+            if each_address in address_labels:
+                from_addresses[each_address] += "{} ".format(address_labels[each_address])
+            from_addresses[each_address] += "({})".format(each_address)
 
     # sort
     from_dict = {"board": {}, "list": {}, "ident": {}}
@@ -319,12 +329,15 @@ def get_from_list_all():
     return combined_dict
 
 
-@blueprint.route('/compose/<address_to>', methods=('GET', 'POST'))
-def compose(address_to):
+@blueprint.route('/compose/<address_from>/<address_to>', methods=('GET', 'POST'))
+def compose(address_from, address_to):
     from bitchan_flask import nexus
     from_all = []
 
     form_msg = forms_mailbox.Compose()
+
+    if address_from == "0":
+        address_from = ""
 
     if address_to == "0":
         address_to = ""
@@ -362,16 +375,22 @@ def compose(address_to):
 
                 lf = LF()
                 if lf.lock_acquire(config.LOCKFILE_API, to=60):
-                    try:
+                    try:  # TODO: message sends but results in error. Diagnose.
                         status_msg['status_title'] = "Success"
                         status_msg['status_message'].append("Message sent to queue")
-                        return_str = nexus._api.sendMessage(
-                            form_msg.to_address.data,
-                            form_msg.from_address.data,
-                            subject,
-                            message,
-                            2,
-                            form_msg.ttl.data)
+                        try:
+                            return_str = nexus._api.sendMessage(
+                                form_msg.to_address.data,
+                                form_msg.from_address.data,
+                                subject,
+                                message,
+                                2,
+                                form_msg.ttl.data)
+                        except Exception as err:
+                            if err.__str__() == "<Fault 21: 'Unexpected API Failure - too many values to unpack'>":
+                                return_str = "Error: API Failure (despite this error, the message probably still sent)"
+                            else:
+                                return_str = "Error: {}".format(err)
                         if return_str:
                             logger.info("Send message from {} to {}. Returned: {}".format(
                                 form_msg.from_address.data,
@@ -381,28 +400,30 @@ def compose(address_to):
                                 "Bitmessage returned: {}".format(return_str))
                         time.sleep(0.1)
                     except Exception as err:
-                        logger.error("Error: {}".format(err))
+                        logger.exception("Error: {}".format(err))
                     finally:
                         lf.lock_release(config.LOCKFILE_API)
 
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
 
-        form_populate = {
-            "to_address": form_msg.to_address.data,
-            "from_address": form_msg.from_address.data,
-            "ttl": form_msg.ttl.data,
-            "subject": form_msg.subject.data,
-            "body": form_msg.body.data,
-        }
+            form_populate = {
+                "to_address": form_msg.to_address.data,
+                "from_address": form_msg.from_address.data,
+                "ttl": form_msg.ttl.data,
+                "subject": form_msg.subject.data,
+                "body": form_msg.body.data,
+            }
 
         session['form_populate'] = form_populate
         session['status_msg'] = status_msg
 
         return redirect(url_for("routes_mail.compose",
+                                address_from="0",
                                 address_to="0"))
 
     return render_template("mailbox/compose.html",
+                           address_from=address_from,
                            address_to=address_to,
                            form_populate=form_populate,
                            from_all=from_all,

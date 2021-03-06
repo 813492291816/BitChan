@@ -1,0 +1,230 @@
+{% extends "layout.html" %}
+
+{% block title %}Upload Site{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div style="width: 100%; text-align: center;">
+                <h1 class="title themed bold">
+                    {%- if action in ["add", "add_msg_id"] -%}
+                    Add
+                    {%- elif action == "edit" -%}
+                    Edit
+                    {%- elif action == "delete" -%}
+                    Delete
+                    {%- endif %}
+                    Upload Site
+                </h1>
+            </div>
+
+            {% if action == "add" %}
+
+            <div>
+                <form method="post" enctype="multipart/form-data" autocomplete="off">
+                <input name="stage" value="join" type="hidden">
+                <table class="themed">
+                    <tr>
+                        <td>{{form_upload_site.domain.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="domain" name="domain"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.type.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="type" name="type"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.uri.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="uri" name="uri"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.download_prefix.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="download_prefix" name="download_prefix"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.response.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="response" name="response"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.direct_dl_url.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="checkbox" id="direct_dl_url" name="direct_dl_url" value="y"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.extra_curl_options.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="extra_curl_options" name="extra_curl_options"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.upload_word.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="upload_word" name="upload_word"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.form_name.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="form_name" name="form_name"/>
+                        </td>
+                    </tr>
+                </table>
+                <div style="padding-top: 1em; text-align: center;">
+                    <input type="submit" name="add" value="Add"/>
+                </div>
+                </form>
+            </div>
+
+            {% elif action == "add_msg_id" %}
+
+            <div>
+                <form method="post" enctype="multipart/form-data" autocomplete="off">
+                <input name="stage" value="join" type="hidden">
+                <table class="themed">
+                    <tr>
+                        <td>{{form_upload_site.domain.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['domain']}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.type.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['type']}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.uri.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['uri']}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.download_prefix.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['download_prefix']}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.response.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['response']}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.direct_dl_url.label(class_='heading-bold')}}</td>
+                        <td>{{site_options["direct_dl_url"]}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.extra_curl_options.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['extra_curl_options']}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.upload_word.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['upload_word']}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.form_name.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['form_name']}}</td>
+                    </tr>
+                </table>
+                <div style="padding-top: 1em; text-align: center;">
+                    <input type="submit" name="add" value="Add"/>
+                </div>
+                </form>
+            </div>
+
+            {% elif action == "edit" %}
+
+            <div>
+                <form method="post" enctype="multipart/form-data" autocomplete="off">
+                <input name="stage" value="join" type="hidden">
+                <table class="themed">
+                    <tr>
+                        <td>{{form_upload_site.domain.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="domain" name="domain" value="{% if current_upload_site.domain %}{{current_upload_site.domain}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.type.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="type" name="type" value="{% if current_upload_site.type %}{{current_upload_site.type}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.uri.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="uri" name="uri" value="{% if current_upload_site.uri %}{{current_upload_site.uri}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.download_prefix.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="download_prefix" name="download_prefix" value="{% if current_upload_site.download_prefix %}{{current_upload_site.download_prefix}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.response.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="response" name="response" value="{% if current_upload_site.response %}{{current_upload_site.response}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.direct_dl_url.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="checkbox" id="direct_dl_url" name="direct_dl_url" value="y"{% if current_upload_site.direct_dl_url %} checked{% endif %}/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.extra_curl_options.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="extra_curl_options" name="extra_curl_options" value="{% if current_upload_site.extra_curl_options %}{{current_upload_site.extra_curl_options}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.upload_word.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="upload_word" name="upload_word" value="{% if current_upload_site.upload_word %}{{current_upload_site.upload_word}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.form_name.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="form_name" name="form_name" value="{% if current_upload_site.form_name %}{{current_upload_site.form_name}}{% endif %}"/>
+                        </td>
+                    </tr>
+                </table>
+                <div style="padding-top: 1em; text-align: center;">
+                    <input type="submit" name="save" value="Save"/>
+                </div>
+                </form>
+            </div>
+
+            {% elif action == "delete" %}
+
+            <div style="width: 100%; text-align: center;">
+                <form method="post" enctype="multipart/form-data" autocomplete="off">
+                <input name="stage" value="join" type="hidden">
+                <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
+                    Confirm deleting the upload site: {{current_upload_site.domain}}
+                </div>
+                <div style="padding-top: 1em; text-align: center;">
+                    <input type="submit" name="delete" value="Confirm"/>
+                </div>
+                </form>
+            </div>
+
+        {% endif %}
+
+        </div>
+    </div>
+
+{% endblock %}

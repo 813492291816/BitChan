@@ -1,18 +1,35 @@
 import base64
-import glob
 import logging
 import os
 import random
 import subprocess
 import time
+import zipfile
+from contextlib import closing
+from zipfile import ZipFile
 
 import filelock
 from PIL import Image
 from PIL import ImageFile
 
+import config
 from config import FILE_DIRECTORY
 
-logger = logging.getLogger('bitchan.utils.files')
+logger = logging.getLogger('bitchan.files')
+
+
+def extract_zip(message_id, zfile, extract_dir):
+    logger.info("{}: Extracting {} to {}".format(message_id[-config.ID_LENGTH:].upper(), zfile, extract_dir))
+    with zipfile.ZipFile(zfile, 'r') as zipObj:
+        zipObj.extractall(extract_dir)
+    logger.info("{}: Finished extracting".format(message_id[-config.ID_LENGTH:].upper()))
+
+
+def count_files_in_zip(message_id, zip_file):
+    with closing(ZipFile(zip_file)) as archive:
+        count = len(archive.infolist())
+        logger.info("{}: {} files found in zip archive".format(message_id[-config.ID_LENGTH:].upper(), count))
+        return count
 
 
 def data_extract_file(file_source, extract_size, extract_start, chunk=1000):
@@ -188,13 +205,18 @@ def delete_file(file_path):
                 logger.error("Could not delete file")
 
 
+def delete_files_recursive(del_path):
+    try:
+        subprocess.check_call(["srm", "-rl", del_path])
+    except:
+        logger.error("Could not delete files recursively")
+
+
 def delete_message_files(message_id):
-    file_list = glob.glob('{}/{}*'.format(FILE_DIRECTORY, message_id))
-    for file_path in file_list:
-        try:
-            delete_file(file_path)
-        except Exception as err:
-            print("Error while deleting file: {}: {}".format(file_path, err))
+    files_path = "{}/{}".format(FILE_DIRECTORY, message_id)
+    thumb_path = "{}/{}_thumb".format(FILE_DIRECTORY, message_id)
+    delete_files_recursive(files_path)
+    delete_files_recursive(thumb_path)
 
 
 def human_readable_size(size, decimal_places=1):
@@ -213,7 +235,7 @@ def generate_thumbnail(message_id, image, thumb, extension):
             if os.path.getsize(image) < 400000:
                 os.symlink(image, thumb)
             else:
-                logger.info("{}: Generating thumbnail: {}".format(message_id[0:6], thumb))
+                logger.info("{}: Generating thumbnail: {}".format(message_id[-config.ID_LENGTH:].upper(), thumb))
                 ImageFile.LOAD_TRUNCATED_IMAGES = True
                 if extension in ["jpg", "jpeg"]:
                     image = Image.open(image).convert('RGB')
@@ -222,8 +244,10 @@ def generate_thumbnail(message_id, image, thumb, extension):
                 max_size = (250, 250)
                 image.thumbnail(max_size)
                 image.save(thumb)
+        else:
+            logger.info("{}: Thumbnail already exists: {}".format(message_id[-config.ID_LENGTH:].upper(), thumb))
     except:
-        logger.exception("{}: Generating thumbnail".format(message_id[0:6]))
+        logger.exception("{}: Generating thumbnail".format(message_id[-config.ID_LENGTH:].upper()))
 
 
 class LF:

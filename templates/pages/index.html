@@ -57,64 +57,70 @@
 
     <div class="intro bold themed">
         <p>
-            <center><h1 class="title themed bold">Welcome to BitChan</h1></center>
+            <center><h1 class="title themed bold">Welcome to BitChan {{config.VERSION_BITCHAN}}</h1></center>
+            <center>Mailboxes: <a class="bold link" href="/mailbox/0/0/0/0">{{unread_mail}} Unread Messages</a></center>
             <br/>
-            <center>BitChan is a decentralized anonymous image board built on top of <a class="link" target="_blank" href="https://bitmessage.org">Bitmessage</a> with <a class="link" target="_blank" href="https://www.torproject.org">Tor</a> and <a class="link" target="_blank" href="https://gnupg.org">GnuGP</a>.</center>
+            <center>BitChan is a decentralized anonymous image board built on top of <a class="link" target="_blank" href="https://bitmessage.org">Bitmessage</a> with <a class="link" target="_blank" href="https://www.torproject.org">Tor</a> and <a class="link" target="_blank" href="https://gnupg.org">GnuPG</a>.</center>
             <br/>
             This is a beta release of BitChan. Some features are only partially implemented and there are likely to be bugs. Please report any issues or bugs you find with a <a class="link" href="/bug_report">Bug Report</a>. Also watch the official <a class="link" href="/board/BM-2cVZdtgUe7uq7LbWx12W2btJybAphF3VxG/1">BitChan-Dev Board</a> for announcements, the <a class="link" href="/list/BM-2cUYu7r41Bbnox4P8gEVtdnZGLnisgG7Yu">BitChan List</a> for other boards and lists that may appear for discussion and other purposes, and the <a class="link" href="https://www.github.com/813492291816/BitChan">BitChan GitHub page</a> for updates to the code.
         </p>
     </div>
 
-    {% if newest_posts %}
+    {% if newest_posts and settings.chan_update_display_number %}
     <div class="intro">
-        {% for each_board in newest_posts %}
-            {% if loop.index < 6 %}
-        <div style="padding: {% if not loop.first %}1.5em{% else %}0{% endif %} 0 0.5em 0.5em">
-            <a class="link" style="font-size: 1.2em;" href="/board/{{each_board.address}}/1">/{{chans_board_info[each_board.address]["label"]|safe}}/ - {{chans_board_info[each_board.address]["description"]|safe}}</a>
+        {% for each_chan in newest_posts %}
+            {% if loop.index <= settings.chan_update_display_number %}
+                {% if newest_posts[each_chan]["type"] == "board" %}
+        <div class="themed" style="padding: {% if not loop.first %}1.5em{% else %}0{% endif %} 0 0.5em 0.5em">
+            <span style="font-size: 0.7em">{{timestamp_to_date(newest_posts[each_chan]["latest_timestamp"])}}</span>
+            <br/>Board: <a class="link" style="font-size: 1.2em;" href="/board/{{each_chan.address}}/1">/{{chans_board_info[each_chan.address]["label"]|safe}}/ - {{chans_board_info[each_chan.address]["description"]|safe}}</a>
         </div>
         <div class="row">
-                {% for each_thread in newest_posts[each_board]["threads"] %}
+                    {% for each_thread in newest_posts[each_chan]["threads"] %}
 
             <div class="column">
-                    {% set op_post = newest_posts[each_board]["threads"][each_thread][0] %}
+                        {% set op_post = newest_posts[each_chan]["threads"][each_thread][0] %}
 
                 <div class="card" style="font-size: 1.2em;
-                {%- if not op_post.file_currently_downloading and
-                      not op_post.file_do_not_download and
-                      (op_post.file_decoded or (op_post.file_url and op_post.file_download_successful)) and
-                      op_post.file_extension in config.FILE_EXTENSIONS_IMAGE -%}
-                background-size: 100%; background-repeat: no-repeat; background-image: linear-gradient(rgba(255,255,255,0.2), rgba(255,255,255,0.2)), url({% if op_post.image_spoiler %}/static/spoiler.png{% else %}/files/thumb/{{op_post.message_id}}/{{op_post.file_filename|urlencode}}{% endif %});
+                {%- if op_post and post_has_image(op_post.message_id) -%}
+                background-size: 100%; background-repeat: no-repeat; background-image: linear-gradient(rgba(255,255,255,0.2), rgba(255,255,255,0.2)), url(/files/thumb_first/{{op_post.message_id}}/0);
                 {%- endif -%}
                 ">
                     <div class="card_bg themed" style="font-weight: bold; overflow-wrap: break-word;">
-                        <a class="link" style="font-size: 1.4em;" href="/thread/{{each_board.address}}/{{each_thread.thread_hash}}">{{each_thread.subject|safe}}</a><br>
-                    {% for each_message in newest_posts[each_board]["threads"][each_thread] %}
-                        {% set msg_str = clean_html(each_message.message) %}
-                        {% if not loop.first %}
-                        (<a class="link" href="/thread/{{each_board.address}}/{{each_thread.thread_hash}}#{{post_id(each_message.message_id)}}">R</a>):
-                        {% endif %}
-                        {% if msg_str|length > 30 %}
-                            {{msg_str[:30]|safe}}...
-                        {% elif msg_str %}
-                            {{msg_str|safe}}
-                        {% else %}
-                            [No Text]
-                        {% endif %}
-                        {% if loop.first %}
+                        <a class="link" style="font-size: 1.4em;" href="/thread/{{each_chan.address}}/{{each_thread.thread_hash}}">{{each_thread.subject|safe}}</a><br>
+                        {% for each_message in newest_posts[each_chan]["threads"][each_thread] %}
+                            {% set msg_str = clean_html(each_message.message) %}
+                            {% if not loop.first %}
+                        (<a class="link" href="/thread/{{each_chan.address}}/{{each_thread.thread_hash}}#{{post_id(each_message.message_id)}}">R</a>):
+                            {% endif %}
+                            {% if msg_str|length > 30 %}
+                        {{msg_str[:30]|safe}}...
+                            {% elif msg_str %}
+                        {{msg_str|safe}}
+                            {% else %}
+                        [No Text]
+                            {% endif %}
+                            {% if loop.first %}
                         <div class="three-dots">
                             <span></span>
                             <span></span>
                             <span></span>
                         </div>
-                        {% elif not loop.last %}
+                            {% elif not loop.last %}
                         <br/>
-                        {% endif %}
-                    {% endfor %}
+                            {% endif %}
+                        {% endfor %}
                     </div>
                 </div>
             </div>
-                {% endfor %}
+                    {% endfor %}
         </div>
+                {% elif newest_posts[each_chan]["type"] == "list" %}
+        <div style="padding: {% if not loop.first %}1.5em{% else %}0{% endif %} 0 0.5em 0.5em">
+            <span style="font-size: 0.7em">{{timestamp_to_date(newest_posts[each_chan]["latest_timestamp"])}}</span>
+            <br/>List: <a class="link" style="font-size: 1.2em;" href="/list/{{each_chan.address}}">/{{chans_list_info[each_chan.address]["label"]|safe}}/ - {{chans_list_info[each_chan.address]["description"]|safe}}</a>
+        </div>
+                {% endif %}
             {% endif %}
         {% endfor %}
     </div>

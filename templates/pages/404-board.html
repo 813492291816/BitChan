@@ -5,6 +5,9 @@
 {% block body %}
     {% include '/elements/banner.html' %}
     <center>
-        <div class="themed" style="padding-top: 2em">A board at address {{board_address}} could not be found</div>
+        <div class="themed" style="padding-top: 2em">
+            A board/list at address {{board_address}} could not be found.
+            <br/>If BitChan is currently starting or restarting, give it a moment to load the boards/lists.
+        </div>
     </center>
 {% endblock %}

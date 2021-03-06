@@ -8,6 +8,15 @@
             text-align: left;
             padding: 0.3em;
         }
+
+        tr:nth-child(odd) {
+            background-color: {{themes[settings.theme].posthighlight}};
+        }
+
+        .table-heading {
+            text-decoration: underline;
+            text-align: left;
+        }
     </style>
 {% endblock %}
 
@@ -19,82 +28,180 @@
         {% include '/elements/status.html' %}
     {% endif %}
 
-    <div class="container">
-        <div style="max-width: 800px;">
-            <div style="width: 100%; text-align: center;">
-                <h1 class="title themed bold">BitChan Configuration</h1>
-            </div>
+    <h1 class="title themed bold" style="text-align: center">BitChan Configuration</h1>
 
-            <div style="max-width: 1000px; text-align: center;">
-                <div class="heading-1 head-center themed">Options</div>
+    <div style="max-width: 800px; text-align: center; margin: auto">
+        <div class="heading-2 head-center themed">Export</div>
+        <p class="themed">Useful for backing up addresses and passphrases in order to add addresses or join boards/lists at a later time.</p>
 
-                <div class="heading-2 head-center themed">Export</div>
-                <p class="themed">Useful for backing up addresses and passphrases in order to add addresses or join boards/lists at a later time.</p>
+        <div style="padding: 1em 0 3em 0">
+            <form method="post">
+                <input type="submit" name="export_chans" value="Export Boards/Lists"/>
+                <input type="submit" name="export_identities" value="Export Identities"/>
+                <input type="submit" name="export_address_book" value="Export Address Book"/>
+            </form>
+        </div>
+    </div>
 
-                <div style="padding: 1em 0 3em 0">
-                    <form method="post">
-                        <input type="submit" name="export_chans" value="Export Boards/Lists"/>
-                        <input type="submit" name="export_identities" value="Export Identities"/>
-                        <input type="submit" name="export_address_book" value="Export Address Book"/>
-                    </form>
-                </div>
+    <div style="width: 100%; text-align: center; margin: auto">
+        <div class="heading-2 head-center themed">Post Attachment Upload Sites</div>
+        <div class="head-center themed">Edit or add external upload sites. You don't have to worry if users viewing the post have the same settings as they are sent within the post.</div>
 
-                <div class="heading-2 head-center themed">Custom Flags</div>
-                <div class="head-center themed">Maximum size of {{"%.1f"|format(config.FLAG_MAX_SIZE / 1000)}} KB and dimensions of {{config.FLAG_MAX_WIDTH}}x{{config.FLAG_MAX_HEIGHT}} pixels</div>
-
-                <div style="padding: 1em 0 3em 0">
-                    <form method="post" enctype="multipart/form-data">
-                        <div>
-                            Name
-                            <input name="flag_name" type="text"/>
-                            <input name="flag_file" type="file"/>
-                        </div>
-                        <div style="padding: 1em">
-                            <input type="submit" name="flag_upload" value="Upload Flag"/>
-                        </div>
-                    </form>
-
-                {% if custom_flags %}
-                <div class="heading-2 head-center themed">Uploaded Flags</div>
-                <table style="margin-left: auto; margin-right: auto;">
-                    {% for each_flag in custom_flags %}
-                    <tr>
-                        <td>
-                            <form method="post">
-                                <input type="hidden" name="flag_id" value="{{each_flag.id}}"/>
-                                <input type="submit" name="flag_rename" value="Rename"/>
-                                <input type="submit" name="flag_delete" value="Delete" onclick="return confirm('Are you sure you want to delete this flag?')"/>
-                                <input type="text" name="flag_name" value="{{each_flag.name}}"/>
-                            </form>
-                        </td>
-                        <td>
-                            <img src="/custom_flag_by_flag_id/{{each_flag.id}}">
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </table>
-                {% endif %}
-                </div>
-
-                <div class="heading-1 head-center themed">Settings</div>
-
-                <div class="heading-2 head-center themed">Theme</div>
-
-                <form method="post">
-                <div>
-                    <select name="theme">
-                    {% for theme_name in themes %}
-                        <option value="{{theme_name}}"{% if settings.theme == theme_name %} selected{% endif %}>{{theme_name}}</option>
-                    {% endfor %}
-                    </select>
-                </div>
-
-                <div style="padding: 3em 0">
-                    <input type="submit" name="save" value="Save"/>
-                </div>
-                </form>
+        <div style="padding: 1em 0 3em 0">
+            <table class="themed">
+                <tr>
+                    <th class="table-heading">Domain</th>
+                    <th class="table-heading">Type</th>
+                    <th class="table-heading">URI</th>
+                    <th class="table-heading">Download Prefix</th>
+                    <th class="table-heading">Response</th>
+                    <th class="table-heading">Direct DL URL</th>
+                    <th class="table-heading">Extra cURL Options</th>
+                    <th class="table-heading">cURL Upload Word</th>
+                    <th class="table-heading">Form Name</th>
+                    <th></th>
+                </tr>
+            {% for each_site in upload_sites %}
+                <tr>
+                    <td>{% if each_site.domain %}{{each_site.domain}}{% endif %}</td>
+                    <td>{% if each_site.type %}{{each_site.type}}{% endif %}</td>
+                    <td>{% if each_site.uri %}{{each_site.uri}}{% endif %}</td>
+                    <td>{% if each_site.download_prefix %}{{each_site.download_prefix}}{% endif %}</td>
+                    <td>{% if each_site.response %}{{each_site.response}}{% endif %}</td>
+                    <td>{{each_site.direct_dl_url}}</td>
+                    <td>{% if each_site.extra_curl_options %}{{each_site.extra_curl_options}}{% endif %}</td>
+                    <td>{% if each_site.upload_word %}{{each_site.upload_word}}{% endif %}</td>
+                    <td>{% if each_site.form_name %}{{each_site.form_name}}{% endif %}</td>
+                    <td>
+                        <a class="link" href="/upload_site/edit/{{each_site.id}}">Edit</a>
+                        <a class="link" href="/upload_site/delete/{{each_site.id}}">Delete</a>
+                    </td>
+                </tr>
+            {% endfor %}
+            </table>
+            <div style="padding-top: 0.5em">
+                <a class="link" href="/upload_site/add/0">Add Upload Site</a>
             </div>
         </div>
+    </div>
+
+    <div style="max-width: 800px; text-align: center; margin: auto">
+        <div class="heading-2 head-center themed">Custom Flags</div>
+        <div class="head-center themed">Maximum size of {{"%.1f"|format(config.FLAG_MAX_SIZE / 1000)}} KB and dimensions of {{config.FLAG_MAX_WIDTH}}x{{config.FLAG_MAX_HEIGHT}} pixels</div>
+
+        <div style="padding: 1em 0 3em 0">
+            <form method="post" enctype="multipart/form-data">
+                <div class="themed">
+                    Name
+                    <input name="flag_name" type="text"/>
+                    <input name="flag_file" type="file"/>
+                </div>
+                <div style="padding: 1em">
+                    <input type="submit" name="flag_upload" value="Upload Flag"/>
+                </div>
+            </form>
+
+        {% if custom_flags %}
+        <div class="heading-2 head-center themed">Uploaded Flags</div>
+        <table class="themed" style="margin-left: auto; margin-right: auto;">
+            {% for each_flag in custom_flags %}
+            <tr>
+                <td>
+                    <img src="/custom_flag_by_flag_id/{{each_flag.id}}">
+                </td>
+                <td>
+                    <form method="post">
+                        <input type="hidden" name="flag_id" value="{{each_flag.id}}"/>
+                        <input type="text" name="flag_name" value="{{each_flag.name}}"/>
+                        <input type="submit" name="flag_rename" value="Rename"/>
+                        <input type="submit" name="flag_delete" value="Delete" onclick="return confirm('Are you sure you want to delete this flag?')"/>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% endif %}
+        </div>
+    </div>
+
+    <div style="max-width: 800px; text-align: center; margin: auto">
+        <div class="heading-2 head-center themed">Settings</div>
+
+        <form method="post">
+        <table class="themed">
+            <tr>
+                <td>{{form_settings.theme.label(class_='heading-bold')}}</td>
+                <td>
+                    <select name="theme">
+            {% for theme_name in themes %}
+                        <option value="{{theme_name}}"{% if settings.theme == theme_name %} selected{% endif %}>{{theme_name}}</option>
+            {% endfor %}
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Sets the colors and CSS style for all pages.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.chan_update_display_number.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="chan_update_display_number" value="{{settings.chan_update_display_number}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Max number of Board/List updates on the home page.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.max_download_size.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" step="any" name="max_download_size" value="{{settings.max_download_size}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Max size (MB) of file to automatically download from external upload sites (0 disables auto-downloading).</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.allow_net_file_size_check.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="allow_net_file_size_check" name="allow_net_file_size_check" value="y"{% if settings.allow_net_file_size_check %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Permit connecting (through tor) to check post attachment file size.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.allow_net_book_quote.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="allow_net_book_quote" name="allow_net_book_quote" value="y"{% if settings.allow_net_book_quote %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Permit connecting (through tor) to get random book quotes for #stich and #godsong in posts.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.allow_net_ntp.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="allow_net_ntp" name="allow_net_ntp" value="y"{% if settings.allow_net_ntp %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Permit connecting (not through tor) to an NTP server to ensure your time is accurate.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.never_auto_download_unencrypted.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="never_auto_download_unencrypted" name="never_auto_download_unencrypted" value="y"{% if settings.never_auto_download_unencrypted %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">If a post has unencrypted attachments from upload sites, always require the Download button to be pressed to download them.</td>
+            </tr>
+        </table>
+
+        <div style="padding: 3em 0">
+            <input type="submit" name="save" value="Save"/>
+        </div>
+        </form>
     </div>
 
     {% include '/elements/display_boards.html' %}

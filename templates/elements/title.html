@@ -1,9 +1,15 @@
 <div>
     <center>
     {%- if board['current_chan'] -%}
+        {% if board['current_chan'].address in chans_board_info %}
         <a class="title themed bold" style="overflow-wrap: break-word; text-decoration: none;" href="/board/{{board['current_chan'].address}}/1">
             /{{chans_board_info[board['current_chan'].address]["label"]|safe}}/ - {{chans_board_info[board['current_chan'].address]["description"]|safe}}
         </a>
+        {% elif board['current_chan'].address in chans_list_info %}
+        <a class="title themed bold" style="overflow-wrap: break-word; text-decoration: none;" href="/list/{{board['current_chan'].address}}">
+            /{{chans_list_info[board['current_chan'].address]["label"]|safe}}/ - {{chans_list_info[board['current_chan'].address]["description"]|safe}}
+        </a>
+        {% endif %}
     {%- endif -%}
     </center>
 </div>

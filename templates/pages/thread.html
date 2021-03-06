@@ -84,7 +84,6 @@ Board
                 $("html, body").animate({scrollTop: 0}, "slow");
                 return false;
             });
-
             $("#back2Bottom").click(function(event) {
                 event.preventDefault();
                 $("html, body").animate({scrollTop: $(document).height()}, "slow");
@@ -95,21 +94,27 @@ Board
             for(var i = 0; i <= volume_set.length; i++) {
                 volume_set[i].volume = 0.75;
             }
+
+            document.getElementById('back2Top').style.display  = 'block';
+            document.getElementById('back2Bottom').style.display  = 'block';
         });
     </script>
 {% endblock %}
 
 {% block admin_css %}
+    {% if board['current_chan'].allow_css %}
     <style>
     {% if board['current_chan'].address in command_options and
           "css" in command_options[board['current_chan'].address] -%}
         {{command_options[board['current_chan'].address]["css"]}}
     {%- endif %}
     </style>
+    {% endif %}
 {% endblock %}
 
 {% block body %}
-    <a id="back2Top" title="Back to top" href="#">&GreaterGreater;</a>
+    <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
+    <a id="back2Bottom" title="Go to Bottom" style="display: none" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
@@ -129,6 +134,17 @@ Board
 
     {% include '/elements/title.html' %}
 
+    {%- if board['current_chan'].address in command_options and
+           "long_description_display" in command_options[board['current_chan'].address] -%}
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div class="themed" style="width: 100%; text-align: left;">
+                {{command_options[board['current_chan'].address]["long_description_display"]|safe}}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div style="padding-top: 1em">
         <center>
             <a class="title themed bold" style="text-decoration: none;" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">{{board["current_thread"].subject|safe}}</a>
@@ -137,16 +153,20 @@ Board
 
     {% set thread = board["current_thread"] %}
 
+    {% set steg_found = board["messages"].query
+           .filter(board["messages"].thread_id == thread.id)
+           .filter(board["messages"].message_steg.isnot("{}")).count() %}
+
     {% set message_op_steg = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
-           .filter(board["messages"].message_steg.isnot(None))
+           .filter(board["messages"].message_steg.isnot("{}"))
            .first() %}
 
     {% set message_replies_steg = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
-           .filter(board["messages"].message_steg.isnot(None))
+           .filter(board["messages"].message_steg.isnot("{}"))
            .order_by(board["messages"].timestamp_sent.asc()) %}
 
     {% if message_op_steg or message_replies_steg.count() %}
@@ -192,6 +212,9 @@ Board
     {% for each_message in message_replies %}
         {% set post = each_message %}
         {% set text = each_message.message %}
+        {% set reply_steg = board["messages"].query
+           .filter(board["messages"].message_id == each_message.message_id)
+           .filter(board["messages"].message_steg.isnot("{}")).count() %}
         {% include '/elements/board/post_reply.html' %}
         <br/>
     {% endfor %}

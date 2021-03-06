@@ -26,6 +26,8 @@
         {% if seconds %}{{days}} Sec{% endif %}
     {% elif each_rule in ["require_identity_to_post"] %}
         {{each_value}}
+    {% elif each_rule in ["allow_list_pgp_metadata"] %}
+        {{each_value}}
     {% endif %}
     </span>
     {% if not loop.last %}<br/>{% endif %}

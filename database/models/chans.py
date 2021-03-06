@@ -73,16 +73,21 @@ class Chan(CRUDMixin, db.Model):
     restricted_addresses = db.Column(db.String, default="[]")
     rules = db.Column(db.String, default="{}")
     pgp_passphrase_msg = db.Column(db.String, default="")
+    pgp_passphrase_attach = db.Column(db.String, default="")
     pgp_passphrase_steg = db.Column(db.String, default="")
     label = db.Column(db.String, default=None)
     description = db.Column(db.String, default=None)
     is_setup = db.Column(db.Boolean, default=False)
     image_banner_base64 = db.Column(db.String, default=None)
     image_banner_timestamp_utc = db.Column(db.Integer, default=0)
+    image_spoiler_base64 = db.Column(db.String, default=None)
+    image_spoiler_timestamp_utc = db.Column(db.Integer, default=0)
     default_from_address = db.Column(db.String, default=None)
+    allow_css = db.Column(db.Boolean, default=False)
 
     # List-specific
     list = db.Column(db.String, default="{}")
+    list_timestamp_changed = db.Column(db.Integer, default=0)
     list_message_id_owner = db.Column(db.String, default=None)
     list_message_expires_time_owner = db.Column(db.Integer, default=None)
     list_message_timestamp_utc_owner = db.Column(db.Integer, default=None)
@@ -145,8 +150,10 @@ class Messages(CRUDMixin, db.Model):
     file_filename = db.Column(db.String, default=None)
     file_extension = db.Column(db.String, default=None)
     file_url = db.Column(db.String, default=None)
+    file_upload_settings = db.Column(db.String, default="{}")
     file_extracts_start_base64 = db.Column(db.String, default=None)
     file_size = db.Column(db.Float, default=None)
+    file_amount = db.Column(db.Integer, default=None)
     file_do_not_download = db.Column(db.Boolean, default=False)
     file_currently_downloading = db.Column(db.Boolean, default=False)
     file_progress = db.Column(db.String, default="")
@@ -156,33 +163,22 @@ class Messages(CRUDMixin, db.Model):
     file_enc_key_bytes = db.Column(db.Integer, default=None)
     file_enc_password = db.Column(db.String, default=None)
     file_sha256_hashes_match = db.Column(db.Boolean, default=None)
+    file_order = db.Column(db.String, default="[]")
     upload_filename = db.Column(db.String, default=None)
     saved_file_filename = db.Column(db.String, default=None)
     saved_image_thumb_filename = db.Column(db.String, default=None)
+    media_info = db.Column(db.String, default="{}")
     media_width = db.Column(db.Integer, default=None)
     media_height = db.Column(db.Integer, default=None)
-    image_spoiler = db.Column(db.Boolean, default=None)
+    image1_spoiler = db.Column(db.Boolean, default=None)
+    image2_spoiler = db.Column(db.Boolean, default=None)
+    image3_spoiler = db.Column(db.Boolean, default=None)
+    image4_spoiler = db.Column(db.Boolean, default=None)
     message_original = db.Column(db.String, default=None)
-    message_steg = db.Column(db.String, default=None)
+    message_steg = db.Column(db.String, default="{}")
     replies = db.Column(db.String, default="[]")
 
     thread = relationship("Threads", back_populates="messages")
-
-    def __repr__(self):
-        return "<{cls}(id={rep.id})>".format(
-            cls=self.__class__.__name__, rep=self)
-
-
-class DeletedMessages(CRUDMixin, db.Model):
-    __tablename__ = "deleted_message"
-    __table_args__ = {
-        'extend_existing': True
-    }
-
-    id = db.Column(db.Integer, unique=True, primary_key=True)
-    message_id = db.Column(db.String, unique=True, default=None)
-    address_from = db.Column(db.String, default=None)
-    expires_time = db.Column(db.Integer, default=None)
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(
@@ -198,10 +194,25 @@ class UploadProgress(CRUDMixin, db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True)
     upload_id = db.Column(db.String, unique=True, default=None)
     uploading = db.Column(db.Boolean, default=None)
-    filename = db.Column(db.String, default=None)
+    subject = db.Column(db.String, default=None)
     total_size_bytes = db.Column(db.Integer, default=None)
     progress_size_bytes = db.Column(db.Integer, default=0)
     progress_percent = db.Column(db.Float, default=0)
+
+    def __repr__(self):
+        return "<{cls}(id={rep.id})>".format(
+            cls=self.__class__.__name__, rep=self)
+
+
+class AdminMessageStore(CRUDMixin, db.Model):
+    __tablename__ = "admin_message_store"
+    __table_args__ = {
+        'extend_existing': True
+    }
+
+    id = db.Column(db.Integer, unique=True, primary_key=True)
+    message_id = db.Column(db.String, unique=True, default=None)
+    time_added = db.Column(db.DateTime, default=None)
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(

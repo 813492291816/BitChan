@@ -78,12 +78,14 @@
 {% endblock %}
 
 {% block admin_css %}
+    {% if board['current_chan'].allow_css %}
     <style>
-    {% if board['current_chan'].address in command_options and
-          "css" in command_options[board['current_chan'].address] -%}
+        {% if board['current_chan'].address in command_options and
+              "css" in command_options[board['current_chan'].address] -%}
         {{command_options[board['current_chan'].address]["css"]}}
-    {%- endif %}
+        {%- endif %}
     </style>
+    {% endif %}
 {% endblock %}
 
 {% block title %}
@@ -120,6 +122,17 @@ List
         </center>
     </div>
 
+    {%- if board['current_chan'].address in command_options and
+           "long_description_display" in command_options[board['current_chan'].address] -%}
+        <div class="container">
+            <div style="max-width: 800px;">
+                <div class="themed" style="width: 100%; text-align: left;">
+                    {{command_options[board['current_chan'].address]["long_description_display"]|safe}}
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
     {% if rules and "automatic_wipe" in rules %}
     <center>
         <div class="themed" style="padding-top: 0.5em">
@@ -136,30 +149,38 @@ List
     <center>
 
         <div style="max-width: 500px; padding-bottom: 1em">
-            <div id="accordion-info-options" style="display: none">
+            <div id="accordion-info-options">
                 <h3 class="themed">List Information</h3>
                 <div style="padding: 1em">
                     <div style="padding-bottom: 0.5em">
                         <img src="/icon/{{board['current_chan'].address}}" style="width: 40px; height: 40px">
                     </div>
 
-                    <span class="themed">Address:</span>
+                    <span class="themed">Address</span>
                     <div class="themed" style="padding-bottom: 0.5em">
-                        <span style="font-family: monospace">{{board['current_chan'].address}}</span> <button class="btn" title="Copy to Clipboard" onclick="CopyToClipboard('{{board['current_chan'].address}}')">&#128203;</button>
+                        <span style="font-family: monospace">{{board['current_chan'].address}}</span> <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyToClipboard('{{board['current_chan'].address}}')">&#128203;</button>
                     </div>
 
-                    <span class="themed">BitChan List Passphrase:</span>
-                    <div class="themed" style="padding-bottom: 0.5em">
-                        <input type="text" id="passphrase" value="{{board['current_chan'].passphrase}}"> <button class="btn" title="Copy to Clipboard" onclick="CopyElemID('passphrase')">&#128203;</button>
+                    <span class="themed">List Join Link{% if passphrase_base64 != passphrase_base64_with_pgp %}s{% endif %}</span>
+                    <div style="padding-bottom: 0.5em">
+                        <a class="themed link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64}}">Share Link</a>
+                        {% if passphrase_base64 != passphrase_base64_with_pgp %}
+                        <br/><a class="themed link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64_with_pgp}}">Share Link With PGP Passphrase</a>
+                        {% endif %}
                     </div>
 
-                    <span class="themed">Message PGP Passphrase:</span>
+                    <span class="themed">BitChan List Passphrase</span>
+                    <div class="themed" style="padding-bottom: 0.5em">
+                        <input type="text" id="passphrase" value="{{board['current_chan'].passphrase}}"> <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyElemID('passphrase')">&#128203;</button>
+                    </div>
+
+                    <span class="themed">Message PGP Passphrase (max {{config.PGP_PASSPHRASE_LENGTH}})</span>
                     <div style="padding-bottom: 0.5em">
                         <form method="post" style="display: inline-block;" enctype="multipart/form-data">
                             <input type="text" id="pgp_passphrase_msg" name="pgp_passphrase_msg" value="{{board['current_chan'].pgp_passphrase_msg}}">
                             <input type="submit" name="set_pgp_passphrase_msg" value="Set"/>
                         </form>
-                        <button class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_msg')">&#128203;</button>
+                        <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_msg')">&#128203;</button>
                     </div>
 
                     {% if rules %}
@@ -174,8 +195,24 @@ List
                     {% endif %}
 
                     <span class="themed">Options:</span>
+                    <form method="post" action="/set_info_options/{{board['current_chan'].address}}" enctype="multipart/form-data">
+                    {%- if board['current_chan'].address in command_options and
+                           "css" in command_options[board['current_chan'].address] -%}
+                    <div style="padding-top: 0.5em">
+                        Custom CSS (Status: {% if board['current_chan'].allow_css %}Allowed{% else %}Disallowed{% endif %})&nbsp;
+                        {%- if board['current_chan'].allow_css -%}
+                            <input type="submit" name="disallow_css" value="Disallow CSS"/>
+                        {%- else -%}
+                            <input type="submit" name="allow_css" value="Allow CSS"/>
+                        {%- endif -%}
+                    </div>
+                    <div style="padding-bottom: 0.5em">
+                        <textarea rows="6" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="css_disabled" name="css_disabled" disabled>{{command_options[board['current_chan'].address]["css"]}}</textarea>
+                    </div>
+                    {%- endif -%}
+                    </form>
                     <div>
-                        <a class="link" href="/leave/{{board['current_chan'].address}}" onclick="return confirm('Are you sure you want to leave this list?')">Leave List</a>
+                        <a class="link" href="/leave/{{board['current_chan'].address}}">Leave List</a>
                     </div>
                 </div>
             </div>
@@ -183,7 +220,7 @@ List
 
     {% if primary_access %}
         <div class="themed" style="max-width: 500px; padding-bottom: 1em">
-            <div id="accordion-owner-options" style="display: none">
+            <div id="accordion-owner-options">
                 <h3 class="themed">Owner Options</h3>
                 <div style="padding: 1em">
                     <form method="post" action="/set_owner_options/{{board['current_chan'].address}}" enctype="multipart/form-data">
@@ -199,7 +236,7 @@ List
 
     {% if secondary_access %}
         <div class="themed" style="max-width: 500px; padding-bottom: 1em">
-            <div id="accordion-admin-options" style="display: none">
+            <div id="accordion-admin-options">
                 <h3 class="themed">Admin Options</h3>
                 <div style="padding: 1em">
                     ...
@@ -241,7 +278,7 @@ List
                             <select name="address">
                     {% if form_list_add %}
                         {% for each_item in form_list_add %}
-                                <option value="{{each_item[0]}}">{{each_item[1]}}</option>
+                                <option value="{{each_item[0]}}">{{each_item[1]|safe}}</option>
                         {% endfor %}
                     {% else %}
                                 <option>No Boards/Lists Available.</option>
@@ -289,9 +326,9 @@ List
                 </td>
                 <td style="border-top: 1px solid black;">
                 {% if address in chans_board_info %}
-                    <a style="font-family: monospace" href="/board/{{address}}/1">{{address}}</a>
+                    <a class="link" style="font-family: monospace" href="/board/{{address}}/1">{{address}}</a>
                 {% elif address in chans_list_info %}
-                    <a style="font-family: monospace" href="/list/{{address}}">{{address}}</a>
+                    <a class="link" style="font-family: monospace" href="/list/{{address}}">{{address}}</a>
                 {% else %}
                     <span style="font-family: monospace">{{address}}</span>
                 {% endif %}

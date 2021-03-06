@@ -38,7 +38,7 @@
 {% set is_private = board['current_chan'].access == "private" %}
 
 {% block title %}
-{{board["current_thread"].subject|safe}} -
+(STEG) {{board["current_thread"].subject|safe}} -
 {{chans_board_info[board['current_chan'].address]["label"]|safe}} -
 {% if is_private -%}
 Private
@@ -86,7 +86,6 @@ Board
                 $("html, body").animate({scrollTop: 0}, "slow");
                 return false;
             });
-
             $("#back2Bottom").click(function(event) {
                 event.preventDefault();
                 $("html, body").animate({scrollTop: $(document).height()}, "slow");
@@ -97,21 +96,27 @@ Board
             for(var i = 0; i <= volume_set.length; i++) {
                 volume_set[i].volume = 0.75;
             }
+
+            document.getElementById('back2Top').style.display  = 'block';
+            document.getElementById('back2Bottom').style.display  = 'block';
         });
     </script>
 {% endblock %}
 
 {% block admin_css %}
+    {% if board['current_chan'].allow_css %}
     <style>
     {% if board['current_chan'].address in command_options and
           "css" in command_options[board['current_chan'].address] -%}
         {{command_options[board['current_chan'].address]["css"]}}
     {%- endif %}
     </style>
+    {% endif %}
 {% endblock %}
 
 {% block body %}
-    <a id="back2Top" title="Back to top" href="#">&GreaterGreater;</a>
+    <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
+    <a id="back2Bottom" title="Go to Bottom" style="display: none" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
@@ -131,6 +136,17 @@ Board
 
     {% include '/elements/title.html' %}
 
+    {%- if board['current_chan'].address in command_options and
+           "long_description_display" in command_options[board['current_chan'].address] -%}
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div class="themed" style="width: 100%; text-align: left;">
+                {{command_options[board['current_chan'].address]["long_description_display"]|safe}}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     {% if status_msg["status_message"] %}
         {% include '/elements/status.html' %}
     {% endif %}
@@ -138,7 +154,7 @@ Board
     {% set messages_steg = board["messages"].query
            .filter(and_(
                board["messages"].thread_id == board["current_thread"].id,
-               board["messages"].message_steg != None))
+               board["messages"].message_steg.isnot("{}")))
            .order_by(board["messages"].timestamp_sent.asc()) %}
 
     {% if messages_steg %}
@@ -165,31 +181,31 @@ Board
     {% endif %}
         </center>
         <hr/>
-        {% set thread = board["current_thread"] %}
+    {% set thread = board["current_thread"] %}
 
-        {% set message_op = board["messages"].query
-               .filter(board["messages"].thread_id == thread.id)
-               .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
-               .first() %}
+    {% set message_op = board["messages"].query
+           .filter(board["messages"].thread_id == thread.id)
+           .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
+           .first() %}
 
-        {% set message_op_steg = board["messages"].query
-               .filter(board["messages"].thread_id == thread.id)
-               .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
-               .filter(board["messages"].message_steg != None)
-               .first() %}
+    {% set message_op_steg = board["messages"].query
+           .filter(board["messages"].thread_id == thread.id)
+           .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
+           .filter(board["messages"].message_steg.isnot("{}"))
+           .first() %}
 
-        {% set message_replies_steg = board["messages"].query
-               .filter(board["messages"].thread_id == thread.id)
-               .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
-               .filter(board["messages"].message_steg.isnot(None))
-               .order_by(board["messages"].timestamp_sent.asc()) %}
+    {% set message_replies_steg = board["messages"].query
+           .filter(board["messages"].thread_id == thread.id)
+           .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
+           .filter(board["messages"].message_steg.isnot("{}"))
+           .order_by(board["messages"].timestamp_sent.asc()) %}
 
         <div class="thread">
-        {% if not message_op_steg and not message_replies_steg.count() %}
+    {% if not message_op_steg and not message_replies_steg.count() %}
             <center><span class="god-text">[No steg found]</span></center>
         {% elif message_op_steg %}
             {% set post = message_op_steg %}
-            {% set text = message_op_steg.message_steg %}
+            {% set text = format_message_steg(message_op_steg.message_id) %}
             {% include '/elements/board/post_op.html' %}
         {% elif message_op %}
             {% set post = message_op %}
@@ -201,7 +217,7 @@ Board
 
         {% for each_message in message_replies_steg %}
             {% set post = each_message %}
-            {% set text = each_message.message_steg %}
+            {% set text = format_message_steg(each_message.message_id) %}
             {% include '/elements/board/post_reply.html' %}
             <br/>
         {% endfor %}

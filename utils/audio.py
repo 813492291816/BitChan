@@ -4,7 +4,7 @@ from pydub import AudioSegment
 from pydub.generators import Sine
 from pydub.playback import play
 
-logger = logging.getLogger('bitchan.utils.audio')
+logger = logging.getLogger('bitchan.audio')
 
 list_beats = [8, 16, 24, 32]
 

@@ -3,7 +3,7 @@
 LOC=$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd -P )
 
 # building Pillow 8.0.1 from source requires libjpeg-dev zlib1g-dev
-sudo apt install -y libjpeg-dev zlib1g-dev
+sudo apt install -y python3-dev libjpeg-dev zlib1g-dev
 
 PYTHON_BINARY_SYS_LOC="$(python3 -c "import os; print(os.environ['_'])")"
 printf "\nDoes Python3 venv exist?"

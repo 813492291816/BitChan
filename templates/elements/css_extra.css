@@ -22,22 +22,21 @@
 }
 .btn:hover {background: #eee;}
 
-.newtrailers {
-  float: left;
-  margin: 1px 10px 10px 10px;
-  width: 150px;
-  height: 200px;
+.container_file {
+  position: relative;
   text-align: center;
-  line-height: 200px;
-  color: black;
-  text-decoration: none;
-  font-size: 2em;
-  font-weight: bold;
+  color: white;
 }
 
-.forward {
-  background-image: url(/static/file_blank.png);
-  transition:background-image 0.5s ease;
+.centered_file {
+  color: black;
+  text-decoration: none;
+  font-size: 1.2em;
+  font-weight: bold;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .forward:hover{
@@ -122,6 +121,16 @@
     margin: 6px;
 }
 
+.heading-pad {
+    padding-top: 1em;
+    padding-bottom: 0.5em;
+}
+
+.heading-bold {
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
 .heading-1 {
     font-size: 2.1em;
     font-weight: bold;
@@ -138,6 +147,13 @@
 
 .heading-3 {
     font-size: 1.3em;
+    font-weight: bold;
+    padding-top: .7em;
+    padding-bottom: 0.5em;
+}
+
+.heading-4 {
+    font-size: 1.1em;
     font-weight: bold;
     padding-top: .7em;
     padding-bottom: 0.5em;
@@ -184,8 +200,6 @@ input:checked + label + .content {
 
 .block-reply {
     min-width: 3em;
-    max-height: 50em;
-    overflow-y: auto
 }
 
 .replace-shadow {
@@ -234,6 +248,34 @@ input:checked + label + .content {
     width: auto;
     z-index: auto;
     font-family: "Lucida Console", Monaco, monospace;
+    color: #33FF00;
+    text-shadow: 0 0 20px , 0 0 40px, 0 0 80px , 0 0 100px;
+    white-space: pre;
+    background-color: #282828;
+}
+
+.language-ascii-art-s {
+    display: inline-block;
+    padding: 1em;
+    background: #282828;
+    width: auto;
+    z-index: auto;
+    font-family: "Lucida Console", Monaco, monospace;
+    font-size: 0.5em;
+    color: #33FF00;
+    text-shadow: 0 0 20px , 0 0 40px, 0 0 80px , 0 0 100px;
+    white-space: pre;
+    background-color: #282828;
+}
+
+.language-ascii-art-xs {
+    display: inline-block;
+    padding: 1em;
+    background: #282828;
+    width: auto;
+    z-index: auto;
+    font-family: "Lucida Console", Monaco, monospace;
+    font-size: 0.2em;
     color: #33FF00;
     text-shadow: 0 0 20px , 0 0 40px, 0 0 80px , 0 0 100px;
     white-space: pre;

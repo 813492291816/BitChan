@@ -1,7 +1,8 @@
+import base64
 import json
 import logging
 import time
-import urllib
+import urllib.parse
 
 from flask import render_template
 from flask import request
@@ -11,6 +12,7 @@ import config
 from bitchan_flask import nexus
 from config import RESTRICTED_WORDS
 from database.models import Chan
+from database.models import DeletedMessages
 from forms import forms_board
 from utils.files import LF
 from utils.files import delete_message_files
@@ -60,12 +62,42 @@ def join():
 
         # Join board or list
         elif stage == "join" and form_join.join.data:
-            passphrase = form_join.passphrase.data
-            if not passphrase:
+            if not form_join.passphrase.data:
                 status_msg['status_message'].append("Passphrase required")
+
+            passphrase = None
+            try:
+                passphrase_dict = json.loads(form_join.passphrase.data)
+                passphrase = json.dumps(passphrase_dict)
+            except:
+                status_msg['status_message'].append("Passphrase does not represent valid JSON")
+
+            # Check if already a member of board/list with passphrase
+            chan = Chan.query.filter(Chan.passphrase == passphrase).first()
+            if chan:
+                status_msg['status_message'].append("You are already a member of this board or list.")
 
             if not form_join.pgp_passphrase_msg.data:
                 status_msg['status_message'].append("Message PGP passphrase required")
+            elif len(form_join.pgp_passphrase_msg.data) > config.PGP_PASSPHRASE_LENGTH:
+                status_msg['status_message'].append(
+                    "Message PGP passphrase too long. Max: {}".format(config.PGP_PASSPHRASE_LENGTH))
+
+            if not form_join.pgp_passphrase_attach.data:
+                status_msg['status_message'].append(
+                    "Attachment PGP passphrase required. "
+                    "If it's a list you're joining, just leave the default option.")
+            elif len(form_join.pgp_passphrase_attach.data) > config.PGP_PASSPHRASE_LENGTH:
+                status_msg['status_message'].append(
+                    "Attachment PGP passphrase too long. Max: {}".format(config.PGP_PASSPHRASE_LENGTH))
+
+            if not form_join.pgp_passphrase_steg.data:
+                status_msg['status_message'].append(
+                    "Steg PGP passphrase required"
+                    "If it's a list you're joining, just leave the default option.")
+            elif len(form_join.pgp_passphrase_attach.data) > config.PGP_PASSPHRASE_LENGTH:
+                status_msg['status_message'].append(
+                    "Steg PGP passphrase too long. Max: {}".format(config.PGP_PASSPHRASE_LENGTH))
 
             errors, dict_chan_info = process_passphrase(passphrase)
             if not dict_chan_info:
@@ -80,8 +112,7 @@ def join():
                             "bitchan is a restricted word for labels")
 
             if not status_msg['status_message']:
-                status_msg['status_title'] = "Success"
-                result = nexus.join_chan(passphrase)
+                result = nexus.join_chan(passphrase, clear_inventory=form_join.resync.data)
 
                 if dict_chan_info["rules"]:
                     dict_chan_info["rules"] = set_clear_time_to_future(dict_chan_info["rules"])
@@ -90,18 +121,19 @@ def join():
                 new_chan.passphrase = passphrase
                 new_chan.access = dict_chan_info["access"]
                 new_chan.type = dict_chan_info["type"]
+                new_chan.label = dict_chan_info["label"]
+                new_chan.description = dict_chan_info["description"]
                 new_chan.primary_addresses = json.dumps(dict_chan_info["primary_addresses"])
                 new_chan.secondary_addresses = json.dumps(dict_chan_info["secondary_addresses"])
                 new_chan.tertiary_addresses = json.dumps(dict_chan_info["tertiary_addresses"])
                 new_chan.restricted_addresses = json.dumps(dict_chan_info["restricted_addresses"])
                 new_chan.rules = json.dumps(dict_chan_info["rules"])
-                new_chan.description = dict_chan_info["description"]
                 new_chan.pgp_passphrase_msg = form_join.pgp_passphrase_msg.data
+                new_chan.pgp_passphrase_attach = form_join.pgp_passphrase_attach.data
                 new_chan.pgp_passphrase_steg = form_join.pgp_passphrase_steg.data
 
                 if result.startswith("BM-"):
                     new_chan.address = result
-                    new_chan.label = dict_chan_info["label"]
                     new_chan.is_setup = True
                     if new_chan.type == "board":
                         status_msg['status_message'].append("Joined board")
@@ -112,13 +144,14 @@ def join():
                         url = "/list/{}".format(result)
                         url_text = "{} - {}".format(new_chan.label, new_chan.description)
                 else:
-                    status_msg['status_message'].append(
-                        "Chan creation queued. Label set temporarily to passphrase.")
+                    status_msg['status_message'].append("Chan creation queued.")
                     new_chan.address = None
-                    new_chan.label = "[chan] {}".format(passphrase)
                     new_chan.is_setup = False
-                new_chan.save()
-                stage = "end"
+
+                if 'status_title' not in status_msg:
+                    status_msg['status_title'] = "Success"
+                    new_chan.save()
+                    stage = "end"
 
         # Create public/private board/list
         elif (stage in ["public_board",
@@ -126,23 +159,42 @@ def join():
                         "public_list",
                         "private_list"] and
                 form_join.join.data):
-            label = form_join.label.data
-            if not label:
-                status_msg['status_message'].append("Label required")
 
             if not form_join.pgp_passphrase_msg.data:
                 status_msg['status_message'].append("Message PGP passphrase required")
+            elif len(form_join.pgp_passphrase_msg.data) > config.PGP_PASSPHRASE_LENGTH:
+                status_msg['status_message'].append(
+                    "Message PGP passphrase too long. Max: {}".format(config.PGP_PASSPHRASE_LENGTH))
 
+            if stage in ["public_board", "private_board"]:
+                if not form_join.pgp_passphrase_attach.data:
+                    status_msg['status_message'].append("Attachment PGP passphrase required")
+                elif len(form_join.pgp_passphrase_attach.data) > config.PGP_PASSPHRASE_LENGTH:
+                    status_msg['status_message'].append(
+                        "Attachment PGP passphrase too long. Max: {}".format(config.PGP_PASSPHRASE_LENGTH))
+
+                if not form_join.pgp_passphrase_steg.data:
+                    status_msg['status_message'].append("Steg PGP passphrase required")
+                elif len(form_join.pgp_passphrase_steg.data) > config.PGP_PASSPHRASE_LENGTH:
+                    status_msg['status_message'].append(
+                        "Steg PGP passphrase too long. Max: {}".format(config.PGP_PASSPHRASE_LENGTH))
+
+            label = form_join.label.data
+            if not label:
+                status_msg['status_message'].append("Label required")
+            elif len(label) > config.LABEL_LENGTH:
+                status_msg['status_message'].append(
+                    "Label too long. Must be {} or fewer characters.".format(config.LABEL_LENGTH))
             for each_word in RESTRICTED_WORDS:
                 if each_word in label.lower():
-                    status_msg['status_message'].append(
-                        "bitchan is a restricted word for labels")
+                    status_msg['status_message'].append("bitchan is a restricted word for labels")
 
             description = form_join.description.data
             if not description:
                 status_msg['status_message'].append("Description required")
             elif len(description) > config.DESCRIPTION_LENGTH:
-                status_msg['status_message'].append("Description too long. Must be 200 or less characters.")
+                status_msg['status_message'].append(
+                    "Description too long. Must be {} or fewer characters.".format(config.DESCRIPTION_LENGTH))
 
             def process_additional_addresses(form_list, status_msg):
                 add_list_failed = []
@@ -171,6 +223,9 @@ def join():
                 status_msg['status_message'].append(
                     "Error parsing primary additional identities. "
                     "Must only be comma-separated addresses without spaces.")
+            if len(",".join(add_list_prim_pass)) > config.PASSPHRASE_ADDRESSES_LENGTH:
+                status_msg['status_message'].append("Owner Address list is greater than {} characters: {}".format(
+                    config.PASSPHRASE_ADDRESSES_LENGTH, len(",".join(add_list_prim_pass))))
 
             list_primary_identities = []
             for key in request.form.keys():
@@ -196,6 +251,9 @@ def join():
                 status_msg['status_message'].append(
                     "Error parsing secondary additional identities. "
                     "Must only be comma-separated addresses without spaces.")
+            if len(",".join(add_list_sec_pass)) > config.PASSPHRASE_ADDRESSES_LENGTH:
+                status_msg['status_message'].append("Admin Address list is greater than {} characters: {}".format(
+                    config.PASSPHRASE_ADDRESSES_LENGTH, len(",".join(add_list_sec_pass))))
 
             list_secondary_identities = []
             for key in request.form.keys():
@@ -221,6 +279,9 @@ def join():
                 status_msg['status_message'].append(
                     "Error parsing tertiary additional identities. "
                     "Must only be comma-separated addresses without spaces.")
+            if len(",".join(add_list_ter_pass)) > config.PASSPHRASE_ADDRESSES_LENGTH:
+                status_msg['status_message'].append("User Address list is greater than {} characters: {}".format(
+                    config.PASSPHRASE_ADDRESSES_LENGTH, len(",".join(add_list_ter_pass))))
 
             list_tertiary_identities = []
             for key in request.form.keys():
@@ -270,6 +331,12 @@ def join():
             if form_join.require_identity_to_post.data:
                 rules["require_identity_to_post"] = form_join.require_identity_to_post.data
             if form_join.automatic_wipe.data:
+                if form_join.wipe_epoch.data > config.WIPE_START_MAX:
+                    status_msg['status_message'].append(
+                        "Automatic Wipe Epoch Start Time is greater than year 3020.")
+                if form_join.interval_seconds.data > config.WIPE_INTERVAL_MAX:
+                    status_msg['status_message'].append(
+                        "Automatic Wipe Interval is greater than 500 years.")
                 try:
                     rules["automatic_wipe"] = {
                         "wipe_epoch": form_join.wipe_epoch.data,
@@ -278,12 +345,15 @@ def join():
                 except:
                     status_msg['status_message'].append(
                         "Could not process Rule options to Automatic Wipe")
+            if form_join.allow_list_pgp_metadata.data:
+                rules["allow_list_pgp_metadata"] = form_join.allow_list_pgp_metadata.data
 
             extra_string = form_join.extra_string.data
+            if len(extra_string) > config.PASSPHRASE_ADDRESSES_LENGTH:
+                status_msg['status_message'].append("Extra String is greater than {} characters: {}".format(
+                    config.PASSPHRASE_EXTRA_STRING_LENGTH, len(extra_string)))
 
             if not status_msg['status_message']:
-                status_msg['status_title'] = "Success"
-
                 access = stage.split("_")[0]
                 chan_type = stage.split("_")[1]
 
@@ -299,7 +369,15 @@ def join():
                     rules,
                     extra_string)
 
-                result = nexus.join_chan(passphrase)
+                # Check generated passphrase
+                errors, dict_chan_info = process_passphrase(passphrase)
+                if not dict_chan_info:
+                    status_msg['status_message'].append("Error parsing passphrase")
+                    for error in errors:
+                        status_msg['status_message'].append(error)
+
+            if not status_msg['status_message']:
+                result = nexus.join_chan(passphrase, clear_inventory=form_join.resync.data)
 
                 if rules:
                     rules = set_clear_time_to_future(rules)
@@ -307,12 +385,16 @@ def join():
                 new_chan = Chan()
                 new_chan.access = access
                 new_chan.type = chan_type
+                new_chan.label = label
+                new_chan.description = description
+                new_chan.passphrase = passphrase
                 new_chan.restricted_addresses = json.dumps(list_restricted_addresses)
                 new_chan.primary_addresses = json.dumps(list_primary_addresses)
                 new_chan.secondary_addresses = json.dumps(list_secondary_addresses)
                 new_chan.tertiary_addresses = json.dumps(list_tertiary_addresses)
                 new_chan.rules = json.dumps(rules)
                 new_chan.pgp_passphrase_msg = form_join.pgp_passphrase_msg.data
+                new_chan.pgp_passphrase_attach = form_join.pgp_passphrase_attach.data
                 new_chan.pgp_passphrase_steg = form_join.pgp_passphrase_steg.data
 
                 if result.startswith("BM-"):
@@ -325,8 +407,6 @@ def join():
                     elif stage == "private_list":
                         status_msg['status_message'].append("Created private list")
                     new_chan.address = result
-                    new_chan.label = label
-                    new_chan.description = description
                     new_chan.is_setup = True
                     if stage in ["public_board", "private_board"]:
                         url = "/board/{}/1".format(result)
@@ -335,14 +415,14 @@ def join():
                         url = "/list/{}".format(result)
                         url_text = "{} - {}".format(label, description)
                 else:
-                    status_msg['status_message'].append(
-                        "Creation queued. Label set to passphrase.")
+                    status_msg['status_message'].append("Creation queued")
                     new_chan.address = None
-                    new_chan.label = "[chan] {}".format(passphrase)
                     new_chan.is_setup = False
-                new_chan.passphrase = passphrase
-                new_chan.save()
-                stage = "end"
+
+                if 'status_title' not in status_msg:
+                    status_msg['status_title'] = "Success"
+                    new_chan.save()
+                    stage = "end"
 
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
@@ -354,73 +434,113 @@ def join():
                            url_text=url_text)
 
 
-@blueprint.route('/join_passphrase/<passphrase>', methods=('GET', 'POST'))
-def join_passphrase(passphrase):
+@blueprint.route('/join_base64/<passphrase_base64>', methods=('GET', 'POST'))
+def join_base64(passphrase_base64):
+    pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
+    pgp_passphrase_attach = config.PGP_PASSPHRASE_ATTACH
+    pgp_passphrase_steg = config.PGP_PASSPHRASE_STEG
+    dict_chan_info = None
     status_msg = {"status_message": []}
     url = ""
     url_text = ""
+    chan_exists = None
+    stage = "join_passphrase"
 
-    if not passphrase:
-        status_msg['status_message'].append("Passphrase required")
+    form_join = forms_board.Join()
 
-    # unquote percent-encoded passphrase
-    passphrase = urllib.parse.unquote(passphrase)
+    try:
+        passphrase_dict_json = base64.b64decode(
+            passphrase_base64.replace("&", "/")).decode()
+        passphrase_dict = json.loads(passphrase_dict_json)
+        passphrase_json = passphrase_dict["passphrase"]
+        if "pgp_msg" in passphrase_dict:
+            pgp_passphrase_msg = passphrase_dict["pgp_msg"]
+        if "pgp_attach" in passphrase_dict:
+            pgp_passphrase_attach = passphrase_dict["pgp_attach"]
+        if "pgp_steg" in passphrase_dict:
+            pgp_passphrase_steg = passphrase_dict["pgp_steg"]
+        chan_exists = Chan.query.filter(Chan.passphrase == passphrase_json).first()
 
-    errors, dict_chan_info = process_passphrase(passphrase)
-    if not dict_chan_info:
-        status_msg['status_message'].append("Error parsing passphrase")
-        for error in errors:
-            status_msg['status_message'].append(error)
+        errors, dict_chan_info = process_passphrase(passphrase_json)
+        if not dict_chan_info:
+            status_msg['status_message'].append("Error parsing passphrase")
+            for error in errors:
+                status_msg['status_message'].append(error)
+    except Exception as err:
+        logger.exception("TEST")
+        status_msg['status_message'].append("Issue parsing base64 string: {}".format(err))
 
-    if not status_msg['status_message']:
-        for each_word in RESTRICTED_WORDS:
-            if each_word in dict_chan_info["label"].lower():
-                status_msg['status_message'].append(
-                    "bitchan is a restricted word for labels")
+    if request.method == 'POST':
+        if form_join.join.data:
 
-    if not status_msg['status_message']:
-        status_msg['status_title'] = "Success"
-        result = nexus.join_chan(passphrase)
+            if not status_msg['status_message']:
+                for each_word in RESTRICTED_WORDS:
+                    if each_word in dict_chan_info["label"].lower():
+                        status_msg['status_message'].append(
+                            "bitchan is a restricted word for labels")
 
-        if dict_chan_info["rules"]:
-            dict_chan_info["rules"] = set_clear_time_to_future(dict_chan_info["rules"])
+            if not status_msg['status_message']:
+                result = nexus.join_chan(passphrase_json, clear_inventory=form_join.resync.data)
 
-        new_chan = Chan()
-        new_chan.passphrase = passphrase
-        new_chan.access = dict_chan_info["access"]
-        new_chan.type = dict_chan_info["type"]
-        new_chan.primary_addresses = json.dumps(dict_chan_info["primary_addresses"])
-        new_chan.secondary_addresses = json.dumps(dict_chan_info["secondary_addresses"])
-        new_chan.tertiary_addresses = json.dumps(dict_chan_info["tertiary_addresses"])
-        new_chan.restricted_addresses = json.dumps(dict_chan_info["restricted_addresses"])
-        new_chan.rules = json.dumps(dict_chan_info["rules"])
-        new_chan.description = dict_chan_info["description"]
+                if dict_chan_info["rules"]:
+                    dict_chan_info["rules"] = set_clear_time_to_future(dict_chan_info["rules"])
 
-        if result.startswith("BM-"):
-            new_chan.address = result
-            new_chan.label = dict_chan_info["label"]
-            new_chan.is_setup = True
-            if new_chan.type == "board":
-                status_msg['status_message'].append("Joined board")
-                url = "/board/{}/1".format(result)
-                url_text = "/{}/ - {}".format(new_chan.label, new_chan.description)
-            elif new_chan.type == "list":
-                status_msg['status_message'].append("Joined list")
-                url = "/list/{}".format(result)
-                url_text = "{} - {}".format(new_chan.label, new_chan.description)
-        else:
-            status_msg['status_message'].append(
-                "Chan creation queued. Label set temporarily to passphrase.")
-            new_chan.address = None
-            new_chan.label = "[chan] {}".format(passphrase)
-            new_chan.is_setup = False
-        new_chan.save()
+                if form_join.pgp_passphrase_msg.data:
+                    pgp_passphrase_msg = form_join.pgp_passphrase_msg.data
+                if form_join.pgp_passphrase_attach.data:
+                    pgp_passphrase_attach = form_join.pgp_passphrase_attach.data
+                if form_join.pgp_passphrase_steg.data:
+                    pgp_passphrase_steg = form_join.pgp_passphrase_steg.data
+
+                new_chan = Chan()
+                new_chan.passphrase = passphrase_json
+                new_chan.access = dict_chan_info["access"]
+                new_chan.type = dict_chan_info["type"]
+                new_chan.label = dict_chan_info["label"]
+                new_chan.description = dict_chan_info["description"]
+                new_chan.pgp_passphrase_msg = pgp_passphrase_msg
+                if dict_chan_info["type"] == "board":
+                    new_chan.pgp_passphrase_attach = pgp_passphrase_attach
+                    new_chan.pgp_passphrase_steg = pgp_passphrase_steg
+                new_chan.primary_addresses = json.dumps(dict_chan_info["primary_addresses"])
+                new_chan.secondary_addresses = json.dumps(dict_chan_info["secondary_addresses"])
+                new_chan.tertiary_addresses = json.dumps(dict_chan_info["tertiary_addresses"])
+                new_chan.restricted_addresses = json.dumps(dict_chan_info["restricted_addresses"])
+                new_chan.rules = json.dumps(dict_chan_info["rules"])
+
+                if result.startswith("BM-"):
+                    new_chan.address = result
+                    new_chan.is_setup = True
+                    if new_chan.type == "board":
+                        status_msg['status_message'].append("Joined board")
+                        url = "/board/{}/1".format(result)
+                        url_text = "/{}/ - {}".format(new_chan.label, new_chan.description)
+                    elif new_chan.type == "list":
+                        status_msg['status_message'].append("Joined list")
+                        url = "/list/{}".format(result)
+                        url_text = "{} - {}".format(new_chan.label, new_chan.description)
+                else:
+                    status_msg['status_message'].append("Creation queued")
+                    new_chan.address = None
+                    new_chan.is_setup = False
+
+                if 'status_title' not in status_msg:
+                    status_msg['status_title'] = "Success"
+                    new_chan.save()
+                    stage = "end"
 
     if 'status_title' not in status_msg and status_msg['status_message']:
         status_msg['status_title'] = "Error"
 
     return render_template("pages/join.html",
-                           stage="end",
+                           chan_exists=chan_exists,
+                           dict_chan_info=dict_chan_info,
+                           form_join=form_join,
+                           passphrase=passphrase_json,
+                           pgp_passphrase_msg=pgp_passphrase_msg,
+                           pgp_passphrase_attach=pgp_passphrase_attach,
+                           pgp_passphrase_steg=pgp_passphrase_steg,
+                           stage=stage,
                            status_msg=status_msg,
                            url=url,
                            url_text=url_text)
@@ -428,36 +548,54 @@ def join_passphrase(passphrase):
 
 @blueprint.route('/leave/<address>', methods=('GET', 'POST'))
 def leave(address):
-    status_msg = {"status_message": []}
+    form_confirm = forms_board.Confirm()
 
     chan = Chan.query.filter(Chan.address == address).first()
-    if chan:
-        lf = LF()
-        if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-            try:
-                for each_thread in chan.threads:
-                    # Delete messages
-                    for each_message in each_thread.messages:
-                        delete_message_files(each_message.message_id)
-                        each_message.delete()
 
-                    # Delete threads
-                    nexus.delete_thread(chan.address, each_thread.thread_hash)
-                    each_thread.delete()
+    if request.method != 'POST' or not form_confirm.confirm.data:
+        return render_template("pages/confirm.html",
+                               action="leave",
+                               chan=chan,
+                               address=address)
 
-                # Delete chan
-                nexus.leave_chan(chan.address)
-                chan.delete()
+    status_msg = {"status_message": []}
 
-                status_msg['status_title'] = "Success"
-                status_msg['status_message'].append(
-                    "Deleted board {}".format(address))
-                time.sleep(0.1)
-            finally:
-                lf.lock_release(config.LOCKFILE_MSG_PROC)
+    lf = LF()
+    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
+        try:
+            for each_thread in chan.threads:
+                # Delete messages
+                for each_message in each_thread.messages:
+                    delete_message_files(each_message.message_id)
+                    each_message.delete()
 
-    if 'status_title' not in status_msg and status_msg['status_message']:
-        status_msg['status_title'] = "Error"
+                # Delete threads
+                nexus.delete_thread(chan.address, each_thread.thread_hash)
+                each_thread.delete()
 
-    return render_template("pages/index.html",
-                           status_msg=status_msg)
+            deleted_msgs = DeletedMessages.query.filter(DeletedMessages.address_to == address).all()
+            for each_msg in deleted_msgs:
+                logger.info("DeletedMessages: Deleting entry: {}".format(each_msg.message_id))
+                each_msg.delete()
+
+            # Delete chan
+            nexus.leave_chan(chan.address)
+            chan.delete()
+
+            nexus.delete_and_vacuum()
+
+            status_msg['status_title'] = "Success"
+            status_msg['status_message'].append("Deleted {}".format(address))
+            time.sleep(0.1)
+        finally:
+            lf.lock_release(config.LOCKFILE_MSG_PROC)
+
+    board = {"current_chan": None}
+    url = ""
+    url_text = ""
+
+    return render_template("pages/alert.html",
+                           board=board,
+                           status_msg=status_msg,
+                           url=url,
+                           url_text=url_text)

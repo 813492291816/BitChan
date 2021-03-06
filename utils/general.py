@@ -5,12 +5,9 @@ import logging
 import random
 import string
 import time
+import config
 
-from config import DICT_PERMISSIONS
-from config import LABEL_LENGTH
-from config import DESCRIPTION_LENGTH
-
-logger = logging.getLogger('bitchan.utils.general')
+logger = logging.getLogger('bitchan.general')
 
 
 def version_checker(version_1: str, version_2: str):
@@ -112,6 +109,10 @@ def process_passphrase(passphrase):
             errors.append("Not enough items in passphrase")
             return errors, {}
 
+        if len(list_passphrase) > 10:
+            errors.append("Too many items in passphrase")
+            return errors, {}
+
         if not isinstance(list_passphrase[0], str):
             errors.append("Access is not string: {}".format(type(list_passphrase[0])))
 
@@ -129,24 +130,24 @@ def process_passphrase(passphrase):
             errors.append("Label is not string: {}".format(type(list_passphrase[2])))
         elif not list_passphrase[2]:
             errors.append("Label cannot be left blank")
-        elif len(list_passphrase[2]) > LABEL_LENGTH:
-            errors.append("Label is too long ({}), must be {} or less characters.".format(
-                len(list_passphrase[2]), LABEL_LENGTH))
+        elif len(list_passphrase[2]) > config.LABEL_LENGTH:
+            errors.append("Label is too long ({}), max is {}.".format(
+                len(list_passphrase[2]), config.LABEL_LENGTH))
 
         if not isinstance(list_passphrase[3], str):
             errors.append("Description is not string: {}".format(type(list_passphrase[3])))
-        elif len(list_passphrase[3]) > DESCRIPTION_LENGTH:
-            errors.append("Description is too long ({}), must be {} or less characters.".format(
-                len(list_passphrase[3]), DESCRIPTION_LENGTH))
+        elif len(list_passphrase[3]) > config.DESCRIPTION_LENGTH:
+            errors.append("Description is too long ({}), max is {}.".format(
+                len(list_passphrase[3]), config.DESCRIPTION_LENGTH))
 
         if not isinstance(list_passphrase[4], list):
             errors.append("Restrict addresses not a list: {}".format(type(list_passphrase[4])))
         elif not isinstance(list_passphrase[5], list):
-            errors.append("Primary addresses not a list: {}".format(type(list_passphrase[5])))
+            errors.append("Owner addresses not a list: {}".format(type(list_passphrase[5])))
         elif not isinstance(list_passphrase[6], list):
-            errors.append("Secondary addresses not a list: {}".format(type(list_passphrase[6])))
+            errors.append("Admin addresses not a list: {}".format(type(list_passphrase[6])))
         elif not isinstance(list_passphrase[7], list):
-            errors.append("Tertiary addresses not a list: {}".format(type(list_passphrase[7])))
+            errors.append("User addresses not a list: {}".format(type(list_passphrase[7])))
         elif not isinstance(list_passphrase[8], dict):
             errors.append("Permissions not a dict: {}".format(type(list_passphrase[8])))
         elif not isinstance(list_passphrase[9], str):
@@ -156,7 +157,7 @@ def process_passphrase(passphrase):
                     not list_passphrase[5] and
                     not list_passphrase[6] and
                     not list_passphrase[7]):
-                errors.append("Private boards and lists need at least one primary or secondary or tertiary address")
+                errors.append("Private boards and lists need at least one Owner or Admin or User address")
             for each_list_addresses in [list_passphrase[4], list_passphrase[5], list_passphrase[6], list_passphrase[7]]:
                 for each_address in each_list_addresses:
                     if not isinstance(each_address, str):
@@ -167,24 +168,53 @@ def process_passphrase(passphrase):
                     if len(each_address) > 38 or len(each_address) < 34:
                         errors.append("Address incorrect length: {}".format(each_address))
 
+            # Check addresses length
+            if len(",".join(list_passphrase[4])) > config.PASSPHRASE_ADDRESSES_LENGTH:
+                errors.append("Restricted Address list is greater than {} characters: {}".format(
+                    config.PASSPHRASE_ADDRESSES_LENGTH, len(",".join(list_passphrase[4]))))
+
+            if len(",".join(list_passphrase[5])) > config.PASSPHRASE_ADDRESSES_LENGTH:
+                errors.append("Owner Address list is greater than {} characters: {}".format(
+                    config.PASSPHRASE_ADDRESSES_LENGTH, len(",".join(list_passphrase[5]))))
+
+            if len(",".join(list_passphrase[6])) > config.PASSPHRASE_ADDRESSES_LENGTH:
+                errors.append("Admin Address list is greater than {} characters: {}".format(
+                    config.PASSPHRASE_ADDRESSES_LENGTH, len(",".join(list_passphrase[6]))))
+
+            if len(",".join(list_passphrase[7])) > config.PASSPHRASE_ADDRESSES_LENGTH:
+                errors.append("User Address list is greater than {} characters: {}".format(
+                    config.PASSPHRASE_ADDRESSES_LENGTH, len(",".join(list_passphrase[7]))))
+
+            if len(list_passphrase[9]) > config.PASSPHRASE_EXTRA_STRING_LENGTH:
+                errors.append("Extra String is greater than {} characters: {}".format(
+                    config.PASSPHRASE_EXTRA_STRING_LENGTH, len(list_passphrase[9])))
+
             # HTML escape rules dict keys and values
             for each_key, each_value in list_passphrase[8].items():
-                if each_key not in DICT_PERMISSIONS:
-                    errors.append("Unknown rule: {}".format(each_key))
+                if each_key not in config.DICT_PERMISSIONS:
+                    errors.append("Unknown Rule: {}".format(each_key))
                     continue
                 else:
                     key = html.escape(each_key)
 
                 # Sanity-check require_identity_to_post
-                if (each_key == "require_identity_to_post" and
-                        not isinstance(each_value, bool)):
-                    errors.append("require_identity_to_post not boolean")
-                    continue
-                else:
-                    value = each_value
+                if each_key == "require_identity_to_post":
+                    if not isinstance(each_value, bool):
+                        errors.append("require_identity_to_post not boolean")
+                        continue
+                    else:
+                        value = each_value
+
+                # Sanity-check allow_list_pgp_metadata
+                elif each_key == "allow_list_pgp_metadata":
+                    if not isinstance(each_value, bool):
+                        errors.append("allow_list_pgp_metadata not boolean")
+                        continue
+                    else:
+                        value = each_value
 
                 # Sanity-check automatic_wipe
-                if each_key == "automatic_wipe":
+                elif each_key == "automatic_wipe":
                     if not isinstance(each_value, dict):
                         errors.append("automatic_wipe not dict")
                         continue
@@ -197,18 +227,24 @@ def process_passphrase(passphrase):
                     elif not isinstance(each_value["wipe_epoch"], int):
                         errors.append("wipe_epoch not integer")
                         continue
+                    elif each_value["wipe_epoch"] > config.WIPE_START_MAX:
+                        errors.append("Automatic Wipe Epoch Start Time is greater than year 3020.")
+                        continue
                     elif not isinstance(each_value["interval_seconds"], int):
                         errors.append("interval_seconds not integer")
                         continue
+                    elif each_value["interval_seconds"] > config.WIPE_INTERVAL_MAX:
+                        errors.append("Automatic Wipe Interval is greater than 500 years.")
+                        continue
                     else:
-                        value = each_value
-
-                try:
-                    rules_dict[key] = value
-                except Exception as err:
-                    errors.append("Error escaping key or value ('{}': '{}'): {}".format(
-                        each_key, each_value, err))
+                        value = {
+                            "wipe_epoch": each_value["wipe_epoch"],
+                            "interval_seconds": each_value["interval_seconds"]
+                        }
+                else:
                     continue
+
+                rules_dict[key] = value
 
     except Exception as err:
         errors.append("Exception: {}".format(err))
@@ -218,13 +254,16 @@ def process_passphrase(passphrase):
             "access": html.escape(list_passphrase[0]),
             "type": html.escape(list_passphrase[1]),
             "label": html.escape(list_passphrase[2]),
+            "label_unescaped": list_passphrase[2],
             "description": html.escape(list_passphrase[3]),
+            "description_unescaped": list_passphrase[3],
             "restricted_addresses": [html.escape(x) for x in list_passphrase[4]],
             "primary_addresses": [html.escape(x) for x in list_passphrase[5]],
             "secondary_addresses": [html.escape(x) for x in list_passphrase[6]],
             "tertiary_addresses": [html.escape(x) for x in list_passphrase[7]],
             "rules": rules_dict,
-            "extra_string": html.escape(list_passphrase[9])
+            "extra_string": html.escape(list_passphrase[9]),
+            "extra_string_unescaped": list_passphrase[9]
         }
 
     for each_error in errors:

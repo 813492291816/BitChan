@@ -20,10 +20,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 #
-# Modified to allow requests to use of proxies for Tor
+# Modified to allow requests to use proxies for Tor
 #
 import logging
 import os
+import time
 from functools import wraps
 
 import requests
@@ -39,7 +40,7 @@ from database.utils import session_scope
 
 DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 
-logger = logging.getLogger('bitchan.utils.anonfile')
+logger = logging.getLogger('bitchan.anonfile')
 
 
 class AnonFile():
@@ -48,15 +49,12 @@ class AnonFile():
         # openload.cc letsupload.cc megaupload.nz bayfiles.com
         self.server_list = {
             'anonfile': 'https://api.anonfiles.com',
-            'openload': 'https://api.openload.cc',
-            'letsupload': 'https://api.letsupload.cc',
-            'megaupload': 'https://api.megaupload.nz',
             'bayfiles': 'https://api.bayfiles.com'
         }
 
         self.proxies = proxies
         self.upload_id = upload_id
-        self.progress = 0
+        self.update_timestamp = time.time()
 
         # Api endpoint
         if server is None or server not in self.server_list:
@@ -92,9 +90,6 @@ class AnonFile():
                 logger.exception("authenticated()")
         return wrapper
 
-    def list_servers(self):
-        print(self.server_list.keys())
-
     # Takes file path and uploads file returning the url
     # to download file after the upload is complete, else
     # return None if exception is thrown
@@ -108,12 +103,14 @@ class AnonFile():
             url = "{}/upload{}".format(self.anonfile_endpoint_url, self.api_key)
 
             def upl_callback(monitor):
-                with session_scope(DB_PATH) as new_session:
-                    upl = new_session.query(UploadProgress).filter(
-                        UploadProgress.upload_id == self.upload_id).first()
-                    if upl:
-                        if monitor.bytes_read > self.progress + 10000:
-                            self.progress = monitor.bytes_read
+                now = time.time()
+                if self.update_timestamp < now:
+                    while self.update_timestamp < now:
+                        self.update_timestamp += 5
+                    with session_scope(DB_PATH) as new_session:
+                        upl = new_session.query(UploadProgress).filter(
+                            UploadProgress.upload_id == self.upload_id).first()
+                        if upl and monitor.bytes_read > upl.progress_size_bytes:
                             upl.progress_size_bytes = monitor.bytes_read
                             upl.progress_percent = monitor.bytes_read / upl.total_size_bytes * 100
                             new_session.commit()
@@ -176,11 +173,11 @@ class AnonFile():
         try:
             download_url = scrape_file_location(url)
 
-            print(download_url)
+            logger.info("Download URL: {}".format(download_url))
 
             # download code goes here
             if download_url is not None:
                 wget.download(download_url, location)
 
         except Exception as ex:
-            print("[*] Error -- " + str(ex))
+            logger.error("Error: {}".format(ex))

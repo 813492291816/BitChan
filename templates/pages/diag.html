@@ -19,33 +19,27 @@
         {% include '/elements/status.html' %}
     {% endif %}
 
-    <div class="container">
-        <div style="max-width: 800px;">
-            <div style="width: 100%; text-align: center; padding-bottom: 2em">
-                <table class="table themed">
-                    <tr>
-                        <td colspan=2 style="text-align: center; padding-bottom: 1em">
-                            <h1 class="title themed bold">Diag</h1>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td colspan=2 style="text-align: center; padding-bottom: 1em">
-                            <form method="post">
-                                <input type="submit" name="del_inventory" value="Delete Bitmessage Inventory"/>
-                            </form>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td colspan=2 style="text-align: center; padding-bottom: 1em">
-                            <form method="post">
-                                <input type="submit" name="del_trash" value="Delete Bitmessage Trash"/>
-                            </form>
-                        </td>
-                    </tr>
-                </table>
-            </div>
-        </div>
-    </div>
+    <table class="table themed" style="margin: auto">
+        <tr>
+            <td colspan=2 style="text-align: center; padding-bottom: 1em">
+                <h1 class="title themed bold">Diag</h1>
+            </td>
+        </tr>
+        <tr>
+            <td colspan=2 style="text-align: center; padding-bottom: 1em">
+                <form method="post">
+                    <input type="submit" name="del_inventory" value="Delete Bitmessage Inventory"/>
+                </form>
+            </td>
+        </tr>
+        <tr>
+            <td colspan=2 style="text-align: center; padding-bottom: 1em">
+                <form method="post">
+                    <input type="submit" name="del_trash" value="Delete Bitmessage Trash"/>
+                </form>
+            </td>
+        </tr>
+    </table>
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}

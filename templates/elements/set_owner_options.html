@@ -17,10 +17,27 @@
     </div>
 
     <div style="padding-top: 1em">
-        Custom Banner Image
+        Custom Banner Image (<a class="link" target="_blank" href="/banner/{{board['current_chan'].address}}">view</a>)
         <br/>Maximum Size: {{config.BANNER_MAX_WIDTH}}x{{config.BANNER_MAX_HEIGHT}}</div>
     <div>
         <input name="file_banner" type="file"/>
+    </div>
+
+    <div style="padding-top: 1em">
+        Custom Spoiler Image (<a class="link" target="_blank" href="/spoiler/{{board['current_chan'].address}}">view</a>)
+        <br/>Maximum Size: {{config.SPOILER_MAX_WIDTH}}x{{config.SPOILER_MAX_HEIGHT}}</div>
+    <div>
+        <input name="file_spoiler" type="file"/>
+    </div>
+
+    <div style="padding-top: 1em">Long Description (max {{config.LONG_DESCRIPTION_LENGTH}} characters)</div>
+    <div>
+        <textarea rows="6" maxlength="{{config.LONG_DESCRIPTION_LENGTH}}" class="form" style="width: 100%; box-sizing: border-box;" id="long_description" name="long_description">
+    {%- if board['current_chan'].address in command_options and
+           "long_description" in command_options[board['current_chan'].address] -%}
+            {{command_options[board['current_chan'].address]["long_description"]}}
+    {%- endif -%}
+        </textarea>
     </div>
 
     <div style="padding-top: 1em">

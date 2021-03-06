@@ -12,8 +12,10 @@ from flask.blueprints import Blueprint
 import config
 from bitchan_flask import nexus
 from database.models import Identity
+from forms import forms_board
 from forms import forms_settings
 from utils.files import LF
+from utils.general import process_passphrase
 from utils.routes import page_dict
 
 logger = logging.getLogger('bitchan.routes_identities')
@@ -32,6 +34,7 @@ def global_var():
 @blueprint.route('/identities', methods=('GET', 'POST'))
 def identities():
     form_identity = forms_settings.Identity()
+    form_confirm = forms_board.Confirm()
 
     status_msg = session.get('status_msg', {"status_message": []})
 
@@ -43,6 +46,10 @@ def identities():
         if form_identity.create_identity.data:
             if not form_identity.label.data or not form_identity.passphrase.data:
                 status_msg['status_message'].append("Label and passphrase required")
+
+            errors, dict_chan_info = process_passphrase(form_identity.passphrase.data)
+            if dict_chan_info:
+                status_msg['status_message'].append("Cannot create an Identity with board/list passphrase")
 
             if not status_msg['status_message']:
                 lf = LF()
@@ -61,13 +68,14 @@ def identities():
                                 new_ident.save()
 
                                 nexus._refresh_identities = True
-                                nexus.signal_clear_inventory()
+
+                                if form_identity.resync.data:
+                                    nexus.signal_clear_inventory()
 
                                 status_msg['status_title'] = "Success"
                                 status_msg['status_message'].append(
                                     "Created identity {} with address {}.".format(
-                                        form_identity.label.data,
-                                        return_str["addresses"][0]))
+                                        form_identity.label.data, return_str["addresses"][0]))
                                 status_msg['status_message'].append(
                                     "Give the system a few seconds for the change to take effect.")
                             else:
@@ -96,8 +104,17 @@ def identities():
                         "Give the system a few seconds for the change to take effect.")
 
         elif form_identity.delete.data:
+            ident = None
             if not form_identity.address.data:
                 status_msg['status_message'].append("Address required")
+            else:
+                ident = Identity.query.filter(
+                    Identity.address == form_identity.address.data).first()
+
+            if not form_confirm.confirm.data:
+                return render_template("pages/confirm.html",
+                                       action="delete_identity",
+                                       ident=ident)
 
             if not status_msg['status_message']:
                 lf = LF()
@@ -105,8 +122,6 @@ def identities():
                     try:
                         return_str = nexus._api.deleteAddress(form_identity.address.data)
                         if return_str == "success":
-                            ident = Identity.query.filter(
-                                Identity.address == form_identity.address.data).first()
                             if ident:
                                 ident.delete()
                             nexus._refresh_identities = True

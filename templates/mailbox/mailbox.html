@@ -50,13 +50,13 @@
 
         <table class="table themed" style="margin-left: auto; margin-right: auto;">
             <tr>
-                <td colspan="2" style="text-align: center">
+                <td colspan="4" style="text-align: center">
                     <h1 class="title themed bold">Identity Mailboxes</h1>
                 </td>
             </tr>
             <tr>
-                <td colspan="2" style="text-align: center; padding-bottom: 1em">
-                    <a class="link" href="/compose/0">Compose Message</a>
+                <td colspan="4" style="text-align: center; padding-bottom: 1em">
+                    <a class="link" href="/compose/0/0">Compose Message</a>
                 </td>
             </tr>
         {% if identities %}
@@ -111,17 +111,20 @@
         <div class="themed" style="padding-bottom: 0.5em; text-align: center">
             <h1>Mailbox for {{identities[ident_address]["label"]}} ({{ident_address}})</h1>
             <span style="padding-right: 0.5em">
+                <a class="link" href="/compose/{{ident_address}}/0">Compose</a>
+            </span>
+            <span style="padding-right: 0.5em">
             {%- if mailbox != "inbox" -%}
-                    <a class="link" href="/mailbox/{{ident_address}}/inbox/1/0">Inbox</a>
+                <a class="link" href="/mailbox/{{ident_address}}/inbox/1/0">Inbox</a>
             {%- else -%}
-                    Inbox
+                Inbox
             {%- endif -%}
             </span>
             <span>
             {%- if mailbox != "sent" -%}
-                    <a class="link" href="/mailbox/{{ident_address}}/sent/1/0">Sent</a>
+                <a class="link" href="/mailbox/{{ident_address}}/sent/1/0">Sent</a>
             {%- else -%}
-                    Sent
+                Sent
             {%- endif -%}
             </span>
         </div>
@@ -184,6 +187,7 @@
                 <tr class="red">
                     <td><input type="checkbox" onClick="toggle(this)"/></td>
             {% if mailbox == "inbox" %}<td class="themed">Read</td>{% endif %}
+            {% if mailbox == "sent" %}<td class="themed">Doing POW</td>{% endif %}
                     <td>
                         {% if mailbox == "inbox" %}
                         From
@@ -207,17 +211,22 @@
                         {% if each_msg["read"] or is_selected %}&#10004;{% endif %}
                     </td>
                 {% endif %}
-                    <td class="{% if is_selected %} border-2px{% endif %}" style="white-space: nowrap;{% if is_selected %}{% elif mailbox == "inbox" and not each_msg["read"] %}font-weight: bold;{% endif %}">
+                {% if mailbox == "sent" %}
+                    <td class="{% if is_selected %} border-2px{% endif %}" style="text-align: center;">
+                        {% if each_msg["status"] == "doingmsgpow" %}&#10004;{% endif %}
+                    </td>
+                {% endif %}
+                    <td class="{% if is_selected %} border-2px{% endif %}" style="white-space: nowrap;{% if is_selected %}{% elif mailbox == 'inbox' and not each_msg['read'] %}font-weight: bold;{% endif %}">
                 {% if mailbox == "inbox" %}
-                        {% if each_msg["fromAddress"] in address_labels %}{{address_labels[each_msg["fromAddress"]]}} &lt;{{each_msg["fromAddress"]}}&gt;{% else %}{{each_msg["fromAddress"]}}{% endif %}
+                        <img style="width: 15px; height: 15px; position: relative; top: 3px;" src="/icon/{{each_msg['fromAddress']}}"> {% if each_msg["fromAddress"] in address_labels %}{{address_labels[each_msg["fromAddress"]]}} &lt;{{each_msg["fromAddress"]}}&gt;{% else %}{{each_msg["fromAddress"]}}{% endif %}
                 {% elif mailbox == "sent" %}
-                        {% if each_msg["toAddress"] in address_labels %}{{address_labels[each_msg["toAddress"]]}} &lt;{{each_msg["toAddress"]}}&gt;{% else %}{{each_msg["toAddress"]}}{% endif %}
+                        <img style="width: 15px; height: 15px; position: relative; top: 3px;; position: relative; top: 3px;; position: relative; top: 3px;; position: relative; top: 3px;; position: relative; top: 3px;" src="/icon/{{each_msg['toAddress']}}"> {% if each_msg["toAddress"] in address_labels %}{{address_labels[each_msg["toAddress"]]}} &lt;{{each_msg["toAddress"]}}&gt;{% else %}{{each_msg["toAddress"]}}{% endif %}
                 {% endif %}
                     </td>
-                    <td class="{% if is_selected %} border-2px{% endif %}" style="{% if is_selected %}{% elif mailbox == "inbox" and not each_msg["read"] %}font-weight: bold;{% endif %}">
+                    <td class="{% if is_selected %} border-2px{% endif %}" style="{% if is_selected %}{% elif mailbox == 'inbox' and not each_msg['read'] %}font-weight: bold;{% endif %}">
                         {{base64_decode(each_msg["subject"])}}
                     </td>
-                    <td class="{% if is_selected %} border-2px{% endif %}" style="white-space: nowrap;{% if is_selected %}{% elif mailbox == "inbox" and not each_msg["read"] %}font-weight: bold;{% endif %}">
+                    <td class="{% if is_selected %} border-2px{% endif %}" style="white-space: nowrap;{% if is_selected %}{% elif mailbox == 'inbox' and not each_msg['read'] %}font-weight: bold;{% endif %}">
                 {% if msg_selected and each_msg["msgid"] == msg_selected["msgid"] %}
                         {{timestamp_format(each_msg[time_point])}}
                 {% else %}
@@ -252,21 +261,27 @@
                         <tr>
                             <td style="text-decoration: underline;">From</td>
                             <td>
+                                <img style="width: 15px; height: 15px; position: relative; top: 3px;" src="/icon/{{msg_selected['fromAddress']}}">
                             {% if msg_selected["fromAddress"] in address_labels %}
                                 {{address_labels[msg_selected["fromAddress"]]}} &lt;{{msg_selected["fromAddress"]}}&gt;
                             {% else %}
                                 {{msg_selected["fromAddress"]}}
                             {% endif %}
+                            {% set address = msg_selected["fromAddress"] %}
+                            {% include '/elements/template_address_dropdown.html' %}
                             </td>
                         </tr>
                         <tr>
                             <td style="text-decoration: underline;">To</td>
                             <td>
+                                <img style="width: 15px; height: 15px; position: relative; top: 3px;" src="/icon/{{msg_selected['toAddress']}}">
                             {% if msg_selected["toAddress"] in address_labels %}
                                 {{address_labels[msg_selected["toAddress"]]}} &lt;{{msg_selected["toAddress"]}}&gt;
                             {% else %}
                                 {{msg_selected["toAddress"]}}
                             {% endif %}
+                            {% set address = msg_selected["toAddress"] %}
+                            {% include '/elements/template_address_dropdown.html' %}
                             </td>
                         </tr>
                         <tr>
@@ -275,6 +290,14 @@
                                 {{timestamp_format(msg_selected[time_point])}}
                             </td>
                         </tr>
+                        {% if "expires_time" in msg_selected %}
+                        <tr>
+                            <td style="text-decoration: underline;">TTL</td>
+                            <td>
+                                {{timestamp_format(msg_selected["expires_time"])}}
+                            </td>
+                        </tr>
+                        {% endif %}
                         <tr>
                             <td style="text-decoration: underline;">Subject</td>
                             <td>{{base64_decode(msg_selected["subject"])}}</td>

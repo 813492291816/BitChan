@@ -1,8 +1,26 @@
-import logging
 import json
-from collections import OrderedDict
+import logging
+import sqlite3
+from binascii import unhexlify
 
-logger = logging.getLogger('bitchan.utils.shared')
+import config
+
+logger = logging.getLogger('bitchan.shared')
+
+
+def get_msg_expires_time(msg_id: str):
+    try:
+        conn = sqlite3.connect('file:{}?mode=ro'.format(
+            config.messages_dat), uri=True, check_same_thread=False)
+        conn.text_factory = bytes
+        c = conn.cursor()
+        c.execute('SELECT expirestime FROM inventory WHERE hash=?', (unhexlify(msg_id),))
+        data = c.fetchall()
+        if data:
+            return data[0][0]
+    except Exception:
+        logger.exception("except {}".format(msg_id))
+        return
 
 
 def is_access_same_as_db(options, chan_entry):

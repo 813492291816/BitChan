@@ -5,15 +5,18 @@ import config
 from utils.general import set_clear_time_to_future
 from .alembic import Alembic
 from .chans import AddressBook
+from .chans import AdminMessageStore
 from .chans import Chan
 from .chans import Command
-from .chans import DeletedMessages
 from .chans import Identity
 from .chans import Messages
 from .chans import Threads
 from .chans import UploadProgress
+from .maintenance import DeletedMessages
+from .maintenance import PostMessages
 from .settings import Flags
 from .settings import GlobalSettings
+from .settings import UploadSites
 
 logger = logging.getLogger('bitchan.db_models')
 
@@ -24,6 +27,24 @@ def populate_db():
 
     if not GlobalSettings.query.count():
         GlobalSettings().save()
+
+    # Only for testing. TODO: remove for release
+    # for each in UploadSites.query.all():
+    #     each.delete()
+
+    if not UploadSites.query.count():
+        for domain, upload_info in config.DICT_UPLOAD_SERVERS.items():
+            UploadSites(
+                domain=domain,
+                type=upload_info["type"],
+                uri=upload_info["uri"],
+                download_prefix=upload_info["download_prefix"],
+                response=upload_info["response"],
+                direct_dl_url=upload_info["direct_dl_url"],
+                extra_curl_options=upload_info["extra_curl_options"],
+                upload_word=upload_info["upload_word"],
+                form_name=upload_info["form_name"],
+            ).save()
 
     if not AddressBook.query.count():
         AddressBook(
@@ -62,6 +83,7 @@ def populate_db():
                 secondary_addresses=json.dumps(each_chan["secondary_addresses"]),
                 tertiary_addresses=json.dumps(each_chan["tertiary_addresses"]),
                 rules=json.dumps(each_chan["rules"]),
-                pgp_passphrase_msg=config.PASSPHRASE_MSG,
-                pgp_passphrase_steg=config.PASSPHRASE_STEG
+                pgp_passphrase_msg=config.PGP_PASSPHRASE_MSG,
+                pgp_passphrase_attach=config.PGP_PASSPHRASE_ATTACH,
+                pgp_passphrase_steg=config.PGP_PASSPHRASE_STEG
             ).save()

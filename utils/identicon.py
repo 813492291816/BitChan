@@ -28,7 +28,7 @@ from PIL import ImagePath
 from config import FILE_DIRECTORY
 from utils.general import is_int
 
-logger = logging.getLogger('bitchan.utils.identicon')
+logger = logging.getLogger('bitchan.identicon')
 
 __all__ = ['render_identicon', 'IdenticonRendererBase']
 

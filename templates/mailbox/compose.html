@@ -38,8 +38,9 @@
                     <td>
                         <div>
                             <select name="from_address" style="width: 100%">
+                                <option value="">Select From Address</option>
         {% for each_address, each_str in get_from_list_all().items() %}
-                                <option value="{{each_address}}"{% if "from_address" in form_populate and form_populate["from_address"] and each_address == form_populate["from_address"] %} selected{% endif %}>{{each_str}}</option>
+                                <option value="{{each_address}}"{% if ("from_address" in form_populate and form_populate["from_address"] and each_address == form_populate["from_address"]) or each_address == address_from %} selected{% endif %}>{{each_str}}</option>
         {% endfor %}
                             </select>
                         </div>

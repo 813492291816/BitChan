@@ -1,10 +1,14 @@
 {% set is_board_view = board['current_thread'] == None %}
 
 {% if is_op_post %}
-	{% if is_board_view and steg_found %}
-(<a class="link" href="/thread_steg/{{board['current_chan'].address}}/{{post.thread.thread_hash}}">Steg</a>)
+	{% if steg_found %}
+(<a class="link" href="/thread_steg/{{board['current_chan'].address}}/{{post.thread.thread_hash}}">STEG</a>)
 	{% endif %}
-<span style="overflow-wrap: break-word;" class="subject bold"><b>{{thread.subject|safe}}</b></span>
+<span style="overflow-wrap: break-word;" class="subject bold"><a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash}}">{{thread.subject|safe}}</a></span>
+{% endif %}
+
+{% if reply_steg %}
+(<a class="link" href="/thread_steg/{{board['current_chan'].address}}/{{post.thread.thread_hash}}#{{post_id(post.message_id)}}">STEG</a>)
 {% endif %}
 
 <img style="position: relative; top: 3px; width: 15px; height: 15px" src="/icon/{{post.address_from}}">
@@ -51,14 +55,14 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 	<table class="menu-content">
 		<tr class="menu-entry">
 			<td style="white-space: nowrap;">
-				{{post.address_from}} <button class="btn" onclick="CopyToClipboard('{{post.address_from}}')">&#128203;</button>
+				{{post.address_from}} <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyToClipboard('{{post.address_from}}')">&#128203;</button>
 			</td>
 		</tr>
 
 		{% if can_send_message %}
 		<tr class="menu-entry">
 			<td style="white-space: nowrap;">
-				<a class="link" href="/compose/{{post.address_from}}">Send Message</a>
+				<a class="link" href="/compose/0/{{post.address_from}}">Send Message</a>
 			</td>
 		</tr>
 		{% endif %}
@@ -74,7 +78,7 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 		{% if can_ban_from_board %}
 		<tr class="menu-entry">
 			<td style="white-space: nowrap;">
-				<a class="link" href="/admin_board_ban_address/{{post.thread.chan.address}}/{{post.address_from}}" onclick="return confirm('Confirm banning address from board for everyone.')">Ban from Board (For Everyone)</a>
+				<a class="link" href="/admin_board_ban_address/{{post.thread.chan.address}}/{{post.address_from}}">Ban from Board (For Everyone)</a>
 			</td>
 		</tr>
 		{% endif %}
@@ -82,12 +86,12 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 		{% if can_block %}
 		<tr class="menu-entry">
 			<td style="white-space: nowrap;">
-				<a class="link" href="/block_address/{{post.thread.chan.address}}/{{post.address_from}}/global" onclick="return confirm('Confirm blocking address from all boards for just you.')">Block from all Boards (For You)</a>
+				<a class="link" href="/block_address/{{post.thread.chan.address}}/{{post.address_from}}/global">Block from all Boards (For You)</a>
 			</td>
 		</tr>
 		<tr class="menu-entry">
 			<td style="white-space: nowrap;">
-				<a class="link" href="/block_address/{{post.thread.chan.address}}/{{post.address_from}}/single_board" onclick="return confirm('Confirm blocking address from this board for just you.')">Block from this Board (For You)</a>
+				<a class="link" href="/block_address/{{post.thread.chan.address}}/{{post.address_from}}/single_board">Block from this Board (For You)</a>
 			</td>
 		</tr>
 		{% endif %}
@@ -129,12 +133,12 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 		{% if primary_access %}
 		<tr class="menu-entry">
 			<td style="white-space: nowrap;">
-				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/thread" onclick="return confirm('Confirm delete thread for just you.')">Delete Thread (For You)</a>
+				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/thread">Delete Thread (For You)</a>
 			</td>
 		</tr>
 		<tr class="menu-entry">
 			<td style="white-space: nowrap;">
-				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/thread_all" onclick="return confirm('Confirm delete thread for everyone.')">Delete Thread (For Everyone)</a>
+				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/thread_all">Delete Thread (For Everyone)</a>
 			</td>
 		</tr>
 		{% else %}
@@ -148,17 +152,17 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 	{% if primary_access %}
 		<tr class="menu-entry">
 			<td style="white-space: nowrap;">
-				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/post" onclick="return confirm('Confirm delete post for just you.')">Delete Post (For You)</a>
+				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/post">Delete Post (For You)</a>
 			</td>
 		</tr>
 		<tr class="menu-entry">
 			<td style="white-space: nowrap;">
-				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/post_all" onclick="return confirm('Confirm delete post for everyone.')">Delete Post (For Everyone)</a>
+				<a class="link" href="/delete/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}/post_all">Delete Post (For Everyone)</a>
 			</td>
 		</tr>
 		<tr class="menu-entry">
 			<td style="white-space: nowrap;">
-				<a class="link" href="/delete_with_comment/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}" onclick="return confirm('Confirm delete post for everyone with comment.')">Delete Post (For Everyone, with Comment)</a>
+				<a class="link" href="/delete_with_comment/{{post.thread.chan.address}}/{{post.message_id}}/{{post.thread.thread_hash}}">Delete Post (For Everyone, with Comment)</a>
 			</td>
 		</tr>
 	{% else %}
@@ -178,45 +182,71 @@ font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-col
 {% endif %}
 
 <br/>
-{%- if post.file_size is not none -%}
-	{{"(%s" % (human_readable_size(post.file_size))}}
-	{%- if not (post.media_width and post.media_height) and
-           not (post.file_enc_cipher and post.file_enc_key_bytes)  -%}
+{%- if post.file_amount -%}
+	{%- if post.file_amount == 1 -%}
+		{{"(1 File"}}
+	{%- else -%}
+		{{"(%s Files" % post.file_amount}}
+	{%- endif -%}
+
+	{%- if post.file_size -%}
+		{{", " + human_readable_size(post.file_size)}}
+	{%- endif -%}
+
+	{%- if post.file_url or (not post.file_url and post.file_size) -%}
+		{%- if post.file_size -%}
+			{{", "}}
+		{%- else -%}
+			{{"("}}
+		{%- endif -%}
+		{%- if post.file_url -%}
+			<span title="{{post.file_url}}">{{urlparse(post.file_url).netloc}}</span>
+			{%- set site_info = json.loads(post.file_upload_settings) -%}
+            {%- if "domain" in site_info and
+                  "type" in site_info and
+                  "uri" in site_info and
+                  "download_prefix" in site_info and
+                  "response" in site_info and
+                  "direct_dl_url" in site_info and
+                  "extra_curl_options" in site_info and
+                  "upload_word" in site_info -%}
+			    {%- set this_upload_site = upload_sites.query.filter(and_(
+                    upload_sites.domain == site_info["domain"],
+                    upload_sites.type == site_info["type"],
+                    upload_sites.uri == site_info["uri"],
+                    upload_sites.download_prefix == site_info["download_prefix"],
+                    upload_sites.response == site_info["response"],
+                    upload_sites.direct_dl_url == site_info["direct_dl_url"],
+                    upload_sites.extra_curl_options == site_info["extra_curl_options"],
+                    upload_sites.upload_word == site_info["upload_word"])).first() -%}
+                {%- if this_upload_site %}
+                    (<a class="link" title="View/edit attachment upload site settings" href="/upload_site/edit/{{this_upload_site.id}}">v</a>)
+                {%- else %}
+                    (<a class="link" title="Add attachment upload site settings" href="/upload_site/add_msg_id/{{post.message_id}}">a</a>)
+                {%- endif -%}
+            {%- endif -%}
+		{%- else -%}
+			Bitmessage
+		{%- endif -%}
+	{%- endif -%}
+
+	{%- if post.file_enc_cipher and post.file_enc_key_bytes -%}
+		{%- if post.file_size or
+			   (post.file_url or (not post.file_url and post.file_size)) -%}
+			{{", "}}
+		{%- else -%}
+			{{"("}}
+		{%- endif -%}
+		{%- if post.file_enc_cipher == "NONE" -%}
+		Unencrypted
+		{%- else -%}
+		{{post.file_enc_key_bytes * 8}}-bit {{post.file_enc_cipher}}
+		{%- endif -%}
+	{%- endif -%}
+
+	{%- if post.file_size or
+		   (post.file_url or (not post.file_url and post.file_size)) or
+		   (post.file_enc_cipher and post.file_enc_key_bytes) -%}
 		{{")"}}
-	{%- endif -%}
+	{%- endif %}
 {%- endif -%}
-
-{%- if post.media_width and post.media_height -%}
-	{%- if post.file_size is not none -%}
-		{{", "}}
-	{%- else -%}
-		{{"("}}
-	{%- endif -%}
-    {{"%dx%d" % (post.media_width, post.media_height)}}
-{%- endif -%}
-
-{%- if post.file_enc_cipher and post.file_enc_key_bytes -%}
-	{%- if post.file_size is not none or
-           (post.media_width and post.media_height) -%}
-		{{", "}}
-	{%- else -%}
-		{{"("}}
-	{%- endif -%}
-	{{post.file_enc_key_bytes * 8}}-bit {{post.file_enc_cipher}}
-{%- endif -%}
-
-{%- if post.file_size is not none or
-	   (post.media_width and post.media_height) or
-	   (post.file_enc_cipher and post.file_enc_key_bytes) -%}
-	{{")"}}
-{%- endif %}
-
-{% if post.file_filename %}
-	<a href="/files/file/{{post.message_id}}/{{post.file_filename}}">
-	{%- if post.file_filename|safe|length > 75 -%}
-	{{(post.file_filename|safe)[:40]}}...{{(post.file_filename|safe)[-35:]}}
-	{%- else -%}
-	{{post.file_filename|safe}}
-	{%- endif -%}
-	</a> (<a href="/dl/{{post.message_id}}/{{post.file_filename}}">dl</a>)
-{% endif %}

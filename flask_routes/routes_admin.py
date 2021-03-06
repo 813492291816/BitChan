@@ -42,8 +42,20 @@ def global_var():
 @blueprint.route('/delete/<current_chan>/<message_id>/<thread_id>/<delete_type>', methods=('GET', 'POST'))
 def delete(current_chan, message_id, thread_id, delete_type):
     """Owners and Admins can delete messages and threads"""
+    form_confirm = forms_board.Confirm()
+
     chan = Chan.query.filter(Chan.address == current_chan).first()
     thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
+
+    if request.method != 'POST' or not form_confirm.confirm.data:
+        return render_template("pages/confirm.html",
+                               action="delete",
+                               chan=chan,
+                               current_chan=current_chan,
+                               message_id=message_id,
+                               thread=thread,
+                               thread_id=thread_id,
+                               delete_type=delete_type)
 
     board = {
         "current_chan": chan,
@@ -129,7 +141,7 @@ def delete(current_chan, message_id, thread_id, delete_type):
                 from_address = admin_has_access(current_chan)
 
                 if from_address:
-                    pgp_passphrase_msg = config.PASSPHRASE_MSG
+                    pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
                     chan = Chan.query.filter(Chan.address == current_chan).first()
                     if chan and chan.pgp_passphrase_msg:
                         pgp_passphrase_msg = chan.pgp_passphrase_msg
@@ -153,6 +165,7 @@ def delete(current_chan, message_id, thread_id, delete_type):
                             if return_str:
                                 logger.info("{}: Message to globally delete {} sent from {} to {}".format(
                                     thread_id[0:6], delete_type, from_address, current_chan))
+                                nexus.post_delete_queue(from_address, return_str)
                             time.sleep(0.1)
                         finally:
                             lf.lock_release(config.LOCKFILE_API)
@@ -175,7 +188,6 @@ def delete_with_comment(current_chan, message_id, thread_id):
     """Owners and Admins can delete messages and threads"""
     form_del_com = forms_board.DeleteComment()
     chan = Chan.query.filter(Chan.address == current_chan).first()
-    thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
 
     board = {
         "current_chan": chan,
@@ -221,7 +233,7 @@ def delete_with_comment(current_chan, message_id, thread_id):
                     from_address = admin_has_access(current_chan)
 
                     if from_address:
-                        pgp_passphrase_msg = config.PASSPHRASE_MSG
+                        pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
                         chan = Chan.query.filter(Chan.address == current_chan).first()
                         if chan and chan.pgp_passphrase_msg:
                             pgp_passphrase_msg = chan.pgp_passphrase_msg
@@ -247,6 +259,7 @@ def delete_with_comment(current_chan, message_id, thread_id):
                                                 "The message will need to propagate through the network before "
                                                 "the changes are reflected on the board.".format(
                                                     thread_id[0:6], from_address, current_chan))
+                                    nexus.post_delete_queue(from_address, return_str)
                                 time.sleep(0.1)
 
                                 status_msg['status_message'].append(
@@ -284,7 +297,17 @@ def delete_with_comment(current_chan, message_id, thread_id):
 @blueprint.route('/admin_board_ban_address/<chan_address>/<ban_address>', methods=('GET', 'POST'))
 def admin_board_ban_address(chan_address, ban_address):
     """Owners and Admins can ban addresses"""
+    form_confirm = forms_board.Confirm()
+
     chan = Chan.query.filter(Chan.address == chan_address).first()
+
+    if request.method != 'POST' or not form_confirm.confirm.data:
+        return render_template("pages/confirm.html",
+                               action="admin_board_ban_address",
+                               chan=chan,
+                               chan_address=chan_address,
+                               ban_address=ban_address)
+
     messages = Messages.query.filter(Messages.address_from == ban_address).all()
 
     board = {
@@ -337,7 +360,7 @@ def admin_board_ban_address(chan_address, ban_address):
             from_address = admin_has_access(chan_address)
 
             if from_address:
-                pgp_passphrase_msg = config.PASSPHRASE_MSG
+                pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
                 chan = Chan.query.filter(Chan.address == chan_address).first()
                 if chan and chan.pgp_passphrase_msg:
                     pgp_passphrase_msg = chan.pgp_passphrase_msg
@@ -363,6 +386,7 @@ def admin_board_ban_address(chan_address, ban_address):
                                 "Message sent to globally ban {} from board {}".format(
                                 ban_address, chan_address))
                             status_msg['status_title'] = "Ban Address"
+                            nexus.post_delete_queue(from_address, return_str)
                         time.sleep(0.1)
                     finally:
                         lf.lock_release(config.LOCKFILE_API)
@@ -399,6 +423,8 @@ def set_owner_options(chan_address):
             modify_user_addresses = None
             modify_restricted_addresses = None
             image_base64 = None
+            spoiler_base64 = None
+            long_description = None
             css = None
             word_replace = {}
 
@@ -418,7 +444,6 @@ def set_owner_options(chan_address):
                     except:
                         options = {}
                     if "modify_admin_addresses" in options:
-
                         if options["modify_admin_addresses"] != list_add:
                             send_modify_admin_addresses = True
                     else:
@@ -482,13 +507,49 @@ def set_owner_options(chan_address):
                     media_width, media_height = im.size
                     if media_width > config.BANNER_MAX_WIDTH or media_height > config.BANNER_MAX_HEIGHT:
                         status_msg['status_message'].append(
-                            "Image dimensions too large. Requirements: width <= {}, height <= {}.".format(
+                            "Banner image dimensions too large. Requirements: width <= {}, height <= {}.".format(
                                 config.BANNER_MAX_WIDTH, config.BANNER_MAX_HEIGHT))
                     else:
                         logger.info("Setting banner image")
                 except Exception as err:
                     status_msg['status_message'].append(
                         "Error while determining image size: {}".format(err))
+
+            if form_options.file_spoiler.data:
+                # determine image dimensions
+                spoiler_base64 = base64.b64encode(form_options.file_spoiler.data.read())
+                try:
+                    im = Image.open(BytesIO(base64.b64decode(spoiler_base64)))
+                    media_width, media_height = im.size
+                    if media_width > config.SPOILER_MAX_WIDTH or media_height > config.SPOILER_MAX_HEIGHT:
+                        status_msg['status_message'].append(
+                            "Spoiler image dimensions too large. Requirements: width <= {}, height <= {}.".format(
+                                config.SPOILER_MAX_WIDTH, config.SPOILER_MAX_HEIGHT))
+                    else:
+                        logger.info("Setting spoiler image")
+                except Exception as err:
+                    status_msg['status_message'].append(
+                        "Error while determining spoiler size: {}".format(err))
+
+            if form_options.long_description.data:
+                send_long_description = False
+                if admin_cmd and admin_cmd.options:
+                    # Only update if different from current long description
+                    try:
+                        options = json.loads(admin_cmd.options)
+                    except:
+                        options = {}
+                    if "long_description" in options:
+                        if options["long_description"] != html.escape(form_options.long_description.data):
+                            send_long_description = True
+                    else:
+                        send_long_description = True
+                else:
+                    send_long_description = True
+
+                if send_long_description:
+                    logger.info("Setting Long Description")
+                    long_description = html.escape(form_options.long_description.data)
 
             if form_options.css.data:
                 send_css = False
@@ -543,6 +604,8 @@ def set_owner_options(chan_address):
 
             # Ensure at least one option is set
             if (not image_base64 and
+                    not spoiler_base64 and
+                    not long_description and
                     not css and
                     not word_replace and
                     modify_admin_addresses is None and
@@ -564,7 +627,7 @@ def set_owner_options(chan_address):
                 status_msg['status_message'].append(
                     "Could not authenticate access to globally set board options")
             elif not status_msg['status_message']:
-                # Send message to remotely set banner
+                # Send message to remotely set options
                 dict_message = {
                     "version": config.VERSION_BITCHAN,
                     "timestamp_utc": nexus.get_utc(),
@@ -576,6 +639,10 @@ def set_owner_options(chan_address):
 
                 if image_base64:
                     dict_message["options"]["banner_base64"] = image_base64.decode()
+                if spoiler_base64:
+                    dict_message["options"]["spoiler_base64"] = spoiler_base64.decode()
+                if long_description:
+                    dict_message["options"]["long_description"] = long_description
                 if css:
                     dict_message["options"]["css"] = css
                 if word_replace:
@@ -588,7 +655,7 @@ def set_owner_options(chan_address):
                 if modify_restricted_addresses is not None:
                     dict_message["options"]["modify_restricted_addresses"] = modify_restricted_addresses
 
-                pgp_passphrase_msg = config.PASSPHRASE_MSG
+                pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
                 chan = Chan.query.filter(Chan.address == chan.address).first()
                 if chan and chan.pgp_passphrase_msg:
                     pgp_passphrase_msg = chan.pgp_passphrase_msg
@@ -625,9 +692,43 @@ def set_owner_options(chan_address):
                                 logger.info(msg)
                                 status_msg['status_title'] = "Success"
                                 status_msg['status_message'].append(msg)
+                                nexus.post_delete_queue(from_address, return_str)
                             time.sleep(0.1)
                         finally:
                             lf.lock_release(config.LOCKFILE_API)
+
+        if 'status_title' not in status_msg and status_msg['status_message']:
+            status_msg['status_title'] = "Error"
+
+    return render_template("pages/alert.html",
+                           board=board,
+                           status_msg=status_msg)
+
+
+@blueprint.route('/set_info_options/<chan_address>', methods=('GET', 'POST'))
+def set_info_options(chan_address):
+    """Set options users can change"""
+    chan = Chan.query.filter(Chan.address == chan_address).first()
+
+    form_options = forms_board.SetOptions()
+
+    board = {
+        "current_chan": chan,
+        "current_thread": None,
+    }
+    status_msg = {"status_message": []}
+
+    if request.method == 'POST':
+        if form_options.allow_css.data or form_options.disallow_css.data:
+            chan = Chan.query.filter(Chan.address == chan.address).first()
+            if form_options.allow_css.data:
+                chan.allow_css = form_options.allow_css.data
+                status_msg['status_message'].append("Custom CSS changed to allowed")
+            elif form_options.disallow_css.data:
+                chan.allow_css = False
+                status_msg['status_message'].append("Custom CSS changed to disallowed")
+            chan.save()
+            status_msg['status_title'] = "Success"
 
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"

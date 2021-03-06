@@ -2,9 +2,9 @@
 BitChan
 =======
 
-Version: 0.10.0
+Version: 0.11.0
 
-BitChan is a decentralized anonymous image board inspired by BitBoard and built on top of `Bitmessage <https://bitmessage.org>`__ with `Tor <https://www.torproject.org>`__ and `GnuGP <https://gnupg.org>`__.
+BitChan is a decentralized anonymous image board inspired by `BitBoard <https://github.com/michrob/bitboard>`__ and built on top of `Bitmessage <https://bitmessage.org>`__ with `Tor <https://www.torproject.org>`__ and `GnuPG <https://gnupg.org>`__.
 
 Bitmessage is a decentralized, encrypted messaging application. It relies on public key encryption (similar to PGP), decentralized message delivery, which due to the nature of every message being distributed to every client, also provides plausible deniability (i.e. no one knows who the message was intended to go to). BitChan runs on top of Bitmessage to enhance its functionality and security, by providing a feature-rich frontend to what is normally a text-based experience. BitChan offers boards for a forum-like experience with image and file sharing, lists to organize and share other boards and lists, along with a host of additional features to enhance posts and provide board and list management with the use of owner, admin, and user permissions. Boards and lists can be public or private, with or without owners or admins, allowing a full range from completely unmoderatable to strictly allowing only select addresses to post or modify list contents.
 
@@ -27,7 +27,7 @@ Features
 - Security
 
   - All internet traffic (Bitmessage/uploads/downloads) through tor with fake UserAgent
-  - All messages PGP-encrypted with AES256
+  - All messages PGP-encrypted with user-selectable cipher and key length
   - Encryption, fragmentation, and hashing to secure and verify authenticity of received post attachment files
   - Bitmessage Identities for private addresses that only you control
 
@@ -40,11 +40,12 @@ Features
 - Boards for posting messages and Lists for sharing other boards and lists
 
   - Permissions for board/list ownership and administration
-  - Public where anyone can post on a board or add to a list
-  - Private where only select addresses can post or modify a list
-  - Several access levels (Owners, Admins, Users, and Restricted)
-  - Rules: Require Identity to Post, Automatic Wipe
-  - Address Book to organize addresses you want to save and have a label appear next to wherever that address appears
+  - Public access where anyone can post on a board or add to a list
+  - Private access where only select addresses can post or modify a list
+  - Several user permissions (Owners, Admins, Users, and Restricted)
+  - Rules to allow board/list Owners to determine if certain features are enabled
+  - Owner options to set long description, banner and spoiler images, word replacements, custom CSS
+  - Address Book to saved addresses and labels will appear next to those addresses
 
 - Board Features
 
@@ -114,8 +115,6 @@ For added security, it's recommended to either A) use tor browser or B) configur
 
 Verify your browser is using tor by visiting `https://check.torproject.org <https://check.torproject.org>`__.
 
-*Note: If using http://127.0.0.1:8000 or http://172.28.1.1:8000, the embedded youtube player will not work, unless you're using tor browser. Using http://localhost will allow it to work, but this address cannot be accessed with tor browser.*
-
 Upgrade BitChan
 ---------------
 
@@ -144,7 +143,7 @@ Docker Container Networking
 - tor
 
   - IP: 172.28.1.2
-  - Proxy Port: 9050
+  - Proxy Port: 9060
   - Control Port: 9061
 
 - Bitmessage API
@@ -270,6 +269,14 @@ Enter password torpass1234
 
 Note: To change the default tor password, edit BitChan/docker/docker-compose.yml and change ``password: "torpass1234"`` to something else, then rebuild your containers with ``make daemon``
 
+Donate
+======
+
+Monero Address
+--------------
+
+49KE6mo43c6DLuszW48ZkYG8x6KcxjhscY5KzsNLTqLk8Vw2gBaTnoggxfYLJnQ95zNuDpfFESYSFZoucYq5vWAjNrqHbhX
+
 Developer Information
 =====================
 
@@ -279,6 +286,6 @@ Bitmessage Address: ``BM-2cWyqGJHrwCPLtaRvs3f67xsnj8NmPvRWZ``
 
 E-Mail: `BitChan@mailchuck.com <mailto:bitchan@mailchuck.com>`__
 
-*Note: This email can only receive messages. Use Bitmessage to have 2-way communication.*
+*Note: This email can only receive messages. Use Bitmessage for 2-way communication.*
 
 PGP Public Key: `E90B33C4C0E73AF537F2C2E9B14DF20410E5A5BC <https://keys.openpgp.org/vks/v1/by-fingerprint/E90B33C4C0E73AF537F2C2E9B14DF20410E5A5BC>`__

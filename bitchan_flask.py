@@ -30,6 +30,7 @@ from flask_routes import routes_list
 from flask_routes import routes_mail
 from flask_routes import routes_main
 from flask_routes import routes_management
+from flask_routes import routes_pgp
 
 app.register_blueprint(routes_address_book.blueprint)
 app.register_blueprint(routes_admin.blueprint)
@@ -39,6 +40,7 @@ app.register_blueprint(routes_list.blueprint)
 app.register_blueprint(routes_mail.blueprint)
 app.register_blueprint(routes_main.blueprint)
 app.register_blueprint(routes_management.blueprint)
+app.register_blueprint(routes_pgp.blueprint)
 
 
 def signal_handler(signal, frame):

@@ -1,32 +1,35 @@
-<img class="opimg" src="/static/thread.png"/>
-ORIGINAL POST UNAVAILABLE
-<div tabindex="0" class="menu">
-	<span class="link clickable">&#9654;</span>
-	<table class="menu-content">
-	{% if primary_access %}
-	<tr class="menu-entry">
-		<td style="white-space: nowrap;">
-			<a class="link" href="/delete/{{thread.chan.address}}/0/{{thread.thread_hash}}/thread" onclick="return confirm('Confirm delete thread just for you.')">Delete Thread (For You)</a>
-		</td>
-	</tr>
-	<tr class="menu-entry">
-		<td style="white-space: nowrap;">
-			<a class="link" href="/delete/{{thread.chan.address}}/0/{{thread.thread_hash}}/thread_all" onclick="return confirm('Confirm delete thread for everyone.')">Delete Thread (For Everyone)</a>
-		</td>
-	</tr>
-	{% else %}
-	<tr class="menu-entry">
-		<td style="white-space: nowrap;">
-			<a class="link" href="/delete/{{thread.chan.address}}/0/{{thread.thread_hash}}/thread">Delete Thread (For You)</a>
-		</td>
-	</tr>
-	{% endif %}
-	</table>
-</div>
-<div class="themed">
-	<div>
+<div class="themed" style="display: block; vertical-align: top;" id="{{thread.thread_hash}}">
+	<span style="overflow-wrap: break-word;" class="subject bold"><a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash}}">{{thread.subject|safe}}</a></span>
+	<div tabindex="0" class="menu">
+		<span class="link clickable">&#9654;</span>
+		<table class="menu-content">
+		{% if primary_access %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/delete/{{thread.chan.address}}/0/{{thread.thread_hash}}/thread">Delete Thread (For You)</a>
+			</td>
+		</tr>
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/delete/{{thread.chan.address}}/0/{{thread.thread_hash}}/thread_all">Delete Thread (For Everyone)</a>
+			</td>
+		</tr>
+		{% else %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/delete/{{thread.chan.address}}/0/{{thread.thread_hash}}/thread">Delete Thread (For You)</a>
+			</td>
+		</tr>
+		{% endif %}
+		</table>
+	</div>
+	<div style="display: block; padding-top: 0.3em">
+		<div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.2em; margin-bottom: 1em; margin-right: 1em">
+            <img class="opimg" src="/static/thread.png"/>
+        </div>
 		<blockquote class="post">
-			Either it's beyond the post's time to live (TTL) and no longer available or you have yet to receive it from the network.
+			ORIGINAL POST UNAVAILABLE
+			<br>Either the post has expired (beyond its TTL) and is no longer available or you have yet to receive it from the network.
 		</blockquote>
 	</div>
 </div>

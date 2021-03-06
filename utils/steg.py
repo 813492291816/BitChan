@@ -12,7 +12,7 @@ import config
 from utils.encryption import decrypt_safe_size
 from utils.replacements import process_replacements
 
-logger = logging.getLogger('bitchan.utils.encryption')
+logger = logging.getLogger('bitchan.steg')
 
 
 def steg_encrypt(orig_img, steg_img, sec_msg, gpg_pass):
@@ -68,7 +68,7 @@ def steg_decrypt(steg_img, gpg_pass, file_extension=None):
     return decrypted_msg
 
 
-def check_steg(message_id, file_extension, passphrase=config.PASSPHRASE_STEG, file_path=None, file_decoded=None):
+def check_steg(message_id, file_extension, passphrase=config.PGP_PASSPHRASE_STEG, file_path=None, file_decoded=None):
     """Check image for steg message"""
     try:
         if file_path and os.path.exists(file_path):
@@ -89,7 +89,7 @@ def check_steg(message_id, file_extension, passphrase=config.PASSPHRASE_STEG, fi
             return
 
         try:
-            logger.info("{}: Found steg message in attached image".format(message_id[0:6]))
+            logger.info("{}: Found steg message in attached image".format(message_id[-config.ID_LENGTH:].upper()))
             message_steg = html.escape(steg_message)
             message_steg = process_replacements(
                 message_steg, "{}steg".format(message_id), message_id)

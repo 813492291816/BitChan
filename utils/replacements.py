@@ -1,4 +1,6 @@
+import base64
 import html
+import json
 import logging
 import re
 from urllib import parse
@@ -19,12 +21,13 @@ from utils.general import process_passphrase
 
 DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 
-logger = logging.getLogger("bitchan.utils.replacements")
+logger = logging.getLogger("bitchan.replacements")
 
 
 def replace_lt_gt(s):
-    s = s.replace("<", "&lt;")
-    s = s.replace(">", "&gt;")
+    if s is not None:
+        s = s.replace("<", "&lt;")
+        s = s.replace(">", "&gt;")
     return s
 
 
@@ -78,6 +81,7 @@ def format_body(body):
     lines = body.split("<br/>")
 
     regex_passphrase = r"""(\[\"(private|public)\"\,\s\"(board|list)\"\,\s\".{1,25}?\"\,\s\".{1,128}?\"\,\s\[(\"BM\-[a-zA-Z0-9]{32,34}(\"\,\s)?|\"?)*\]\,\s\[(\"BM\-[a-zA-Z0-9]{32,34}(\"\,\s)?|\"?)*\]\,\s\[(\"BM\-[a-zA-Z0-9]{32,34}(\"\,\s)?|\"?)*\]\,\s\[((\"BM\-[a-zA-Z0-9]{32,34}(\"\,\s)?|\"?)*\]\,\s\{(.*?)(\})|(\}\}))\,\s\"(.*?)\"\])"""
+    regex_passphrase_base64_link = r"""http\:\/\/(172\.28\.1\.1|\blocalhost\b)\:8000\/join_base64\/([A-Za-z0-9+&]+={0,2})(\s|\Z)"""
     regex_address = r'(\[identity\](BM\-[a-zA-Z0-9]{32,34})\[\/identity\])'
 
     for line in range(len(lines)):
@@ -87,18 +91,33 @@ def format_body(body):
             each_find = re.search(regex_address, html.unescape(lines[line]))
             to_replace = each_find.groups()[0]
             address = each_find.groups()[1]
-            is_in_address_book = AddressBook.query.filter(
+
+            identity = Identity.query.filter(
+                Identity.address == address).first()
+            address_book = AddressBook.query.filter(
                 AddressBook.address == address).first()
-            replaced_code = '<span class="replace-funcs">{0}</span> ' \
-                            '(<a class="link" href="/compose/{0}">Send Message</a>)'.format(address)
-            if not is_in_address_book:
-                replaced_code += ' (<a class="link" href="/address_book_add/{0}">' \
-                                 'Add to Address Book</a>)'.format(address)
-            lines[line] = lines[line].replace(to_replace, replaced_code)
+
+            replaced_code = """<img style="width: 15px; height: 15px; position: relative; top: 3px;" src="/icon/{0}"> <span class="replace-funcs">{0}</span> (<button type="button" class="btn" title="Copy to Clipboard" onclick="CopyToClipboard('{0}')">&#128203;</button>""".format(address)
+
+            if identity:
+                replaced_code += ' <span class="replace-funcs">You, {}</span>'.format(
+                                    identity.label)
+            elif address_book:
+                replaced_code += ' <span class="replace-funcs">{},</span>' \
+                                 ' <a class="link" href="/compose/0/{}">Send Message</a>'.format(
+                                    address_book.label, address)
+            else:
+                replaced_code += ' <a class="link" href="/compose/0/{0}">Send Message</a>,' \
+                                 ' <a class="link" href="/address_book_add/{0}">Add to Address Book</a>'.format(
+                                    address)
+            replaced_code += ')'
+
+            lines[line] = lines[line].replace(to_replace, replaced_code, 1)
 
         # Search and replace Board/List Passphrase with link
         number_finds = len(re.findall(regex_passphrase, html.unescape(lines[line])))
         for i in range(number_finds):
+            url = None
             each_find = re.search(regex_passphrase, html.unescape(lines[line]))
             passphrase = each_find.groups()[0]
             passphrase_escaped = html.escape(passphrase)
@@ -116,13 +135,16 @@ def format_body(body):
                 elif chan.type == "list":
                     link_text += "List "
                 link_text += "/{}/".format(chan.label)
-                url = '<a href="/{t}/{a}/1" title="{d}">{l}</a>'.format(
-                    t=chan.type, a=chan.address, d=chan.description, l=link_text)
+                if chan.type == "board":
+                    url = '<a class="link" href="/board/{a}/1" title="{d}">{l}</a>'.format(
+                        a=chan.address, d=chan.description, l=link_text)
+                elif chan.type == "list":
+                    url = '<a class="link" href="/list/{a}" title="{d}">{l}</a>'.format(
+                        a=chan.address, d=chan.description, l=link_text)
             else:
                 errors, pass_info = process_passphrase(passphrase)
                 if errors:
                     continue
-                passphrase_encoded = parse.quote(passphrase, safe="")
                 link_text = ""
                 if pass_info["access"] == "public":
                     link_text += "Public "
@@ -133,9 +155,64 @@ def format_body(body):
                 elif pass_info["type"] == "list":
                     link_text += "List "
                 link_text += "/{}/".format(pass_info["label"])
-                url = """<a href="/join_passphrase/{p}" title="{d}" onclick="return confirm('Are you sure you want to join this board/list?')">(Click to Join) {l}</a>""".format(
+                url = """<a class="link" href="/join_base64/{p}" title="{d}">{l} (Click to Join)</a>""".format(
+                    p=base64.b64encode(passphrase.encode()).decode(), d=pass_info["description"], l=link_text)
+            if url:
+                lines[line] = lines[line].replace(passphrase_escaped, url, 1)
+
+        # Search and replace Board/List Passphrase base64 links with friendlier link
+        number_finds = len(re.findall(regex_passphrase_base64_link, html.unescape(lines[line])))
+        for i in range(number_finds):
+            url = None
+            each_find = re.search(regex_passphrase_base64_link, html.unescape(lines[line]))
+
+            link = each_find.group()
+            if len(each_find.groups()) < 2:
+                continue
+            passphrase_encoded = each_find.groups()[1]
+            passphrase_dict_json = base64.b64decode(
+                passphrase_encoded.replace("&", "/")).decode()
+            passphrase_dict = json.loads(passphrase_dict_json)
+            passphrase_decoded = passphrase_dict["passphrase"]
+
+            # Find if passphrase already exists (already joined board/list)
+            chan = Chan.query.filter(Chan.passphrase == passphrase_decoded).first()
+            if chan:
+                link_text = ""
+                if chan.access == "public":
+                    link_text += "Public "
+                elif chan.access == "private":
+                    link_text += "Private "
+                if chan.type == "board":
+                    link_text += "Board "
+                elif chan.type == "list":
+                    link_text += "List "
+                link_text += "/{}/".format(chan.label)
+                if chan.type == "board":
+                    url = '<a class="link" href="/board/{a}/1" title="{d}">{l}</a>'.format(
+                        a=chan.address, d=chan.description, l=link_text)
+                elif chan.type == "list":
+                    url = '<a class="link" href="/list/{a}" title="{d}">{l}</a>'.format(
+                        a=chan.address, d=chan.description, l=link_text)
+            else:
+                errors, pass_info = process_passphrase(passphrase_decoded)
+                if errors:
+                    logger.error("Errors parsing passphrase: {}".format(errors))
+                    continue
+                link_text = ""
+                if pass_info["access"] == "public":
+                    link_text += "Public "
+                elif pass_info["access"] == "private":
+                    link_text += "Private "
+                if pass_info["type"] == "board":
+                    link_text += "Board "
+                elif pass_info["type"] == "list":
+                    link_text += "List "
+                link_text += "/{}/".format(pass_info["label"])
+                url = """<a class="link" href="/join_base64/{p}" title="{d}">{l} (Click to Join)</a>""".format(
                     p=passphrase_encoded, d=pass_info["description"], l=link_text)
-            lines[line] = lines[line].replace(passphrase_escaped, url)
+            if url:
+                lines[line] = lines[line].replace(link.strip(), url, 1)
 
         # Search and replace Post Reply ID with link
         dict_ids_strings = is_post_id_reply(lines[line])
@@ -157,10 +234,9 @@ def format_body(body):
                     if not name_str and address_book and address_book.label:
                         name_str = " ({})".format(address_book.label)
                 # replace body reply with link
-                rep_str = "<a class=\"underlined link\" href=\"#{}\">{}{}</a>".format(
+                rep_str = "<a class=\"link\" class=\"underlined link\" href=\"#{}\">{}{}</a>".format(
                     targetpostid, each_string, name_str)
-                lines[line] = lines[line].replace(
-                    each_string, rep_str)
+                lines[line] = lines[line].replace(each_string, rep_str)
 
         # Search and replace BM address with post ID with link
         dict_chans_threads_strings = isChanThreadReply(lines[line])
@@ -182,7 +258,8 @@ def format_body(body):
                                     Threads.thread_hash == each_post.thread_id).first()
                                 if thread_db and address_split[1] == each_post.post_id:
                                     lines[line] = lines[line].replace(
-                                        each_string, '<a href="/thread/{a}/{t}#{p}" title="{d} // {s}">>>>/{l}/{p}</a>'.format(
+                                        each_string,
+                                        '<a  class="link" href="/thread/{a}/{t}#{p}" title="{d} // {s}">>>>/{l}/{p}</a>'.format(
                                             a=each_post.chan, t=each_post.thread_id,
                                             d=chan_entry.description.replace('"', '&quot;'), s=thread_db.subject.replace('"', '&quot;'),
                                             l=html.escape(chan_entry.label), p=each_post.post_id))
@@ -200,11 +277,13 @@ def format_body(body):
                     Chan.address == each_address)).first()
                 if chan_entry:
                     lines[line] = lines[line].replace(
-                        each_string, '<a href="/board/{a}/1" title="{d}">>>>/{l}/</a>'.format(
+                        each_string,
+                        '<a class=" link"href="/board/{a}/1" title="{d}">>>>/{l}/</a>'.format(
                             a=each_address, d=chan_entry.description.replace('"', '&quot;'), l=html.escape(chan_entry.label)))
                 elif list_entry:
                     lines[line] = lines[line].replace(
-                        each_string, '<a href="/list/{a}" title="{d}">>>>/{l}/</a>'.format(
+                        each_string,
+                        '<a class="link" href="/list/{a}" title="{d}">>>>/{l}/</a>'.format(
                             a=each_address, d=list_entry.description, l=list_entry.label))
 
         list_links = []
@@ -214,7 +293,8 @@ def format_body(body):
                 list_links.append(parsed.geturl())
         for each_link in list_links:
             lines[line] = lines[line].replace(
-                each_link, '<a href="{l}" target="_blank">{l}</a>'.format(l=each_link))
+                each_link,
+                '<a class="link" href="{l}" target="_blank">{l}</a>'.format(l=each_link))
 
     return "<br/>".join(lines)
 
@@ -250,6 +330,30 @@ def replace_two_regex(body, start_regex, end_regex, start_tag, end_tag):
 def replace_ascii(text):
     list_replacements = []
     for each_find in re.finditer(r"(?i)\[aa](.*?)\[\/aa]", text, flags=re.DOTALL):
+        list_replacements.append({
+            "ID": get_random_alphanumeric_string(
+                30, with_punctuation=False, with_spaces=False),
+            "string_with_tags": each_find.group(),
+            "string_wo_tags": each_find.groups()[0]
+        })
+    return list_replacements
+
+
+def replace_ascii_small(text):
+    list_replacements = []
+    for each_find in re.finditer(r"(?i)\[aa\-s](.*?)\[\/aa\-s]", text, flags=re.DOTALL):
+        list_replacements.append({
+            "ID": get_random_alphanumeric_string(
+                30, with_punctuation=False, with_spaces=False),
+            "string_with_tags": each_find.group(),
+            "string_wo_tags": each_find.groups()[0]
+        })
+    return list_replacements
+
+
+def replace_ascii_xsmall(text):
+    list_replacements = []
+    for each_find in re.finditer(r"(?i)\[aa\-xs](.*?)\[\/aa\-xs]", text, flags=re.DOTALL):
         list_replacements.append({
             "ID": get_random_alphanumeric_string(
                 30, with_punctuation=False, with_spaces=False),
@@ -370,7 +474,7 @@ def replace_youtube(text):
                     start_string = lines[line_index][:each_find.start()]
                     end_string = lines[line_index][each_find.end():]
                     if find_count > 2:  # Process max of 2 per message
-                        lines[line_index] = '{s}<a href="{l}" target="_blank">{l}</a>{e}'.format(
+                        lines[line_index] = '{s}<a class="link" href="{l}" target="_blank">{l}</a>{e}'.format(
                             s=start_string, l=yt_url, e=end_string)
                     else:
                         yt_id = youtube_url_validation(yt_url)
@@ -400,6 +504,20 @@ def process_replacements(body, seed, message_id):
             body = body.replace(each_ascii_replace["string_with_tags"],
                                 each_ascii_replace["ID"], 1)
 
+    ascii_replacements_small = replace_ascii_small(body)
+    if ascii_replacements_small:
+        # Replace ASCII text and tags with ID strings
+        for each_ascii_replace in ascii_replacements_small:
+            body = body.replace(each_ascii_replace["string_with_tags"],
+                                each_ascii_replace["ID"], 1)
+
+    ascii_replacements_xsmall = replace_ascii_xsmall(body)
+    if ascii_replacements_xsmall:
+        # Replace ASCII text and tags with ID strings
+        for each_ascii_replace in ascii_replacements_xsmall:
+            body = body.replace(each_ascii_replace["string_with_tags"],
+                                each_ascii_replace["ID"], 1)
+
     # body = replace_youtube(body)  # deprecated
     body = replace_green_pink_text(body)
     body = replace_colors(body)
@@ -408,9 +526,11 @@ def process_replacements(body, seed, message_id):
     # Simple replacements
     body = replacements_simple.replace_8ball(body, seed)
     body = replacements_simple.replace_card_pulls(body, seed)
+    body = replacements_simple.replace_countdown(body)
     body = replacements_simple.replace_dice_rolls(body, seed)
     body = replacements_simple.replace_flip_flop(body, seed)
     body = replacements_simple.replace_iching(body, seed)
+    body = replacements_simple.replace_rock_paper_scissors(body, seed)
     body = replacements_simple.replace_rune_b_pulls(body, seed)
     body = replacements_simple.replace_rune_pulls(body, seed)
     body = replacements_simple.replace_tarot_c_pulls(body, seed)
@@ -420,7 +540,7 @@ def process_replacements(body, seed, message_id):
         body = replacements_simple.replace_stich(body, seed)
         body = replacements_simple.replace_god_song(body, seed, message_id)
     except:
-        pass
+        logger.exception("stich or god_song exception")
 
     body = replace_pair(body, "<mark>", "</mark>", "``")
     body = replace_pair(body, """<sup style="font-size: smaller;">""", "</sup>", "\^\^")
@@ -430,7 +550,7 @@ def process_replacements(body, seed, message_id):
     body = replace_pair(body, "<u>", "</u>", "__")
     body = replace_pair(body, "<s>", "</s>", "\+\+")
     body = replace_pair(body, '<span class="replace-small">', '</span>', "--")
-    body = replace_pair(body, '<span class="replace-big">', '</span>', "==")
+    body = replace_pair(body, '<span class="replace-big">', '</span>', "##")
     body = replace_pair(body, '<span style="color:#F00000">', '</span>', "\^r")
     body = replace_pair(body, '<span style="color:#57E8ED">', '</span>', "\^b")
     body = replace_pair(body, '<span style="color:#FFA500">', '</span>', "\^o")
@@ -456,6 +576,26 @@ def process_replacements(body, seed, message_id):
         r'\[\bflash\b\]', r'\[\/\bflash\b\]',
         '<span class="replace-blinking">',
         "</span>")
+    body = replace_two_regex(
+        body,
+        r'\[\bcenter\b\]', r'\[\/\bcenter\b\]',
+        '<div style="text-align: center;">',
+        "</div>")
+    body = replace_two_regex(
+        body,
+        r'\[\bback\b\]', r'\[\/\bback\b\]',
+        '<bdo dir="rtl">',
+        "</bdo>")
+    body = replace_two_regex(
+        body,
+        r'\[\bcaps\b\]', r'\[\/\bcaps\b\]',
+        '<span style="font-variant: small-caps;">',
+        "</span>")
+    body = replace_two_regex(
+        body,
+        r'\[\bkern\b\]', r'\[\/\bkern\b\]',
+        '<span style="letter-spacing: 5px;">',
+        "</span>")
 
     #
     # Code that needs to occur after text style formatting
@@ -471,6 +611,20 @@ def process_replacements(body, seed, message_id):
         # Replace ID strings with ASCII text and formatted tags
         for each_ascii_replace in ascii_replacements:
             str_final = '<span class="language-ascii-art">{}</span>'.format(
+                each_ascii_replace["string_wo_tags"])
+            body = body.replace(each_ascii_replace["ID"], str_final, 1)
+
+    if ascii_replacements_small:
+        # Replace ID strings with ASCII text and formatted tags
+        for each_ascii_replace in ascii_replacements_small:
+            str_final = '<span class="language-ascii-art-s">{}</span>'.format(
+                each_ascii_replace["string_wo_tags"])
+            body = body.replace(each_ascii_replace["ID"], str_final, 1)
+
+    if ascii_replacements_xsmall:
+        # Replace ID strings with ASCII text and formatted tags
+        for each_ascii_replace in ascii_replacements_xsmall:
+            str_final = '<span class="language-ascii-art-xs">{}</span>'.format(
                 each_ascii_replace["string_wo_tags"])
             body = body.replace(each_ascii_replace["ID"], str_final, 1)
 

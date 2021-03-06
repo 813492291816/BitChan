@@ -1,0 +1,41 @@
+{% extends "layout.html" %}
+
+{% block title %}Log{% endblock %}
+
+{% block head %}
+    <style>
+        .monospace {
+            font-family: "Lucida Console", Monaco, monospace;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    <div class="container">
+        <div class="themed" style="max-width: 800px;">
+            <div style="width: 100%; text-align: center;">
+                <h1 class="title themed bold">BitChan Log</h1>
+            </div>
+            <div>
+                <form method="post" enctype="multipart/form-data">
+                    <input type="number" name="lines" value="30"/> <input type="submit" name="save" value="Last Lines"/>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="container">
+        <div class="themed" style="max-width: 95%;">
+            <div style="width: 100%; resize: vertical; padding: 0.5em; border: 1px solid Black;">
+                <span class="monospace">{{log_output|safe}}</span>
+            </div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/footer_links.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

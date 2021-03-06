@@ -1,0 +1,81 @@
+{% extends "layout.html" %}
+
+{% block title %}Join a {{dict_chan_info["type"]}}{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <form method="post" enctype="multipart/form-data" autocomplete="off">
+            <input name="stage" value="join" type="hidden">
+            <div style="text-align: center;">
+                <h1 class="title themed bold">
+                    Joining
+                    {% if dict_chan_info["access"] == "private" %}
+                    Private
+                    {% elif dict_chan_info["access"] == "public" %}
+                    Public
+                    {% endif %}
+                    {%- if dict_chan_info["type"] == "board" %}
+                    Board
+                    {% elif dict_chan_info["type"] == "list" %}
+                    List
+                    {% endif %}
+                </h1>
+                <h2 style="font-size: 16pt">/{{dict_chan_info["label"]|safe}}/ - {{dict_chan_info["description"]|safe}}</h2>
+                <h4>{{join_address}}</h4>
+                <p class="themed" style="padding: 0.5em; max-width: 550px">Edit any PGP passphrases for this {{dict_chan_info["type"]}} below before joining.</p>
+            </div>
+            <div class="themed" style="padding-top: 0.5em">
+                <div>Message PGP Passphrase</div>
+                <input style="width: 100%" name="pgp_passphrase_msg" value="
+                {%- if rules and 'allow_list_pgp_metadata' in rules and
+                       'pgp_passphrase_msg' in dict_list_addresses[join_address] and
+                        dict_list_addresses[join_address]['pgp_passphrase_msg'] -%}
+                    {{dict_list_addresses[join_address]['pgp_passphrase_msg']}}
+                {%- else -%}
+                    {{config.PGP_PASSPHRASE_MSG}}
+                {%- endif -%}
+                ">
+            </div>
+            {%- if dict_chan_info["type"] == "board" %}
+            <div class="themed" style="padding-top: 0.5em">
+                <div>Attachment PGP Passphrase</div>
+                <input style="width: 100%" name="pgp_passphrase_attach" value="
+                {%- if rules and 'allow_list_pgp_metadata' in rules and
+                       'pgp_passphrase_attach' in dict_list_addresses[join_address] and
+                        dict_list_addresses[join_address]['pgp_passphrase_attach'] -%}
+                    {{dict_list_addresses[join_address]['pgp_passphrase_attach']}}
+                {%- else -%}
+                    {{config.PGP_PASSPHRASE_ATTACH}}
+                {%- endif -%}
+                ">
+            </div>
+            <div class="themed" style="padding-top: 0.5em">
+                <div>Steg PGP Passphrase</div>
+                <input style="width: 100%" name="pgp_passphrase_steg" value="
+                {%- if rules and 'allow_list_pgp_metadata' in rules and
+                       'pgp_passphrase_steg' in dict_list_addresses[join_address] and
+                        dict_list_addresses[join_address]['pgp_passphrase_steg'] -%}
+                    {{dict_list_addresses[join_address]['pgp_passphrase_steg']}}
+                {%- else -%}
+                    {{config.PGP_PASSPHRASE_STEG}}
+                {%- endif -%}
+                ">
+            </div>
+            {% endif %}
+            <div class="themed" style="padding-top: 0.5em">
+                <input type="checkbox" id="resync" name="resync" checked value="y"> <label for="resync">Resync to download any available messages sent prior to joining.</label>
+            </div>
+            <div style="padding-top: 1em">
+                <input type="submit" name="join" value="Join"/>
+            </div>
+        </form>
+    </div>
+
+{% endblock %}

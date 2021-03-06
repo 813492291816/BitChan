@@ -1,0 +1,40 @@
+{% set can_send_message = [] %}
+{% set can_add_address_book = [] %}
+
+{% if address not in all_chans and
+	  address not in identities %}
+	{%- do can_send_message.append(1) %}
+{% endif %}
+
+{% if address not in all_chans and
+	  address not in identities and
+	  address not in address_book %}
+	{%- do can_add_address_book.append(1) %}
+{% endif %}
+
+<div tabindex="0" class="menu">
+	<span class="link clickable">&#9654;</span>
+	<table class="menu-content">
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				Copy Address to Clipboard: <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyToClipboard('{{address}}')">&#128203;</button>
+			</td>
+		</tr>
+
+		{% if can_send_message %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/compose/0/{{address}}">Send Message</a>
+			</td>
+		</tr>
+		{% endif %}
+
+		{% if can_add_address_book %}
+		<tr class="menu-entry">
+			<td style="white-space: nowrap;">
+				<a class="link" href="/address_book_add/{{address}}">Add to Address Book</a>
+			</td>
+		</tr>
+		{% endif %}
+	</table>
+</div>

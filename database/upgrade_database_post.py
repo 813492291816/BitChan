@@ -21,7 +21,7 @@ if __name__ == "__main__":
         if not version:
             print("+++ Error: empty revision")
 
-        # elif version == 'version_id':
+        # elif version == '000000000000':
         #     print("+++ Found version {}".format(version))
         #     try:
         #         from database.models import AddressBook

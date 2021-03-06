@@ -46,8 +46,31 @@
 					<td colspan="2"><textarea rows="7" maxlength="246250" class="form" name="steg_message">{% if "steg_comment" in form_populate and form_populate["steg_comment"] %}{{form_populate["steg_comment"]}}{% endif %}</textarea></td>
 				</tr>
 				<tr>
+					<td class="form themed bold">TTL (seconds)</td>
+					<td colspan="2">
+						<input type="number" name="ttl" value="{% if 'ttl' in form_populate and form_populate['ttl'] %}{{form_populate['ttl']}}{% else %}2419200{% endif %}"/>
+					</td>
+				</tr>
+				<tr>
 					<td class="form themed bold">Image/File</td>
-					<td colspan="2"><input class="" name="file" type="file"/>{% if "file" in form_populate and form_populate["file"] %}<br/><strong>PLEASE RESELECT FILE/IMAGE</strong>{% endif %}
+					<td colspan="2">
+						<button type="button" class="btn" title="Remove File" onclick="ClearFile('file1')">&#10060;</button> <input id="file1" name="file1" type="file"/>
+						<br/><button type="button" class="btn" title="Remove File" onclick="ClearFile('file2')">&#10060;</button> <input id="file2" name="file2" type="file"/>
+						<br/><button type="button" class="btn" title="Remove File" onclick="ClearFile('file3')">&#10060;</button> <input id="file3" name="file3" type="file"/>
+						<br/><button type="button" class="btn" title="Remove File" onclick="ClearFile('file4')">&#10060;</button> <input id="file4" name="file4" type="file"/>
+						{%- if "file1" in form_populate and form_populate["file1"] %}<br/><strong>PLEASE RESELECT FILE/IMAGE</strong>{% endif %}
+					</td>
+				</tr>
+				<tr>
+					<td class="form themed bold">Image to Insert Steg</td>
+					<td>
+						<select name="image_steg_insert" style="width: 100%">
+							<option value="1">1</option>
+							<option value="2">2</option>
+							<option value="3">3</option>
+							<option value="4">4</option>
+						</select>
+					</td>
 				</tr>
 				<tr>
 					<td class="form themed bold">Image Spoiler</td>
@@ -62,8 +85,8 @@
 					<td colspan="2">
 					  <select name="upload">
 					    <option value="bitmessage"{% if "upload" in form_populate and form_populate["upload"] == "bitmessage" %} selected{% endif %}>Bitmessage (most secure, ~250KB)</option>
-					  {% for each_server in config.UPLOAD_SERVERS_NAMES %}
-					    <option value="{{each_server[0]}}"{% if "upload" in form_populate and form_populate["upload"] == each_server[0] %} selected{% endif %}>{{each_server[1]}}</option>
+					  {% for each_server in upload_sites.query.all() %}
+					    <option value="{{each_server.domain}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.domain %} selected{% endif %}>{{each_server.form_name}}</option>
 					  {% endfor %}
 					  </select>
 				    </td>

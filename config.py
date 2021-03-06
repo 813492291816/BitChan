@@ -2,39 +2,57 @@ import logging
 import os
 from logging import handlers
 
-VERSION_BITCHAN = "0.10.0"
+VERSION_BITCHAN = "0.11.0"
 VERSION_ALEMBIC = '000000000000'
-VERSION_MIN_MSG = "0.10.0"
+VERSION_MIN_MSG = "0.11.0"
 
 LOG_LEVEL = logging.INFO
 
 #
 # BitChan
 #
+API_TIMEOUT = 15
 THREADS_PER_PAGE = 15
 ID_LENGTH = 9
 LABEL_LENGTH = 25
 DESCRIPTION_LENGTH = 128
-CLEAR_INVENTORY_WAIT = 60 * 10  # 10 minutes
+LONG_DESCRIPTION_LENGTH = 1000
+CLEAR_INVENTORY_WAIT = 60 * 5  # 5 minutes
 BM_TTL = 60 * 60 * 24 * 28  # 28 days
 BM_PAYLOAD_MAX_SIZE = 2 ** 18 - 500  # 261,644
 BM_REFRESH_PERIOD = 5
+BM_SYNC_CHECK_PERIOD = 10
+BM_UNREAD_CHECK_PERIOD = 120
 BANNER_MAX_WIDTH = 650
 BANNER_MAX_HEIGHT = 400
-DOWNLOAD_MAX_AUTO = 5000000
+SPOILER_MAX_WIDTH = 250
+SPOILER_MAX_HEIGHT = 250
 DOWNLOAD_ATTEMPTS = 5
+MAX_FILE_EXT_LENGTH = 8
 SEND_BEFORE_EXPIRE_DAYS = 20
 UPLOAD_SIZE_TO_THREAD = 5000000
 FLAG_MAX_WIDTH = 25
 FLAG_MAX_HEIGHT = 15
 FLAG_MAX_SIZE = 3500
+MAX_SUBJECT_COMMENT = 246250
+THREAD_MAX_LINES = 18
+THREAD_MAX_CHARACTERS = 4000
+THREAD_MAX_HEIGHT_EM = 45
+BOARD_MAX_LINES = 12
+BOARD_MAX_CHARACTERS = 6000
+PGP_PASSPHRASE_LENGTH = 250
+PASSPHRASE_EXTRA_STRING_LENGTH = 250
+PASSPHRASE_ADDRESSES_LENGTH = 1000
+WIPE_INTERVAL_MAX = 15778800000
+WIPE_START_MAX = 33134749200
+FILE_ATTACHMENTS_MAX = 4
 FILE_EXTENSIONS_AUDIO = ["wav", "mp3", "ogg"]
 FILE_EXTENSIONS_IMAGE = ["jpg", "jpeg", "png", "gif", "webp"]
 FILE_EXTENSIONS_VIDEO = ["mp4", "webm", "ogg"]
 RESTRICTED_WORDS = ['bitchan', 'bltchan']
-PASSPHRASE_MSG = """;!_:2H wCZA@aiuIN# YsJ_k3cG!..ch:>"3'&ca2h?*g PUN)AAI7P4.O%HP!9a$I@,Gn"""
-PASSPHRASE_ZIP = """e}rs>!f_!ZqIQ1d9+>Tb!Ob0&}o;C=E|uBP.sPm%&7aaQU;Hm7Vl2A/L"ka^JV9iSUad<<"""
-PASSPHRASE_STEG = """[J;-Ao2id-1M$;Q:.=`[q5n'/kD,=h_M'B[S-_A"SMI^HEKejZT&Au0~c41||:g9Rf2Ez8"""
+PGP_PASSPHRASE_MSG = """;!_:2H wCsA@aiuIk# YsJ_k3cG!..ch:>"3'&ca2h?*g PUN)AAI7P4.O%HP!9a$I@,Gn"""
+PGP_PASSPHRASE_ATTACH = """e}rs>!f_!ZqIQ1d9+>Tb!Ob0&}o;C=E|uBP.sPm%&7aaQU;H*7Vl2A/L"9a^JV9iSUad<<"""
+PGP_PASSPHRASE_STEG = """[J;-Ao2id-1M$;Q:.=`[q5n'/QD,=h_M'B[S-_A"SMI^HEKejZT&Au0~c41||:g9Rf2Ez8"""
 BITCHAN_DEVELOPER_ADDRESS = "BM-2cWyqGJHrwCPLtaRvs3f67xsnj8NmPvRWZ"
 BITCHAN_BUG_REPORT_ADDRESS = "BM-2cVzMZfiP9qQw5MiKHD8whxrqdCwqtvdyE"
 
@@ -58,37 +76,95 @@ ADMIN_OPTIONS = [
     "word_replace",
     "css",
     "banner_base64",
+    "spoiler_base64",
+    "long_description"
 ]
 
 DICT_UPLOAD_SERVERS = {
+    "pomf.cat": {
+        "type": "curl",
+        "uri": "https://pomf.cat/upload.php",
+        "download_prefix": "https://a.pomf.cat",
+        "response": "JSON",
+        "direct_dl_url": True,
+        "extra_curl_options": None,
+        "upload_word": "files[]",
+        "form_name": "pomf.cat (75 MB)"
+    },
+    "youdieifyou.work": {
+        "type": "curl",
+        "uri": "https://youdieifyou.work/upload.php",
+        "download_prefix": None,
+        "response": "JSON",
+        "direct_dl_url": True,
+        "extra_curl_options": None,
+        "upload_word": "files[]",
+        "form_name": "youdieifyou.work (128 MB)"
+    },
+    "uguu.se": {
+        "type": "curl",
+        "uri": "https://uguu.se/upload.php",
+        "download_prefix": None,
+        "response": "JSON",
+        "direct_dl_url": True,
+        "extra_curl_options": None,
+        "upload_word": "files[]",
+        "form_name": "uguu.se (100 MB, 24h expire)"
+    },
+    "femto.pw": {
+        "type": "curl",
+        "uri": "https://v2.femto.pw/upload",
+        "download_prefix": "https://femto.pw",
+        "response": "JSON",
+        "direct_dl_url": True,
+        "extra_curl_options": None,
+        "upload_word": "upload",
+        "form_name": "v2.femto.pw (8 GB)"
+    },
+    # "catbox.moe": {  # Some tor IPs are blocked, don't use. Here for posterity.
+    #     "type": "curl",
+    #     "uri": "https://catbox.moe/user/api.php",
+    #     "download_prefix": None,
+    #     "response": "str_url",
+    #     "direct_dl_url": True,
+    #     "extra_curl_options": "-F reqtype=fileupload",
+    #     "upload_word": "fileToUpload",
+    #     "form_name": "catbox.moe (200 MB)"
+    # },
     "anonfile": {
+        "type": "anonfile",
         "uri": None,
-        "form_name": "Anonfiles.com (less secure, 100GB max)"
+        "download_prefix": None,
+        "response": None,
+        "direct_dl_url": False,
+        "extra_curl_options": None,
+        "upload_word": None,
+        "form_name": "anonfiles.com (100 GB)"
     },
     "bayfiles": {
+        "type": "anonfile",
         "uri": None,
-        "form_name": "Bayfiles.com (less secure, 20GB max)"
-    },
-    "forumfiles": {
-        "uri": "https://api.forumfiles.com",
-        "form_name": "ForumFiles.com (less secure, 20GB max)"
-    },
-    "uplovd": {
-        "uri": "https://api.uplovd.com",
-        "form_name": "Uplovd.com (less secure, 20GB max)"
+        "download_prefix": None,
+        "response": None,
+        "direct_dl_url": False,
+        "extra_curl_options": None,
+        "upload_word": None,
+        "form_name": "bayfiles.com (20 GB)"
     }
 }
-UPLOAD_SERVERS_NAMES = [(k, v["form_name"]) for k, v in DICT_UPLOAD_SERVERS.items()]
+UPLOAD_BANNED_EXT = ["exe", "scr", "cpl", "doc", "jar", "zip", "tar"]
 UPLOAD_ENCRYPTION_CIPHERS = [
     ("XChaCha20-Poly1305,32", "XChaCha20-Poly1305 (256-bit key)"),
     ("AES-GCM,32", "AES-GCM (256-bit key)"),
     ("AES-GCM,24", "AES-GCM (192-bit key)"),
-    ("AES-GCM,16", "AES-GCM (128-bit key)")
+    ("AES-GCM,16", "AES-GCM (128-bit key)"),
+    ("NONE,999", "No Encryption")
 ]
 
 DICT_PERMISSIONS = {
     "require_identity_to_post": "Require Identity to Post",
-    "automatic_wipe": "Automatic Wipe"
+    "automatic_wipe": "Automatic Wipe",
+    "allow_list_pgp_metadata": "Allow Lists to Store PGP Passphrases"
 }
 
 DEFAULT_CHANS = [
@@ -159,6 +235,9 @@ DEFAULT_CHANS = [
         "extra_string": ""
     }
 ]
+
+THEMES_DARK = ["Dark"]
+THEMES_LIGHT = ["Classic", "Frosty"]
 
 #
 # Mailbox

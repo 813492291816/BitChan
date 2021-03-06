@@ -1,21 +1,24 @@
-{% set is_board_view = board['current_thread'] == None %}
+{%- if not text -%}
+    {%- set text = "" -%}
+{%- endif %}
 
-{% set max_lines = 12 %}
-{% set max_chars = max_lines * 175 %}
-{% if not text %}
-    {% set text = "" %}
-{% endif %}
+{%- set part1 = "<br/>".join(groups[:config.BOARD_MAX_LINES]) -%}
+{%- set part2 = "<br/>".join(groups[config.BOARD_MAX_LINES:]) -%}
 
-{% set groups = format_body(text).split("<br/>") %}
-{% set part1 = "<br/>".join(groups[:max_lines]) %}
-{% set part2 = "<br/>".join(groups[max_lines:]) %}
+{%- set show_part_one = not is_board_view or
+                       (is_board_view and
+                        "".join(groups[:config.BOARD_MAX_LINES])|length < config.BOARD_MAX_CHARACTERS) -%}
+{%- set truncate_part = is_board_view and
+                       (groups[config.BOARD_MAX_LINES:]|length > 0 or
+                        num_characters > config.BOARD_MAX_CHARACTERS) -%}
 
-<p class="post">
-{{part1|safe}}
-{% if groups[max_lines:]|length > 0 and is_board_view -%}
+{%- if show_part_one or truncate_part -%}
+    {{part1|safe}}
+{%- endif -%}
+
+{%- if not show_part_one or truncate_part -%}
 <br/><br/><span class="expand">
-Comment truncated. <a href="/thread/{{board['current_chan'].address}}/{{post.thread.thread_hash}}#{{post_id(post.message_id)}}" class="link">Click here</a> to view the full post.</span>
-{% else -%}
+Comment truncated. <a class="link" href="/thread/{{board['current_chan'].address}}/{{post.thread.thread_hash}}#{{post_id(post.message_id)}}" class="link">Click here</a> to view the full post.</span>
+{%- elif part2 -%}
 <br/>{{part2|safe}}
-{% endif -%}
-</p>
+{%- endif -%}

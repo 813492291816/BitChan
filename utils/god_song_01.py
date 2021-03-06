@@ -16,7 +16,7 @@ from utils.audio import pitch_dict_note_num
 from utils.audio import scale_dict
 from utils.audio import vol_dict_num
 
-logger = logging.getLogger('bitchan.utils_audio')
+logger = logging.getLogger('bitchan.god_song')
 
 list_beats = [8, 16, 24, 32]
 
@@ -130,7 +130,7 @@ def random_with_complexity(random_, scale, complexity, amount):
 
 
 def make_god_song_01(complexity=None, amount=None, seed=None, save_path=None, scale=None):
-    logger.info("Generating God song")
+    logger.info("Generating God song to {}".format(save_path))
     if seed:
         random.seed(seed)
     if not complexity:

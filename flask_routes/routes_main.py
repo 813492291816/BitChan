@@ -2,6 +2,7 @@ import base64
 import csv
 import datetime
 import html
+import json
 import logging
 import os
 import re
@@ -27,6 +28,7 @@ from werkzeug.wrappers import Response
 import config
 from bitchan_flask import nexus
 from database.models import AddressBook
+from database.models import Alembic
 from database.models import Chan
 from database.models import Flags
 from database.models import GlobalSettings
@@ -34,6 +36,7 @@ from database.models import Identity
 from database.models import Messages
 from database.models import Threads
 from database.models import UploadProgress
+from database.models import UploadSites
 from forms import forms_board
 from forms import forms_settings
 from utils.files import LF
@@ -52,6 +55,33 @@ blueprint = Blueprint('routes_main',
 @blueprint.context_processor
 def global_var():
     return page_dict()
+
+
+@blueprint.route('/log', methods=('GET', 'POST'))
+def log():
+    form_log = forms_board.Log()
+
+    log_file = "/usr/local/bitchan/log/bitchan.log"
+
+    lines = 40
+    if form_log.lines.data:
+        lines = form_log.lines.data
+
+    command = 'cat {log} | tail -n {lines}'.format(
+        log=log_file, lines=lines)
+
+    if command:
+        log = subprocess.Popen(
+            command, stdout=subprocess.PIPE, shell=True)
+        (log_output, _) = log.communicate()
+        log.wait()
+        log_output = html.escape(str(log_output, 'latin-1')).replace("\n", "<br/>")
+    else:
+        log_output = 404
+
+    return render_template("pages/log.html",
+                           lines=lines,
+                           log_output=log_output)
 
 
 @blueprint.route('/', methods=('GET', 'POST'))
@@ -74,6 +104,7 @@ def index():
         for each_thread in threads:
             if each_board not in new_posts:
                 new_posts[each_board] = {
+                    "type": "board",
                     "threads": OrderedDict(),
                     "latest_timestamp": each_thread.timestamp_sent
                 }
@@ -104,6 +135,14 @@ def index():
                 for each_msg in messages:
                     # Replies
                     new_posts[each_board]["threads"][each_thread].append(each_msg)
+
+    lists = Chan.query.filter(Chan.type == "list").all()
+    for each_list in lists:
+        if each_list.list_timestamp_changed:
+            new_posts[each_list] = {
+                "type": "list",
+                "latest_timestamp": each_list.list_timestamp_changed
+            }
 
     # Sort boards by latest post
     newest_posts = OrderedDict(
@@ -152,7 +191,7 @@ def configure():
 
             if not status_msg['status_message']:
                 flag_filename = html.escape(form_flag.flag_file.data.filename)
-                flag_extension = html.escape(os.path.splitext(flag_filename)[1].split(".")[1].lower())
+                flag_extension = html.escape(os.path.splitext(flag_filename)[1].split(".")[-1].lower())
                 if flag_extension not in config.FILE_EXTENSIONS_IMAGE:
                     status_msg['status_message'].append(
                         "Unsurrpoted extension. Supported: {}".format(config.FILE_EXTENSIONS_IMAGE))
@@ -207,10 +246,18 @@ def configure():
             settings = GlobalSettings.query.first()
             if form_settings.theme.data:
                 settings.theme = form_settings.theme.data
+            settings.max_download_size = form_settings.max_download_size.data
+            settings.allow_net_file_size_check = form_settings.allow_net_file_size_check.data
+            settings.allow_net_book_quote = form_settings.allow_net_book_quote.data
+            settings.allow_net_ntp = form_settings.allow_net_ntp.data
+            settings.never_auto_download_unencrypted = form_settings.never_auto_download_unencrypted.data
+            if (form_settings.chan_update_display_number.data and
+                    form_settings.chan_update_display_number.data >= 0):
+                settings.chan_update_display_number = form_settings.chan_update_display_number.data
             settings.save()
+            nexus.refresh_settings()
             status_msg['status_title'] = "Success"
-            status_msg['status_message'].append(
-                "Theme changed to {}".format(form_settings.theme.data))
+            status_msg['status_message'].append("Settings saved")
 
         elif form_settings.export_chans.data:
             def export_boards_lists(chans):
@@ -314,7 +361,101 @@ def configure():
 
     return render_template("pages/configure.html",
                            form_settings=form_settings,
-                           status_msg=status_msg)
+                           status_msg=status_msg,
+                           upload_sites=UploadSites.query.all())
+
+
+@blueprint.route('/upload_site/<action>/<upload_site_id>', methods=('GET', 'POST'))
+def upload_site(action, upload_site_id):
+    form_upload_site = forms_settings.UploadSite()
+
+    status_msg = session.get('status_msg', {"status_message": []})
+    site_options = None
+    current_upload_site = None
+
+    if action in ["edit", "delete"]:
+        current_upload_site = UploadSites.query.filter(UploadSites.id == int(upload_site_id)).first()
+    elif action == "add_msg_id":
+        try:
+            site_options = json.loads(Messages.query.filter(Messages.message_id == upload_site_id).first().file_upload_settings)
+        except:
+            pass
+    
+    if request.method == 'GET':
+        if 'status_msg' in session:
+            session.pop('status_msg')
+
+    elif request.method == 'POST':
+        if form_upload_site.add.data:
+            if action == "add_msg_id":
+                if site_options:
+                    upload_site = UploadSites()
+                    upload_site.domain = site_options["domain"]
+                    upload_site.type = site_options["type"]
+                    upload_site.uri = site_options["uri"]
+                    upload_site.download_prefix = site_options["download_prefix"]
+                    upload_site.response = site_options["response"]
+                    upload_site.direct_dl_url = site_options["direct_dl_url"]
+                    upload_site.extra_curl_options = site_options["extra_curl_options"]
+                    upload_site.upload_word = site_options["upload_word"]
+                    upload_site.form_name = site_options["form_name"]
+                    upload_site.save()
+                else:
+                    status_msg['status_msg'].append("Message not found")
+            elif action == "add":
+                new_site = UploadSites()
+                new_site.domain = form_upload_site.domain.data
+                new_site.type = form_upload_site.type.data
+                new_site.uri = form_upload_site.uri.data
+                new_site.download_prefix = form_upload_site.download_prefix.data
+                new_site.response = form_upload_site.response.data
+                new_site.direct_dl_url = form_upload_site.direct_dl_url.data
+                new_site.extra_curl_options = form_upload_site.extra_curl_options.data
+                new_site.upload_word = form_upload_site.upload_word.data
+                new_site.form_name = form_upload_site.form_name.data
+                new_site.save()
+
+            status_msg['status_message'].append("Upload site added")
+            status_msg['status_title'] = "Success"
+
+        elif form_upload_site.save.data:
+            upload_site = UploadSites.query.filter(UploadSites.id == int(upload_site_id)).first()
+            if upload_site:
+                upload_site.domain = current_upload_site.domain.data
+                upload_site.type = current_upload_site.type.data
+                upload_site.uri = current_upload_site.uri.data
+                upload_site.download_prefix = current_upload_site.download_prefix.data
+                upload_site.response = current_upload_site.response.data
+                upload_site.direct_dl_url = current_upload_site.direct_dl_url.data
+                upload_site.extra_curl_options = current_upload_site.extra_curl_options.data
+                upload_site.upload_word = current_upload_site.upload_word.data
+                upload_site.form_name = current_upload_site.form_name.data
+                upload_site.save()
+
+                status_msg['status_message'].append("Upload site saved")
+                status_msg['status_title'] = "Success"
+            else:
+                status_msg['status_msg'].append("Upload site not found")
+
+        elif form_upload_site.delete.data:
+            upload_site = UploadSites.query.filter(UploadSites.id == upload_site_id).first()
+            if upload_site:
+                upload_site.delete()
+
+        session['status_msg'] = status_msg
+
+        if 'status_title' not in status_msg and status_msg['status_message']:
+            status_msg['status_title'] = "Error"
+
+        return redirect(url_for("routes_main.configure"))
+
+    return render_template("pages/upload_site.html",
+                           action=action,
+                           current_upload_site=current_upload_site,
+                           form_upload_site=form_upload_site,
+                           site_options=site_options,
+                           status_msg=status_msg,
+                           upload_sites=UploadSites.query.all())
 
 
 @blueprint.route('/status', methods=('GET', 'POST'))
@@ -328,17 +469,20 @@ def status():
 
     if request.method == 'POST':
         if form_status.tor_newnym.data:
-            with Controller.from_port(address="172.28.1.2", port=9061) as controller:
-                controller.authenticate(password=config.TOR_PASS)
-                controller.signal(Signal.NEWNYM)
-
-                status_msg['status_title'] = "Success"
-                status_msg['status_message'].append("New Tor identity requested")
+            try:
+                with Controller.from_port(address="172.28.1.2", port=9061) as controller:
+                    controller.authenticate(password=config.TOR_PASS)
+                    controller.signal(Signal.NEWNYM)
+                    status_msg['status_title'] = "Success"
+                    status_msg['status_message'].append("New tor identity requested")
+            except Exception as err:
+                status_msg['status_message'].append("Error getting new tor identity: {}".format(err))
 
     lf = LF()
     if lf.lock_acquire(config.LOCKFILE_API, to=60):
         try:
-            bm_status = nexus._api.clientStatus()
+            bm_status_raw = nexus._api.clientStatus()
+            bm_status = OrderedDict(sorted(bm_status_raw.items()))
         except Exception as err:
             logger.error("Error: {}".format(err))
         finally:
@@ -348,7 +492,7 @@ def status():
         tor_version = subprocess.check_output(
             'docker exec -i tor tor --version --quiet', shell=True, text=True)
     except:
-        tor_version = "error"
+        tor_version = "Error getting tor version"
 
     tor_circuit_dict = {}
     try:
@@ -435,6 +579,8 @@ def bug_report():
     if request.method == 'POST':
         if form_bug.send.data and form_bug.bug_report.data:
             try:
+                # Only send from a board or list
+                # Do not send from an identity
                 if config.DEFAULT_CHANS[0]["address"] in nexus.get_all_chans():
                     address_from = config.DEFAULT_CHANS[0]["address"]
                 elif nexus.get_all_chans():
@@ -445,7 +591,10 @@ def bug_report():
                         "Join/Create a board or list and try again.")
                     address_from = None
 
-                message_compiled = "BitChan version: {}\n\n".format(config.VERSION_BITCHAN)
+                alembic_version = Alembic.query.first().version_num
+                message_compiled = "BitChan version: {}\n".format(config.VERSION_BITCHAN)
+                message_compiled += "Database version: {} (should be {})\n\n".format(
+                    alembic_version, config.VERSION_ALEMBIC)
                 message_compiled += "Message:\n\n{}".format(form_bug.bug_report.data)
                 message_b64 = base64.b64encode(message_compiled.encode()).decode()
 

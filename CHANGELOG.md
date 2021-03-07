@@ -1,3 +1,17 @@
+## 0.11.1
+
+This is a bugfix release. Users with BitChan < 0.11.0 will need to follow the instructions listed in the 0.11.0 changelog notes, below, to upgrade to this version. Users with Bitchan 0.11.0 can merely pull the new code and rebuild to upgrade to 0.11.1:
+
+```bash
+cd BitChan/docker
+sudo docker-compose down
+git pull
+sudo docker-compose up --build -d
+```
+
+ - fix creating posts with attachments greater than 5 MB
+
+
 ## 0.11.0
 
 This beta release fixes bugs and implements new features. Due to numerous database incompatibilities with v0.10.0 and lower, you will need to delete all bitchan and bitmessage user data (volumes) to upgrade to this version. It is recommended to export your information before upgrading, which will provide you with the passphrases used to join boards, lists, and recreate your identities, and the addresses to repopulate your address book. Once BitChan becomes more stable and leaves beta, alembic will be used to update the database when upgrading, which will permit migrating to a new version without having to delete user data.

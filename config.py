@@ -2,7 +2,7 @@ import logging
 import os
 from logging import handlers
 
-VERSION_BITCHAN = "0.11.0"
+VERSION_BITCHAN = "0.11.1"
 VERSION_ALEMBIC = '000000000000'
 VERSION_MIN_MSG = "0.11.0"
 

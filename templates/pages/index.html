@@ -116,8 +116,8 @@
                     {% endfor %}
         </div>
                 {% elif newest_posts[each_chan]["type"] == "list" %}
-        <div style="padding: {% if not loop.first %}1.5em{% else %}0{% endif %} 0 0.5em 0.5em">
-            <span style="font-size: 0.7em">{{timestamp_to_date(newest_posts[each_chan]["latest_timestamp"])}}</span>
+        <div class="themed" style="padding: {% if not loop.first %}1.5em{% else %}0{% endif %} 0 0.5em 0.5em">
+            <span class="themed" style="font-size: 0.7em">{{timestamp_to_date(newest_posts[each_chan]["latest_timestamp"])}}</span>
             <br/>List: <a class="link" style="font-size: 1.2em;" href="/list/{{each_chan.address}}">/{{chans_list_info[each_chan.address]["label"]|safe}}/ - {{chans_list_info[each_chan.address]["description"]|safe}}</a>
         </div>
                 {% endif %}

@@ -403,175 +403,177 @@ def send_message(errors, form_post, form_steg, dict_send):
         save_encrypted_path = "/tmp/{}".format(dict_send["upload_filename"])
 
     if any(dict_send["file_order"]) and form_post.upload.data != "bitmessage":
-        upload_info = UploadSites.query.filter(
-            UploadSites.domain == form_post.upload.data).first()
-        if upload_info:
-            dict_send["file_url_type"] = upload_info.domain
-            dict_send["file_upload_settings"] = {
-                "domain": upload_info.domain,
-                "type": upload_info.type,
-                "uri": upload_info.uri,
-                "download_prefix": upload_info.download_prefix,
-                "response": upload_info.response,
-                "direct_dl_url": upload_info.direct_dl_url,
-                "extra_curl_options": upload_info.extra_curl_options,
-                "upload_word": upload_info.upload_word,
-                "form_name": upload_info.form_name
-            }
-        else:
-            logger.error("{}: Upload domain not found".format(dict_send["post_id"]))
+        with session_scope(DB_PATH) as new_session:
+            upload_info = new_session.query(UploadSites).filter(
+                UploadSites.domain == form_post.upload.data).first()
 
-        # encrypt file
-        if dict_send["file_enc_cipher"] == "NONE":
-            logger.info("{}: Not encrypting attachment(s)".format(dict_send["post_id"]))
-            os.rename(zip_file, save_encrypted_path)
-        else:
-            dict_send["file_enc_password"] = get_random_alphanumeric_string(300)
-            logger.info("{}: Encrypting attachment(s) with {} and {}-bit key".format(
-                dict_send["post_id"],
-                dict_send["file_enc_cipher"],
-                dict_send["file_enc_key_bytes"] * 8))
-            ret_crypto = crypto_multi_enc(
-                dict_send["file_enc_cipher"],
-                dict_send["file_enc_password"] + config.PGP_PASSPHRASE_ATTACH,
-                zip_file,
-                save_encrypted_path,
-                key_bytes=dict_send["file_enc_key_bytes"])
-            if not ret_crypto:
-                msg = "Unknown encryption cipher: {}".format(dict_send["file_enc_cipher"])
+            if upload_info:
+                dict_send["file_url_type"] = upload_info.domain
+                dict_send["file_upload_settings"] = {
+                    "domain": upload_info.domain,
+                    "type": upload_info.type,
+                    "uri": upload_info.uri,
+                    "download_prefix": upload_info.download_prefix,
+                    "response": upload_info.response,
+                    "direct_dl_url": upload_info.direct_dl_url,
+                    "extra_curl_options": upload_info.extra_curl_options,
+                    "upload_word": upload_info.upload_word,
+                    "form_name": upload_info.form_name
+                }
+            else:
+                logger.error("{}: Upload domain not found".format(dict_send["post_id"]))
+
+            # encrypt file
+            if dict_send["file_enc_cipher"] == "NONE":
+                logger.info("{}: Not encrypting attachment(s)".format(dict_send["post_id"]))
+                os.rename(zip_file, save_encrypted_path)
+            else:
+                dict_send["file_enc_password"] = get_random_alphanumeric_string(300)
+                logger.info("{}: Encrypting attachment(s) with {} and {}-bit key".format(
+                    dict_send["post_id"],
+                    dict_send["file_enc_cipher"],
+                    dict_send["file_enc_key_bytes"] * 8))
+                ret_crypto = crypto_multi_enc(
+                    dict_send["file_enc_cipher"],
+                    dict_send["file_enc_password"] + config.PGP_PASSPHRASE_ATTACH,
+                    zip_file,
+                    save_encrypted_path,
+                    key_bytes=dict_send["file_enc_key_bytes"])
+                if not ret_crypto:
+                    msg = "Unknown encryption cipher: {}".format(dict_send["file_enc_cipher"])
+                    errors.append(msg)
+                    logger.error("{}: {}".format(dict_send["post_id"], msg))
+                    return "Error", errors
+
+                delete_file(zip_file)
+
+            # Generate hash before parts removed
+            dict_send["file_sha256_hash"] = generate_hash(save_encrypted_path)
+            if dict_send["file_sha256_hash"]:
+                logger.info("{}: Attachment hash generated: {}".format(
+                    dict_send["post_id"], dict_send["file_sha256_hash"]))
+
+            file_size = os.path.getsize(save_encrypted_path)
+            number_of_extracts = 3
+            if file_size < 2000:
+                extract_starts_sizes = [{
+                    "start": 0,
+                    "size": int(file_size * 0.5)
+                }]
+            else:
+                extract_starts_sizes = [{
+                    "start": 0,
+                    "size": 200
+                }]
+                sequences = return_non_overlapping_sequences(
+                    number_of_extracts, 200, file_size - 200, 200, 1000)
+                for pos, size in sequences:
+                    extract_starts_sizes.append({
+                        "start": pos,
+                        "size": size
+                    })
+                extract_starts_sizes.append({
+                    "start": file_size - 200,
+                    "size": 200
+                })
+            logger.info("{}: File extraction positions and sizes: {}".format(
+                dict_send["post_id"], extract_starts_sizes))
+            logger.info("{}: File size before: {}".format(
+                dict_send["post_id"], os.path.getsize(save_encrypted_path)))
+
+            data_extracted_start_base64 = data_file_multiple_extract(
+                save_encrypted_path, extract_starts_sizes, chunk=4096)
+
+            dict_send["file_size"] = os.path.getsize(save_encrypted_path)
+            logger.info("{}: File size after: {}".format(
+                dict_send["post_id"], dict_send["file_size"]))
+
+            dict_send["file_extracts_start_base64"] = json.dumps(data_extracted_start_base64)
+
+            # Upload file
+            upload_id = get_random_alphanumeric_string(
+                12, with_spaces=False, with_punctuation=False)
+            try:
+                with session_scope(DB_PATH) as new_session:
+                    upl = UploadProgress()
+                    upl.upload_id = upload_id
+                    upl.uploading = True
+                    upl.subject = base64.b64decode(dict_send["subject"]).decode()
+                    upl.total_size_bytes = dict_send["file_size"]
+                    new_session.add(upl)
+                    new_session.commit()
+
+                upload_success = None
+                curl_options = None
+                if ("type" in dict_send["file_upload_settings"] and
+                        dict_send["file_upload_settings"]["type"] == "anonfile"):
+                    if dict_send["file_upload_settings"]["uri"]:
+                        anon = AnonFile(
+                            proxies=config.TOR_PROXIES,
+                            custom_timeout=432000,
+                            uri=dict_send["file_upload_settings"]["uri"],
+                            upload_id=upload_id)
+                    else:
+                        anon = AnonFile(
+                            proxies=config.TOR_PROXIES,
+                            custom_timeout=432000,
+                            server=form_post.upload.data,
+                            upload_id=upload_id)
+                elif ("type" in dict_send["file_upload_settings"] and
+                        dict_send["file_upload_settings"]["type"] == "curl"):
+                    curl_options = dict_send["file_upload_settings"]
+
+                for i in range(3):
+                    logger.info("{}: Uploading {} file".format(
+                        dict_send["post_id"],
+                        human_readable_size(os.path.getsize(save_encrypted_path))))
+                    if ("type" in dict_send["file_upload_settings"] and
+                            dict_send["file_upload_settings"]["type"] == "anonfile"):
+                        status, web_url = anon.upload_file(save_encrypted_path)
+                    elif (curl_options and
+                            "type" in dict_send["file_upload_settings"] and
+                            dict_send["file_upload_settings"]["type"] == "curl"):
+                        status, web_url = upload_curl(
+                            dict_send["post_id"],
+                            curl_options["domain"],
+                            curl_options["uri"],
+                            save_encrypted_path,
+                            download_prefix=curl_options["download_prefix"],
+                            extra_curl_options=curl_options["extra_curl_options"],
+                            upload_word=curl_options["upload_word"],
+                            response=curl_options["response"])
+
+                    if not status:
+                        logger.error("{}: File upload failed".format(dict_send["post_id"]))
+                    else:
+                        logger.info("{}: Upload success: URL: {}".format(dict_send["post_id"], web_url))
+                        upload_success = web_url
+                        with session_scope(DB_PATH) as new_session:
+                            upl = new_session.query(UploadProgress).filter(
+                                UploadProgress.upload_id == upload_id).first()
+                            if upl:
+                                upl.progress_size_bytes = os.path.getsize(save_encrypted_path)
+                                upl.progress_percent = 100
+                                upl.uploading = False
+                                new_session.commit()
+                        break
+                    time.sleep(15)
+            finally:
+                delete_file(save_encrypted_path)
+                with session_scope(DB_PATH) as new_session:
+                    upl = new_session.query(UploadProgress).filter(
+                        UploadProgress.upload_id == upload_id).first()
+                    if upl:
+                        upl.uploading = False
+                        new_session.commit()
+
+            if upload_success:
+                dict_send["file_url"] = upload_success
+            else:
+                msg = "File upload failed after 3 attempts"
                 errors.append(msg)
                 logger.error("{}: {}".format(dict_send["post_id"], msg))
                 return "Error", errors
-
-            delete_file(zip_file)
-
-        # Generate hash before parts removed
-        dict_send["file_sha256_hash"] = generate_hash(save_encrypted_path)
-        if dict_send["file_sha256_hash"]:
-            logger.info("{}: Attachment hash generated: {}".format(
-                dict_send["post_id"], dict_send["file_sha256_hash"]))
-
-        file_size = os.path.getsize(save_encrypted_path)
-        number_of_extracts = 3
-        if file_size < 2000:
-            extract_starts_sizes = [{
-                "start": 0,
-                "size": int(file_size * 0.5)
-            }]
-        else:
-            extract_starts_sizes = [{
-                "start": 0,
-                "size": 200
-            }]
-            sequences = return_non_overlapping_sequences(
-                number_of_extracts, 200, file_size - 200, 200, 1000)
-            for pos, size in sequences:
-                extract_starts_sizes.append({
-                    "start": pos,
-                    "size": size
-                })
-            extract_starts_sizes.append({
-                "start": file_size - 200,
-                "size": 200
-            })
-        logger.info("{}: File extraction positions and sizes: {}".format(
-            dict_send["post_id"], extract_starts_sizes))
-        logger.info("{}: File size before: {}".format(
-            dict_send["post_id"], os.path.getsize(save_encrypted_path)))
-
-        data_extracted_start_base64 = data_file_multiple_extract(
-            save_encrypted_path, extract_starts_sizes, chunk=4096)
-
-        dict_send["file_size"] = os.path.getsize(save_encrypted_path)
-        logger.info("{}: File size after: {}".format(
-            dict_send["post_id"], dict_send["file_size"]))
-
-        dict_send["file_extracts_start_base64"] = json.dumps(data_extracted_start_base64)
-
-        # Upload file
-        upload_id = get_random_alphanumeric_string(
-            12, with_spaces=False, with_punctuation=False)
-        try:
-            with session_scope(DB_PATH) as new_session:
-                upl = UploadProgress()
-                upl.upload_id = upload_id
-                upl.uploading = True
-                upl.subject = base64.b64decode(dict_send["subject"]).decode()
-                upl.total_size_bytes = dict_send["file_size"]
-                new_session.add(upl)
-                new_session.commit()
-
-            upload_success = None
-            curl_options = None
-            if ("type" in dict_send["file_upload_settings"] and
-                    dict_send["file_upload_settings"]["type"] == "anonfile"):
-                if dict_send["file_upload_settings"]["uri"]:
-                    anon = AnonFile(
-                        proxies=config.TOR_PROXIES,
-                        custom_timeout=432000,
-                        uri=dict_send["file_upload_settings"]["uri"],
-                        upload_id=upload_id)
-                else:
-                    anon = AnonFile(
-                        proxies=config.TOR_PROXIES,
-                        custom_timeout=432000,
-                        server=form_post.upload.data,
-                        upload_id=upload_id)
-            elif ("type" in dict_send["file_upload_settings"] and
-                    dict_send["file_upload_settings"]["type"] == "curl"):
-                curl_options = dict_send["file_upload_settings"]
-
-            for i in range(3):
-                logger.info("{}: Uploading {} file".format(
-                    dict_send["post_id"],
-                    human_readable_size(os.path.getsize(save_encrypted_path))))
-                if ("type" in dict_send["file_upload_settings"] and
-                        dict_send["file_upload_settings"]["type"] == "anonfile"):
-                    status, web_url = anon.upload_file(save_encrypted_path)
-                elif (curl_options and
-                        "type" in dict_send["file_upload_settings"] and
-                        dict_send["file_upload_settings"]["type"] == "curl"):
-                    status, web_url = upload_curl(
-                        dict_send["post_id"],
-                        curl_options["domain"],
-                        curl_options["uri"],
-                        save_encrypted_path,
-                        download_prefix=curl_options["download_prefix"],
-                        extra_curl_options=curl_options["extra_curl_options"],
-                        upload_word=curl_options["upload_word"],
-                        response=curl_options["response"])
-
-                if not status:
-                    logger.error("{}: File upload failed".format(dict_send["post_id"]))
-                else:
-                    logger.info("{}: Upload success: URL: {}".format(dict_send["post_id"], web_url))
-                    upload_success = web_url
-                    with session_scope(DB_PATH) as new_session:
-                        upl = new_session.query(UploadProgress).filter(
-                            UploadProgress.upload_id == upload_id).first()
-                        if upl:
-                            upl.progress_size_bytes = os.path.getsize(save_encrypted_path)
-                            upl.progress_percent = 100
-                            upl.uploading = False
-                            new_session.commit()
-                    break
-                time.sleep(15)
-        finally:
-            delete_file(save_encrypted_path)
-            with session_scope(DB_PATH) as new_session:
-                upl = new_session.query(UploadProgress).filter(
-                    UploadProgress.upload_id == upload_id).first()
-                if upl:
-                    upl.uploading = False
-                    new_session.commit()
-
-        if upload_success:
-            dict_send["file_url"] = upload_success
-        else:
-            msg = "File upload failed after 3 attempts"
-            errors.append(msg)
-            logger.error("{}: {}".format(dict_send["post_id"], msg))
-            return "Error", errors
 
     elif any(dict_send["file_order"]) and form_post.upload.data == "bitmessage":
         # encrypt file

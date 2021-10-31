@@ -1,44 +1,32 @@
 import html
 import json
 import logging
+import socket
 import sqlite3
 import time
+import xmlrpc.client
 from binascii import unhexlify
-
-from sqlalchemy import and_
 
 import config
 from database.models import Chan
-from database.models import Command
 from database.models import Messages
 from database.utils import session_scope
-from utils.files import delete_files_recursive
 from utils.files import delete_message_files
-from utils.shared import get_combined_access
+from utils.shared import add_mod_log_entry
+from utils.shared import regenerate_thread_card_and_popup
 
 DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 
 logger = logging.getLogger('bitchan.gateway')
 
+bm_endpoint = "http://{user}:{pw}@{host}:{port}/".format(
+    user=config.BM_USERNAME,
+    pw=config.BM_PASSWORD,
+    host=config.BM_HOST,
+    port=config.BM_PORT)
 
-def get_access(address):
-    with session_scope(DB_PATH) as new_session:
-        chan = new_session.query(Chan).filter(Chan.address == address).first()
-        if chan:
-            admin_cmd = new_session.query(Command).filter(and_(
-                Command.action == "set",
-                Command.action_type == "options",
-                Command.chan_address == chan.address)).first()
-            return get_combined_access(admin_cmd, chan)
-    return {}
-
-
-def get_bitmessage_endpoint():
-    username = config.username
-    password = config.password
-    host = config.host
-    port = config.port
-    return "http://{}:{}@{}:{}/".format(username, password, host, port)
+socket.setdefaulttimeout(config.API_TIMEOUT)
+api = xmlrpc.client.ServerProxy(bm_endpoint)
 
 
 def get_msg_address_from(msg_id: str):
@@ -79,13 +67,19 @@ def chan_auto_clears_and_message_too_old(address, timestamp_sent):
                 return
 
 
-def delete_and_replace_comment(message_id, new_comment):
+def delete_and_replace_comment(message_id, new_comment, from_address=None, local_delete=False):
     with session_scope(DB_PATH) as new_session:
         message = new_session.query(Messages).filter(
             Messages.message_id == message_id).first()
         if message:
-            message.message = '<span class="god-text">ORIGINAL COMMENT DELETED. REASON: {}</span>'.format(
-                html.escape(new_comment))
+            if from_address:
+                message.message = '<span class="god-text">ORIGINAL COMMENT DELETED BY {}. REASON: {}</span>'.format(
+                    html.escape(from_address), html.escape(new_comment))
+                user_from = html.escape(from_address)
+            else:
+                message.message = '<span class="god-text">ORIGINAL COMMENT LOCALLY DELETED. REASON: {}</span>'.format(
+                    html.escape(new_comment))
+                user_from = None
             message.file_url = None
             message.file_decoded = None
             message.file_download_successful = None
@@ -102,27 +96,26 @@ def delete_and_replace_comment(message_id, new_comment):
             message.file_do_not_download = None
             message.file_download_successful = None
             new_session.commit()
+
+            regenerate_thread_card_and_popup(message.thread.thread_hash)
+
+            # Delete all files associated with message
             delete_message_files(message_id)
 
+            # Add mod log entry
+            if local_delete:
+                log_description = "Post locally deleted with comment: {}".format(
+                    html.escape(new_comment))
+            else:
+                log_description = "Post remotely deleted with comment: {}".format(
+                    html.escape(new_comment))
 
-def delete_db_message(message_id):
-    """Delete post from local DB"""
-    with session_scope(DB_PATH) as new_session:
-        this_message = new_session.query(Messages).filter(
-            Messages.message_id == message_id).first()
-        if this_message:
-            file_path = "{}/{}".format(
-                config.FILE_DIRECTORY,
-                this_message.message_id,
-                this_message.file_extension)
-            img_thumb_path = "{}/{}_thumb".format(
-                config.FILE_DIRECTORY,
-                this_message.message_id,
-                this_message.file_extension)
-            delete_files_recursive(file_path)
-            delete_files_recursive(img_thumb_path)
-            new_session.delete(this_message)
-            new_session.commit()
+            add_mod_log_entry(
+                log_description,
+                message_id=message_id,
+                user_from=user_from,
+                board_address=message.thread.chan.address,
+                thread_hash=message.thread.thread_hash)
 
 
 def log_age_and_expiration(message_id, time_now, time_sent, time_expires):

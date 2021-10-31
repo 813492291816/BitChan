@@ -1,0 +1,19 @@
+<section>
+    <details>
+        <summary>Post Options</summary>
+        <table style="width: 100%;">
+          <tbody>
+        {% if thread %}
+            <tr>
+                <td><label for="sage">Sage</label></td>
+                <td><input type="checkbox" id="sage" name="sage" value="y"{% if "sage" in form_populate and form_populate["sage"] %} checked{% endif %}/></td>
+            </tr>
+        {% endif %}
+            <tr>
+                <td><label for="ttl">TTL (seconds)</label></td>
+                <td><input type="number" id="ttl" name="ttl" value="{% if 'ttl' in form_populate and form_populate['ttl'] %}{{form_populate['ttl']}}{% else %}2419200{% endif %}"/></td>
+            </tr>
+          </tbody>
+        </table>
+    </details>
+</section>

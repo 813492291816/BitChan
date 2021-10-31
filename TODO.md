@@ -1,19 +1,22 @@
+# TODO
+
+## To be completed before next release
+
+ - None
+
 # Bugs
 
- - Whonix Cannot find URL for file downloads?
+ - None
 
 # Ideas
 
  - add ~~exporting~~ and importing to preserve address book, identities, lists, and boards
+ - include upload methods in exporting/importing
  - allow owners/admin to reverse bans
- - allow bans durations
+ - allow ban durations
  - move board and list links side by side (2 columns)
- - allow threads to be locally & globally locked and unlocked, stickied and unstickied
- - show a catalog of threads from all boards, ordered by most recent post
- - show a catalog of all threads per board, ordered by most recent post
  - allow boards/lists to have categories (to group together)
  - allow changing board/list label
- - mod logs? Ex: Post deleted at time t in thread x by user y. Posts deleted without comment totally disappear, so there should be a record. Maybe with optional admin display, where the owner is able to choose between logging it as "deleted by [admin]" or "deleted by anonymous"
  - refresh threads for new board joiners, either automatically or manually. Posting with an identity will be required to authenticate the sender. Anyone receiving the refreshed messages who already has one will see no change, but anyone who doesn't have a message will see it appear. This is more crucial for OPs than replies. The refresh function will preserve the original timestamp. If a recipient of a refreshed post previously deleted reply, it should stay deleted (deleted post IDs are currently logged in a database until the message TTL expires).
  - when someone goes to reply by clicking a post id and has text highlighted in that post to which he is replying, that text should be copied below the message id in the body of the reply's comment box. The cursor in the message box should appear on a new line below the copied, highlighted text.
  - allow local deletion of images on posts and prevent them from being redownloaded (locally blacklist a message ID).
@@ -27,7 +30,6 @@
  - report board: Any user can report a post in an imageboard chan and it will get duplicated and sent to a report chan. The reported post can include a reason why it was reported. A board owner could create a report board and set it as a permission of a newly-created board. The owner/admin could track the status of the board without having to monitor every post in every thread of a board. This tracking, provided by the user generated reports, can allow the owner/admin to decide whether the posting rules need to be updated or if the board should be abandoned for a new one.
  - more board rules: pictures or other files could be disabled, message length
  - add post editing (non-board addresses only)
- - add 'no bump' and 'anchor' option: Allow OPs and repliers the option to NOT bump a thread. Anchoring a thread means that no post can bump a thread. This usually happens when a thread is low quality but not so low as to warrant being deleted. The owner/admin should be allowed to change the thread status to anchored. Also, regular users should be able to, in addition to locally hiding or deleting a thread, locally anchor it. In tandem with this, or if anchoring is not possible, allow users to have a list of threads that they are watching.
  - add list of watched threads
  - add "last 100" thread view. Only load the last 100 posts plus the OP appears at the top.
  - add "expand all images" button
@@ -42,7 +44,6 @@
  - sfw/nsfw labels for boards
  - investigate whether Peertube could be an alternative to Youtube/Invidious
  - investigate what if any use Filecoin could have
- - add full no-JS support to interface
  - gather unjoined board/list passphrases posted on all joined boards into a list and present it on the home page so the user can easily join them if they want.
  - write full BitChan build instructions for ARM, POWER9 and RISC-V, and the other Free Hardware architectures.
  - can ed25519 or better (post-quantum quality curves) be used
@@ -55,8 +56,8 @@
  - add a message PGP, attachment PGP and steg PGP passphrase manager and allow trying to decrypt every message, attachment and steg with each stored passphrase.
  - allow sending mail to multiple addresses at once
  - allow lists featured on the homepage to display custom banner pic like boards display OP's pic
- - add a BitChan wide search
- - put flags inside of a scrollable area if there's more than 5
- - put upload sites inside of a scrollable area if there's more than 5
- - add confirmation pages for deletions and bannings
- - verify custom flag filenames and labels are properly escaped and non-alphanumerics don't break things
+ - put flags inside a scrollable area if there's more than 5
+ - put upload sites inside a scrollable area if there's more than 5
+ - make ID/address section in the board/list creation page collapsible after if entries are greater than a certain number
+ - The greyed out (in dark theme anyway) unlinked board/list name that occurs when you're in a board/thread/list should still be linked so that when you are at the bottom of a thread, board index or list you can click it and reload that page.
+ - thread watch list

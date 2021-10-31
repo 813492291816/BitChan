@@ -1,0 +1,189 @@
+{% extends "layout.html" %}
+
+{% set total_pages = (mod_log_count / settings.results_per_page_mod_log)|round(0, "ceil")|int %}
+{% set global_admin, allow_msg = allowed_access(check_is_global_admin=True) %}
+
+{%- if address != "0" %}
+    {% set chan_label, chan_description, chan_type = get_chan_mod_info(address) %}
+{%- endif -%}
+
+{% block title %}Mod Log - {% endblock %}
+
+{% block head %}
+    <script>
+        $(window).scroll(function() {
+            var height = $(window).scrollTop();
+            if (height > 100) {
+                $('#back2Top').fadeIn();
+                $('#back2Bottom').fadeOut();
+            } else {
+                $('#back2Bottom').fadeIn();
+                $('#back2Top').fadeOut();
+            }
+        });
+
+        $(document).ready(function() {
+            $("#back2Top").click(function(event) {
+                event.preventDefault();
+                $("html, body").animate({scrollTop: 0}, "slow");
+                return false;
+            });
+            $("#back2Bottom").click(function(event) {
+                event.preventDefault();
+                $("html, body").animate({scrollTop: $(document).height()}, "slow");
+                return false;
+            });
+        });
+
+        function toggle(source) {
+            var inputs = document.getElementsByTagName("input");
+            for (let x=0; x<inputs.length; x++){
+                if (inputs[x].type == "checkbox" &&
+                        inputs[x].name.indexOf("deletebulk_") == 0) {
+                    inputs[x].checked = source.checked;
+                }
+            }
+        }
+    </script>
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+
+        tr:nth-child(odd) {
+            background-color: {{themes[settings.theme].posthighlight}};
+        }
+
+        .wrap {
+            text-align: center;
+        }
+        .outer {
+            display: inline-block;
+            margin: 0 auto;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
+    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_title"] in ["Error", "Success"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+<div class='wrap'>
+    <h1 class="title themed bold" style="text-align: center">
+        {% if address != "0" and chan_label and chan_description and chan_type %}
+            {% if chan_type == "board" %}
+                Board
+            {% elif chan_type == "list" %}
+                List
+            {% endif %}
+            Mod Log -
+            <a class="link title" href="/board/{{address}}/1">/{{chan_label|safe}}/ - {{chan_description|safe}}</a>
+        {%- endif -%}
+    </h1>
+
+    {% if mod_log %}
+        <div class="themed" style="padding: 1em 0;">{{mod_log_count}} {% if mod_log_count == 1 %}Entry{% else %}Entries{% endif %}{% if total_pages > 1 %}, {{total_pages}} Pages{% endif %}</div>
+        <form action="/mod_log/{{address}}/{{mod_log_page}}" method="post">
+        <table class="table themed" style="margin-left: auto; margin-right: auto;">
+            <tr>
+                {% if global_admin %}
+                <td><input type="checkbox" onClick="toggle(this)"/></td>
+                {% endif %}
+                <td>Timestamp</td>
+                <td>From</td>
+
+                {% if address == "0" %}
+                <td>Board/List</td>
+                {% endif %}
+
+                {% if chan_type != "list" %}
+                <td>Thread</td>
+                <td>Post ID</td>
+                {% endif %}
+
+                <td>Description</td>
+            </tr>
+        {% for each_entry in mod_log %}
+            <tr>
+                {% if global_admin %}
+                <td><input type="checkbox" id="deletebulk_{{each_entry.id}}" name="deletebulk_{{each_entry.id}}" value="y"></td>
+                {% endif %}
+                <td style="font-family: monospace">{{timestamp_to_date(each_entry.timestamp)}}</td>
+                <td style="font-family: monospace">{% if each_entry.user_from %}{{get_user_name(each_entry.user_from, "0", full_address=True)}}{% endif %}</td>
+
+                {% if address == "0" %}
+                <td>
+                {% if each_entry.board_address %}
+                    {% set entry_label, entry_description, entry_chan_type = get_chan_mod_info(each_entry.board_address) %}
+                    {% if entry_label and entry_description %}
+                        {% if entry_chan_type == "board" %}
+                    <a class="link" title="{{entry_description|safe}}" href="/board/{{each_entry.board_address}}/1">/{{entry_label|safe}}/</a>
+                        {% elif entry_chan_type == "list" %}
+                    <a class="link" title="{{entry_description|safe}}" href="/list/{{each_entry.board_address}}">/{{entry_label|safe}}/</a>
+                        {% endif %}
+                    {% else %}
+                        {{each_entry.board_address}}
+                    {% endif %}
+                {% endif %}
+                </td>
+                {% endif %}
+
+                {% if chan_type != "list" %}
+                <td>
+                    {% if each_entry.board_address and each_entry.thread_hash %}
+                        {% set entry_subject = get_thread_subject(each_entry.thread_hash) %}
+                        {% if entry_subject %}
+                    <a class="link" href="/thread/{{each_entry.board_address}}/{{each_entry.thread_hash[-12:]}}">{{entry_subject|safe}}</a>
+                        {% else %}
+                    {{each_entry.thread_hash[-12:]}}
+                        {% endif %}
+                    {% elif each_entry.thread_hash %}
+                    {{each_entry.thread_hash[-12:]}}
+                    {% endif %}
+                </td>
+                <td style="font-family: monospace">
+                    {% if each_entry.board_address and each_entry.thread_hash and each_entry.message_id %}
+                        {% set msg = table_messages.query.filter(table_messages.message_id == each_entry.message_id).first() %}
+                        {% if msg %}
+                    {{get_reply_link_html(msg, external_thread=True, link_text=msg.post_id, extra_style='font-family:monospace')|safe}}
+                        {% else %}
+                    <a class="link" href="/thread/{{each_entry.board_address}}/{{each_entry.thread_hash[-12:]}}{% if each_entry.message_id %}#{{get_post_id(each_entry.message_id)}}{% endif %}">{{get_post_id(each_entry.message_id)}}</a>
+                        {% endif %}
+                    {% elif each_entry.message_id %}
+                    {{get_post_id(each_entry.message_id)}}
+                    {% endif %}
+                </td>
+                {% endif %}
+
+                <td>{{each_entry.description|safe}}</td>
+            </tr>
+        {% endfor %}
+        </table>
+
+        {% if global_admin %}
+        <div style="padding: 1em 0">
+            <input type="submit" name="bulk_delete_mod_log" value="Delete Entries" onclick="return confirm('Are you sure you want to delete these?')"/>
+        </div>
+        {% endif %}
+
+        </form>
+    {% else %}
+        <span class="themed">No Entries Found</span>
+    {% endif %}
+    </div>
+
+    <div style="padding-top: 2em"></div>
+    {% include '/elements/footer_mod_log_pages.html' %}
+    {% include '/elements/footer_links.html' %}
+    <div style="padding-top: 1em"></div>
+</div>
+{% endblock %}

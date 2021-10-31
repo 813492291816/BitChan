@@ -1,37 +1,37 @@
 <textarea rows="7" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="body{% if is_reply %}_reply{% endif %}" name="body">{% if "comment" in form_populate and form_populate["comment"] %}{{form_populate["comment"]}}{% endif %}</textarea>
-<div id="accordion-formatting" style="display: none">
-	<h3>Post Formatting</h3>
-	<div>
-		<div class="content" style="border: 1px solid #000; word-wrap: break-word;">
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '@@', '@@');">Bold</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '~~', '~~');">Italic</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '__', '__');">Underline</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^s', '^s');">Shadow</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '++', '++');">Strike</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '``', '``');">Mark</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^^', '^^');">Sup</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '%%', '%%');">Sub</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[flash]', '[/flash]');">Flash</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '**', '**');">Spoiler</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '--', '--');">Small</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '##', '##');">Big</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^r', '^r');">Red</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^b', '^b');">Blue</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^o', '^o');">Orange</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^c', '^c');">Cyan</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^p', '^p');">Purple</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^t', '^t');">Brown</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[candy]', '[/candy]');">Candy</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[meme]', '[/meme]');">Meme</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[autism]', '[/autism]');">Autism</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[aa]', '[/aa]');">ASCII</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[aa-s]', '[/aa-s]');">ASCIIs</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[aa-xs]', '[/aa-xs]');">ASCIIxs</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[identity]', '[/identity]');">Ident</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[center]', '[/center]');">Center</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[back]', '[/back]');">Back</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[kern]', '[/kern]');">Kerning</button>
-			<button type="button" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[caps]', '[/caps]');">Caps</button>
-		</div>
-	</div>
-</div>
+<section>
+    <details>
+        <summary>Post Formatting</summary>
+        <div class="content" style="word-wrap: break-word;">
+            <button type="button" title="[@@]...[/@@]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '@@', '@@');">Bold</button>
+            <button type="button" title="[~~]...[/~~]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '~~', '~~');">Italic</button>
+            <button type="button" title="[__]...[/__]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '__', '__');">Underline</button>
+            <button type="button" title="[^s]...[/^s]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^s', '^s');">Shadow</button>
+            <button type="button" title="[++]...[/++]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '++', '++');">Strike</button>
+            <button type="button" title="[``]...[/``]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '``', '``');">Mark</button>
+            <button type="button" title="[^^]...[/^^]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^^', '^^');">Sup</button>
+            <button type="button" title="[%%]...[/%%]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '%%', '%%');">Sub</button>
+            <button type="button" title="[flash]...[/flash]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[flash]', '[/flash]');">Flash</button>
+            <button type="button" title="[**]...[/**]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '**', '**');">Spoiler</button>
+            <button type="button" title="[--]...[/--]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '--', '--');">Small</button>
+            <button type="button" title="[##]...[/##]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '##', '##');">Big</button>
+            <button type="button" title="[^r]...[/^r]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^r', '^r');">Red</button>
+            <button type="button" title="[^b]...[/^b]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^b', '^b');">Blue</button>
+            <button type="button" title="[^o]...[/^o]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^o', '^o');">Orange</button>
+            <button type="button" title="[^c]...[/^c]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^c', '^c');">Cyan</button>
+            <button type="button" title="[^p]...[/^p]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^p', '^p');">Purple</button>
+            <button type="button" title="[^t]...[/^t]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '^t', '^t');">Brown</button>
+            <button type="button" title="[candy]...[/candy]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[candy]', '[/candy]');">Candy</button>
+            <button type="button" title="[meme]...[/meme]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[meme]', '[/meme]');">Meme</button>
+            <button type="button" title="[autism]...[/autism]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[autism]', '[/autism]');">Autism</button>
+            <button type="button" title="[aa]...[/aa]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[aa]', '[/aa]');">ASCII</button>
+            <button type="button" title="[aa-s]...[/aa-s]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[aa-s]', '[/aa-s]');">ASCIIs</button>
+            <button type="button" title="[aa-xs]...[/aa-xs]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[aa-xs]', '[/aa-xs]');">ASCIIxs</button>
+            <button type="button" title="[identity]...[/identity]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[identity]', '[/identity]');">Ident</button>
+            <button type="button" title="[center]...[/center]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[center]', '[/center]');">Center</button>
+            <button type="button" title="[back]...[/back]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[back]', '[/back]');">Back</button>
+            <button type="button" title="[kern]...[/kern]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[kern]', '[/kern]');">Kerning</button>
+            <button type="button" title="[caps]...[/caps]" onclick="javascript:lbc('body{% if is_reply %}_reply{% endif %}', '[caps]', '[/caps]');">Caps</button>
+        </div>
+    </details>
+</section>

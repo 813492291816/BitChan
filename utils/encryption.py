@@ -56,7 +56,7 @@ def decrypt_safe_size(message, passphrase, max_size):
 
 
 def crypto_multi_enc(cipher_str, password, path_file_in, path_file_out, key_bytes=32):
-    BUFFER_SIZE = 1024 * 1024  # The size in bytes that we read, encrypt and write to at once
+    buffer_size = 1024 * 1024  # The size in bytes that we read, encrypt and write to at once
 
     file_in = open(path_file_in, 'rb')
     file_out = open(path_file_out, 'wb')
@@ -77,11 +77,11 @@ def crypto_multi_enc(cipher_str, password, path_file_in, path_file_out, key_byte
         logger.error("Unknown cipher: {}".format(cipher_str))
         return
 
-    data = file_in.read(BUFFER_SIZE)
+    data = file_in.read(buffer_size)
     while len(data) != 0:  # Check if we need to encrypt anymore data
         encrypted_data = cipher.encrypt(data)  # Encrypt the data we read
         file_out.write(encrypted_data)  # Write encrypted data to the output file
-        data = file_in.read(BUFFER_SIZE)  # Read some more of the file
+        data = file_in.read(buffer_size)  # Read some more of the file
 
     tag = cipher.digest()  # Signal to the cipher that we are done and get the tag
     file_out.write(tag)
@@ -91,8 +91,8 @@ def crypto_multi_enc(cipher_str, password, path_file_in, path_file_out, key_byte
     return True
 
 
-def crypto_multi_decrypt(cipher_str, password, path_file_in, path_file_out, key_bytes=32):
-    BUFFER_SIZE = 1024 * 1024  # The size in bytes that we read, encrypt and write to at once
+def crypto_multi_decrypt(cipher_str, password, path_file_in, path_file_out, key_bytes=32, max_size_bytes=None):
+    buffer_size = 1024 * 1024  # The size in bytes that we read, encrypt and write to at once
 
     # Open files
     file_in = open(path_file_in, 'rb')
@@ -114,20 +114,46 @@ def crypto_multi_decrypt(cipher_str, password, path_file_in, path_file_out, key_
         logger.error("Unknown cipher: {}".format(cipher_str))
         return
 
-    # Identify how many bytes of encrypted there is
+    # Identify how many bytes of encrypted data there is
     # We know that the salt (32) + the nonce (based on cipher) + the data (?) + the tag (16) is in the file
     # So some basic algebra can tell us how much data we need to read to decrypt
     file_in_size = os.path.getsize(path_file_in)
     encrypted_data_size = file_in_size - 32 - nonce_length - 16  # Total - salt - nonce - tag = encrypted data
 
     # Read, decrypt and write the data
-    for _ in range(int(encrypted_data_size / BUFFER_SIZE)):  # Identify how many loops of full buffer reads needed
-        data = file_in.read(BUFFER_SIZE)  # Read data from the encrypted file
+    file_size = 0
+    for _ in range(int(encrypted_data_size / buffer_size)):  # Identify how many loops of full buffer reads needed
+        data = file_in.read(buffer_size)  # Read data from the encrypted file
         decrypted_data = cipher.decrypt(data)  # Decrypt the data
         file_out.write(decrypted_data)  # Write decrypted data to the output file
-    data = file_in.read(int(encrypted_data_size % BUFFER_SIZE))  # Read what calculated to be left of encrypted data
+        file_size += len(decrypted_data)
+        logger.info("Decrypted size (so far): {} bytes".format(file_size))
+
+        if max_size_bytes and file_size > max_size_bytes:
+            logger.error(
+                "Extracted file is larger than max allowed ({} bytes > {} bytes). "
+                "Cancelling/deleting.".format(
+                    file_size, max_size_bytes))
+            file_in.close()
+            file_out.close()
+            os.remove(path_file_out)
+            return False
+
+    data = file_in.read(int(encrypted_data_size % buffer_size))  # Read what calculated to be left of encrypted data
     decrypted_data = cipher.decrypt(data)  # Decrypt data
     file_out.write(decrypted_data)  # Write decrypted data to the output file
+    file_size += len(decrypted_data)
+    logger.info("Decrypted size (final): {} bytes".format(file_size))
+
+    if max_size_bytes and file_size > max_size_bytes:
+        logger.error(
+            "Extracted file is larger than max allowed ({} bytes > {} bytes). "
+            "Cancelling/deleting.".format(
+                file_size, max_size_bytes))
+        file_in.close()
+        file_out.close()
+        os.remove(path_file_out)
+        return False
 
     # Verify encrypted file was not tampered with
     tag = file_in.read(16)

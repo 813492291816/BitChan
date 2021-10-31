@@ -1,8 +1,33 @@
 {% extends "layout.html" %}
 
-{% block title %}Help{% endblock %}
+{% block title %}Help - {% endblock %}
 
 {% block head %}
+<script>
+    $(window).scroll(function() {
+        var height = $(window).scrollTop();
+        if (height > 100) {
+            $('#back2Top').fadeIn();
+            $('#back2Bottom').fadeOut();
+        } else {
+            $('#back2Bottom').fadeIn();
+            $('#back2Top').fadeOut();
+        }
+    });
+
+    $(document).ready(function() {
+        $("#back2Top").click(function(event) {
+            event.preventDefault();
+            $("html, body").animate({scrollTop: 0}, "slow");
+            return false;
+        });
+        $("#back2Bottom").click(function(event) {
+            event.preventDefault();
+            $("html, body").animate({scrollTop: $(document).height()}, "slow");
+            return false;
+        });
+    });
+</script>
 <style>
     p {
         padding: 0.3em 0;
@@ -57,6 +82,8 @@
 {% endblock %}
 
 {% block body %}
+    <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
+    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
     {% include '/elements/banner.html' %}
     <br/>
 

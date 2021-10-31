@@ -1,0 +1,58 @@
+                        {% set op_post = thread_info["messages"][0] %}
+                <div class="card" style="font-size: 1.2em;
+                {%- if op_post and post_has_image(op_post.message_id) -%}
+                background-size: 100%; background-repeat: no-repeat; background-image: linear-gradient(rgba(255,255,255,0.2), rgba(255,255,255,0.2)), url(/files/thumb_first/{{op_post.message_id}}/0);
+                {%- endif -%}
+                ">
+                    <div class="card_bg themed" style="font-weight: bold; overflow-wrap: break-word;">
+                        {% if op_post %}
+                        {{get_card_link_html(op_post, card_text='[O]', external_thread=True)|safe}} <a class="link" href="/thread/{{op_post.thread.chan.address}}/{{op_post.thread.thread_hash_short}}">{{op_post.thread.subject|safe}}</a><br/>
+                        {% else %}
+                        [No OP]<br/>
+                        {% endif %}
+                        {% for each_message in thread_info["messages"] %}
+                            {% set msg_str = clean_html(each_message.message) %}
+                            {% if loop.first %}
+
+                                {% if msg_str|length > config.INDEX_CARDS_OP_TRUNCATE_CHARS %}
+                                    {% set reply_is_truncated, reply_trunc_msg = truncate(msg_str, config.INDEX_CARDS_OP_TRUNCATE_CHARS, 1) %}
+                            {{reply_trunc_msg|replace('\r', ' ')|safe}}...
+                                {% elif msg_str %}
+                            {{msg_str|safe}}
+                                {% else %}
+                            [No Text]
+                                {% endif %}
+
+                            {% elif not loop.first %}
+
+                        {{get_card_link_html(each_message, card_text='[O]', external_thread=True)|safe}}
+                        <a class="link" href="/thread/{{each_message.thread.chan.address}}/{{each_message.thread.thread_hash_short}}#{{each_message.post_id}}">R:
+                                {% if msg_str|length > config.INDEX_CARDS_REPLY_TRUNCATE_CHARS %}
+                                    {% set reply_is_truncated, reply_trunc_msg = truncate(msg_str, config.INDEX_CARDS_REPLY_TRUNCATE_CHARS, 1) %}
+                            {{reply_trunc_msg|replace('\r', ' ')|safe}}...
+                                {% elif msg_str %}
+                            {{msg_str|safe}}
+                                {% else %}
+                            [No Text]
+                                {% endif %}
+
+                            {% endif %}
+                        </a>
+                            {% if loop.first %}
+                        <div class="three-dots">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                            {% elif not loop.last %}
+                        <br/>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="themed" style="font-size: 0.7em; padding-left: 0.25em; padding-top: 0.25em">
+                    {{thread_info["total_posts"]}} P /
+                    {{thread_info["attachments"]}} A |
+                    {{thread_info["attach_post_ratio"]}} A:P |
+                    OP {{thread_info["op_timestamp"]}}
+                </div>

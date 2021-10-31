@@ -37,7 +37,7 @@ def hide(
     from zlib import compress
     from base64 import b64encode
 
-    if secret_file != None:
+    if secret_file is not None:
         with open(secret_file, "r") as f:
             secret_message = f.read()
 

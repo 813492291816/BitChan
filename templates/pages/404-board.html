@@ -1,13 +1,13 @@
 {% extends "layout.html" %}
 
-{% block title -%}Board Not Found{% endblock %}
+{% block title -%}Board Not Found - {% endblock %}
 
 {% block body %}
     {% include '/elements/banner.html' %}
     <center>
         <div class="themed" style="padding-top: 2em">
             A board/list at address {{board_address}} could not be found.
-            <br/>If BitChan is currently starting or restarting, give it a moment to load the boards/lists.
+            <br/>If BitChan is currently starting/restarting or the board/list was just joined, give it a moment to load.
         </div>
     </center>
 {% endblock %}

@@ -253,7 +253,7 @@ nations = [
       ("Wales (1959-present).png", "Wales (1959-present)"),
       ("Yemen.png", "Yemen"),
       ("Yugoslavia (1946-1992).png", "Yugoslavia (1946-1992)"),
-      ("Yugoslavia (1992–2003).png", "Yugoslavia (1992–2003)"),
+      ("Yugoslavia (1992-2003).png", "Yugoslavia (1992-2003)"),
       ("Zaire.png", "Zaire"),
       ("Zambia.png", "Zambia"),
       ("Zimbabwe.png", "Zimbabwe")

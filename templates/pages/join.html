@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}Join or Create a Board or List{% endblock %}
+{% block title %}Join or Create a Board or List - {% endblock %}
 
 {% block body %}
     {% include '/elements/banner.html' %}
@@ -268,30 +268,50 @@
                     <input name="interval_seconds" id="interval_seconds" value="2592000"> <label for="interval_seconds">Interval (Seconds, default is 30 days)</label>
                 </div>
 
+                <div class="themed" style="padding-top: 0.5em">
+                    <div>Extra String (add passphrase entropy, max {{config.PASSPHRASE_EXTRA_STRING_LENGTH}} characters)</div>
+                    <input style="width: 100%" name="extra_string" value="">
+                </div>
+
+                <div class="themed" style="padding-top: 0.5em">
+                    <input type="checkbox" id="resync" name="resync" checked value="y"> <label for="resync">Resync to download any available messages sent prior to joining.</label>
+                </div>
+
                 <p class="themed" style="font-size: 2em">Owner Addresses</p>
 
         {% if identities %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>My Identity Addresses</div>
 
-            {% for address in identities %}
-                {% set label = identities[address]["label_short"] %}
-                    <div>
-                        <input type="checkbox" id="primary_identity_{{address}}" name="primary_identity_{{address}}" value="{{address}}"> <label for="primary_identity_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
-                    </div>
-            {% endfor %}
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
+                    {% for address in identities %}
+                        {% set label = identities[address]["label_short"] %}
+                            <div>
+                                <input type="checkbox" id="primary_identity_{{address}}" name="primary_identity_{{address}}" value="{{address}}"> <label for="primary_identity_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
+                            </div>
+                    {% endfor %}
+                      </details>
+                    </section>
                 </div>
         {% endif %}
 
         {% if address_book %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>Address Book Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
             {% for address in address_book %}
                 {% set label = address_book[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="primary_address_book_{{address}}" name="primary_address_book_{{address}}" value="{{address}}"> <label for="primary_address_book_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
             {% endfor %}
+                      </details>
+                    </section>
                 </div>
         {% endif %}
 
@@ -299,24 +319,36 @@
             {% if chans_board_info %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>Board Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
                 {% for address in all_chans if address in chans_board_info %}
                     {% set label = all_chans[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="primary_chans_{{address}}" name="primary_chans_{{address}}" value="{{address}}"> <label for="primary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
                 {% endfor %}
+                      </details>
+                    </section>
                 </div>
             {% endif %}
 
             {% if chans_list_info %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>List Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
                 {% for address in all_chans if address in chans_list_info %}
                     {% set label = all_chans[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="primary_chans_{{address}}" name="primary_chans_{{address}}" value="{{address}}"> <label for="primary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
                 {% endfor %}
+                      </details>
+                    </section>
                 </div>
             {% endif %}
         {% endif %}
@@ -331,24 +363,36 @@
         {% if identities %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>My Identity Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
             {% for address in identities %}
                 {% set label = identities[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="secondary_identity_{{address}}" name="secondary_identity_{{address}}" value="{{address}}"> <label for="secondary_identity_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
             {% endfor %}
+                      </details>
+                    </section>
                 </div>
         {% endif %}
 
         {% if address_book %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>Address Book Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
             {% for address in address_book %}
                 {% set label = address_book[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="secondary_address_book_{{address}}" name="secondary_address_book_{{address}}" value="{{address}}"> <label for="secondary_address_book_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
             {% endfor %}
+                      </details>
+                    </section>
                 </div>
         {% endif %}
 
@@ -356,24 +400,36 @@
             {% if chans_board_info %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>Board Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
                 {% for address in all_chans if address in chans_board_info %}
                     {% set label = all_chans[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="secondary_chans_{{address}}" name="secondary_chans_{{address}}" value="{{address}}"> <label for="secondary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
                 {% endfor %}
+                      </details>
+                    </section>
                 </div>
             {% endif %}
 
             {% if chans_list_info %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>List Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
                 {% for address in all_chans if address in chans_list_info %}
                     {% set label = all_chans[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="secondary_chans_{{address}}" name="secondary_chans_{{address}}" value="{{address}}"> <label for="secondary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
                 {% endfor %}
+                      </details>
+                    </section>
                 </div>
             {% endif %}
         {% endif %}
@@ -390,24 +446,36 @@
         {% if identities %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>My Identity Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
             {% for address in identities %}
                 {% set label = identities[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="tertiary_identity_{{address}}" name="tertiary_identity_{{address}}" value="{{address}}"> <label for="tertiary_identity_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
             {% endfor %}
+                      </details>
+                    </section>
                 </div>
         {% endif %}
 
         {% if address_book %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>Address Book Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
             {% for address in address_book %}
                 {% set label = address_book[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="tertiary_address_book_{{address}}" name="tertiary_address_book_{{address}}" value="{{address}}"> <label for="tertiary_address_book_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
             {% endfor %}
+                      </details>
+                    </section>
                 </div>
         {% endif %}
 
@@ -415,24 +483,37 @@
             {% if chans_board_info %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>Board Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
                 {% for address in all_chans if address in chans_board_info %}
                     {% set label = all_chans[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="tertiary_chans_{{address}}" name="tertiary_chans_{{address}}" value="{{address}}"> <label for="tertiary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
                 {% endfor %}
+                      </details>
+                    </section>
                 </div>
             {% endif %}
 
             {% if chans_list_info %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>List Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
                 {% for address in all_chans if address in chans_list_info %}
                     {% set label = all_chans[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="tertiary_chans_{{address}}" name="tertiary_chans_{{address}}" value="{{address}}"> <label for="tertiary_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
                 {% endfor %}
+
+                      </details>
+                    </section>
                 </div>
             {% endif %}
         {% endif %}
@@ -451,12 +532,18 @@
         {% if address_book %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>Address Book Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
             {% for address in address_book %}
                 {% set label = address_book[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="restricted_address_book_{{address}}" name="restricted_address_book_{{address}}" value="{{address}}"> <label for="restricted_address_book_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
             {% endfor %}
+                      </details>
+                    </section>
                 </div>
         {% endif %}
 
@@ -464,24 +551,36 @@
             {% if chans_board_info %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>Board Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
                 {% for address in all_chans if address in chans_board_info %}
                     {% set label = all_chans[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="restricted_chans_{{address}}" name="restricted_chans_{{address}}" value="{{address}}"> <label for="restricted_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
                 {% endfor %}
+                      </details>
+                    </section>
                 </div>
             {% endif %}
 
             {% if chans_list_info %}
                 <div class="themed" style="padding-top: 0.5em">
                     <div>List Addresses</div>
+
+                    <section>
+                      <details>
+                        <summary>Expand Addresses</summary>
                 {% for address in all_chans if address in chans_list_info %}
                     {% set label = all_chans[address]["label_short"] %}
                     <div>
                         <input type="checkbox" id="restricted_chans_{{address}}" name="restricted_chans_{{address}}" value="{{address}}"> <label for="restricted_chans_{{address}}">{{address}}{% if label %} ({{label}}){% endif %}</label>
                     </div>
                 {% endfor %}
+                      </details>
+                    </section>
                 </div>
             {% endif %}
         {% endif %}
@@ -492,15 +591,6 @@
                 </div>
 
         {% endif %}
-
-                <div class="themed" style="padding-top: 0.5em">
-                    <div>Extra String (add passphrase entropy, max {{config.PASSPHRASE_EXTRA_STRING_LENGTH}} characters)</div>
-                    <input style="width: 100%" name="extra_string" value="">
-                </div>
-
-                <div class="themed" style="padding-top: 0.5em">
-                    <input type="checkbox" id="resync" name="resync" checked value="y"> <label for="resync">Resync to download any available messages sent prior to joining.</label>
-                </div>
 
                 <div style="padding-top: 1em">
                     <input type="submit" name="join" value="Create"/>

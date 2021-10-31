@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}Compose Message{% endblock %}
+{% block title %}Compose Message - {% endblock %}
 
 {% block head %}
     <style>
@@ -28,6 +28,21 @@
 
     <div class="container">
         <div style="max-width: 800px; text-align: center; padding-bottom: 2em">
+
+            {% if address_from in identities %}
+            <div class="themed" style="padding-bottom: 0.5em; text-align: center">
+                <h1>Mailbox for {{identities[address_from]["label"]}} ({{address_from}})</h1>
+                <span style="padding-right: 0.5em">
+                    Compose
+                </span>
+                <span style="padding-right: 0.5em">
+                    <a class="link" href="/mailbox/{{address_from}}/inbox/1/0">Inbox</a>
+                </span>
+                <span>
+                    <a class="link" href="/mailbox/{{address_from}}/sent/1/0">Sent</a>
+                </span>
+            </div>
+            {% endif %}
 
             <h1 class="title themed bold">Compose Message</h1>
 

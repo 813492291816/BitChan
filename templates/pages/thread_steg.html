@@ -38,7 +38,7 @@
 {% set is_private = board['current_chan'].access == "private" %}
 
 {% block title %}
-(STEG) {{board["current_thread"].subject|safe}} -
+(Steg) {{board["current_thread"].subject|safe}} -
 {{chans_board_info[board['current_chan'].address]["label"]|safe}} -
 {% if is_private -%}
 Private
@@ -46,28 +46,14 @@ Private
 Public
 {% endif %}
 Board
-{% endblock %}
+ - {% endblock %}
 
 {% block head %}
-    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.min.css">
-    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.theme.min.css">
-    <script src="/static/js/jquery-ui-1.12.1.min.js"></script>
     <script>
         function checkForm(form) {
             form.submit_post.disabled = true;
             form.submit_post.value = "Please wait...";
         }
-
-        $(function() {
-            $("#accordion-formatting").show().accordion({
-                collapsible: true,
-                active: false
-            });
-            $("#accordion-add-options").show().accordion({
-                collapsible: true,
-                active: false
-            });
-        });
 
         $(window).scroll(function() {
             var height = $(window).scrollTop();
@@ -93,8 +79,10 @@ Board
             });
 
             var volume_set = document.getElementsByClassName("volume-75");
-            for(var i = 0; i <= volume_set.length; i++) {
-                volume_set[i].volume = 0.75;
+            if (volume_set.length) {
+                for(var i = 0; i <= volume_set.length; i++) {
+                    volume_set[i].volume = 0.75;
+                }
             }
 
             document.getElementById('back2Top').style.display  = 'block';
@@ -116,7 +104,7 @@ Board
 
 {% block body %}
     <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
-    <a id="back2Bottom" title="Go to Bottom" style="display: none" href="#">&GreaterGreater;</a>
+    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
@@ -129,7 +117,7 @@ Board
     {% else %}
             Public
     {% endif %}
-            Board
+            Board <span style="font-size: 0.7em">[<a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a> / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a>]</span>
         </span>
     </center>
     <br/>
@@ -151,38 +139,31 @@ Board
         {% include '/elements/status.html' %}
     {% endif %}
 
-    {% set messages_steg = board["messages"].query
-           .filter(and_(
-               board["messages"].thread_id == board["current_thread"].id,
-               board["messages"].message_steg.isnot("{}")))
-           .order_by(board["messages"].timestamp_sent.asc()) %}
-
-    {% if messages_steg %}
-
-        <div style="padding-top: 1em">
-            <center>
-                <a class="title themed bold" style="text-decoration: none;" href="/thread_steg/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">{{board["current_thread"].subject|safe}}</a>
-            </center>
-        </div>
-
-        <div style="padding-top: 1em">
-            <center>
-                <h1 class="themed bold">Steganography Thread</h1> <a class="link" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">View Non-Steg</a>
-            </center>
-        </div>
-
-        <hr/>
+    <div style="padding-top: 1em">
         <center>
-    {% if not is_private or (is_private and on_any_access_list) %}
+            <a class="title themed bold" style="text-decoration: none;" href="/thread_steg/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">{{board["current_thread"].subject|safe}}</a>
+        </center>
+    </div>
+
+    <div style="padding-top: 1em">
+        <center>
+            <h1 class="themed bold">Steganography Thread</h1> <a class="link" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}">View Non-Steg</a>
+        </center>
+    </div>
+
+    {% set thread = board["current_thread"] %}
+    {% set thread_options = get_thread_options(thread.thread_hash) %}
+
+    <hr/>
+    <center>
+    {% if ((not is_private or (is_private and on_any_access_list)) and (not thread_options['lock_remote'] and not thread_options['lock_local'])) or primary_access %}
         {% set is_reply = True %}
         {% include '/elements/board/post_form_steg.html' %}
     {% else %}
-        Insufficient permissions to post
+        <span class="themed">Insufficient permissions to post</span>
     {% endif %}
-        </center>
-        <hr/>
-    {% set thread = board["current_thread"] %}
-
+    </center>
+    <hr/>
     {% set message_op = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
@@ -200,49 +181,32 @@ Board
            .filter(board["messages"].message_steg.isnot("{}"))
            .order_by(board["messages"].timestamp_sent.asc()) %}
 
-        <div class="thread">
+    <div class="thread">
     {% if not message_op_steg and not message_replies_steg.count() %}
-            <center><span class="god-text">[No steg found]</span></center>
-        {% elif message_op_steg %}
-            {% set post = message_op_steg %}
-            {% set text = format_message_steg(message_op_steg.message_id) %}
-            {% include '/elements/board/post_op.html' %}
-        {% elif message_op %}
-            {% set post = message_op %}
-            {% set text = '<span class="god-text">[No steg in OP]</span>' %}
-            {% include '/elements/board/post_op.html' %}
-        {% else %}
-            {% include '/elements/board/op_missing.html' %}
-        {% endif %}
-
-        {% for each_message in message_replies_steg %}
-            {% set post = each_message %}
-            {% set text = format_message_steg(each_message.message_id) %}
-            {% include '/elements/board/post_reply.html' %}
-            <br/>
-        {% endfor %}
-        </div>
-        <hr/>
-
+        <center><span class="god-text">[No steg found]</span></center>
+    {% elif message_op_steg %}
+        {% set post = message_op_steg %}
+        {% set text = format_message_steg(message_op_steg.message_id) %}
+        {% include '/elements/board/post_op.html' %}
+    {% elif message_op %}
+        {% set post = message_op %}
+        {% set text = '<span class="god-text">[No steg in OP]</span>' %}
+        {% include '/elements/board/post_op.html' %}
     {% else %}
-
-    <div style="padding-top: 1em">
-        <center>
-            <a class="title themed bold" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">{{board["current_thread"].subject}}</a>
-        </center>
-    </div>
-
-    <hr/>
-        <center>
-            {% include '/elements/board/post_form_steg.html' %}
-        </center>
-    <hr/>
-
-    <div style="padding: 2em 0">
-    <center>No Steg Found</center>
-    </div>
-
+        {% include '/elements/board/op_missing.html' %}
     {% endif %}
+
+    {% for each_message in message_replies_steg %}
+        {% set post = each_message %}
+        {% set text = format_message_steg(each_message.message_id) %}
+        {% include '/elements/board/post_reply.html' %}
+        <br/>
+    {% endfor %}
+    </div>
+
+    <div class="themed" style="clear: both; text-align: right; padding-right: 1.5em;"><a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a> / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a></div>
+
+    <hr/>
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}

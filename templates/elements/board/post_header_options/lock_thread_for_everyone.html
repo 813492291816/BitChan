@@ -1,0 +1,5 @@
+<tr class="menu-entry">
+    <td style="white-space: nowrap;">
+        <a class="link" href="/mod_thread/{{thread.chan.address}}/{{thread.thread_hash}}/{% if thread_locked_remote %}thread_unlock_remote{% else %}thread_lock_remote{% endif %}">{% if thread_locked_remote %}Unlock{% else %}Lock{% endif %} Thread (For Everyone)</a>
+    </td>
+</tr>

@@ -13,15 +13,19 @@ from flask import url_for
 from flask.blueprints import Blueprint
 
 import config
+from bitchan_client import DaemonCom
 from database.models import Chan
 from database.models import GlobalSettings
 from database.models import Identity
 from forms import forms_mailbox
 from utils.files import LF
+from utils.gateway import api
+from utils.routes import allowed_access
 from utils.routes import page_dict
 from utils.shared import get_msg_expires_time
 
 logger = logging.getLogger('bitchan.routes_mail')
+daemon_com = DaemonCom()
 
 blueprint = Blueprint('routes_mail',
                       __name__,
@@ -32,6 +36,15 @@ blueprint = Blueprint('routes_mail',
 @blueprint.context_processor
 def global_var():
     return page_dict()
+
+
+@blueprint.before_request
+def before_view():
+    if (GlobalSettings.query.first().enable_verification and
+            ("verified" not in session or not session["verified"])):
+        session["verified_msg"] = "You are not verified"
+        return redirect(url_for('routes_verify.verify_wait'))
+    session["verified_msg"] = "You are verified"
 
 
 def timestamp_format(ts):
@@ -46,7 +59,6 @@ def base64_decode(b64str):
 
 
 def get_messages_from_page(mailbox, page, address):
-    from bitchan_flask import nexus
     messages_sorted = []
     messages_page = []
 
@@ -54,9 +66,9 @@ def get_messages_from_page(mailbox, page, address):
 
     if mailbox == "inbox":
         lf = LF()
-        if lf.lock_acquire(config.LOCKFILE_API, to=60):
+        if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
             try:
-                messages = nexus._api.getInboxMessagesByReceiver(address)
+                messages = api.getInboxMessagesByReceiver(address)
                 # Sort messages
                 if "inboxMessages" in messages:
                     messages_sorted = sorted(
@@ -66,12 +78,13 @@ def get_messages_from_page(mailbox, page, address):
             except Exception as err:
                 logger.error("Error: {}".format(err))
             finally:
+                time.sleep(config.API_PAUSE)
                 lf.lock_release(config.LOCKFILE_API)
     elif mailbox == "sent":
         lf = LF()
-        if lf.lock_acquire(config.LOCKFILE_API, to=60):
+        if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
             try:
-                messages = nexus._api.getSentMessagesBySender(address)
+                messages = api.getSentMessagesBySender(address)
                 # Sort messages
                 if "sentMessages" in messages:
                     messages_sorted = sorted(
@@ -81,6 +94,7 @@ def get_messages_from_page(mailbox, page, address):
             except Exception as err:
                 logger.error("Error: {}".format(err))
             finally:
+                time.sleep(config.API_PAUSE)
                 lf.lock_release(config.LOCKFILE_API)
 
     msg_start = int((int(page) - 1) * settings.messages_per_mailbox_page)
@@ -94,11 +108,15 @@ def get_messages_from_page(mailbox, page, address):
 
 @blueprint.route('/mailbox/<ident_address>/<mailbox>/<page>/<msg_id>', methods=('GET', 'POST'))
 def mailbox(ident_address, mailbox, page, msg_id):
-    from bitchan_flask import nexus
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    if not global_admin:
+        return allow_msg
+
     status_msg = {"status_message": []}
     messages = []
     msg_selected = []
-    identities = nexus.get_identities()
+    identities = daemon_com.get_identities()
     page = int(page)
 
     form_mail = forms_mailbox.Mailbox()
@@ -106,9 +124,9 @@ def mailbox(ident_address, mailbox, page, msg_id):
     if msg_id != "0":
         if mailbox == "inbox":
             lf = LF()
-            if lf.lock_acquire(config.LOCKFILE_API, to=60):
+            if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                 try:
-                    msg_selected = nexus._api.getInboxMessageById(msg_id, True)
+                    msg_selected = api.getInboxMessageById(msg_id, True)
                     if "inboxMessage" in msg_selected:
                         msg_selected = msg_selected["inboxMessage"][0]
                         expires = get_msg_expires_time(msg_id)
@@ -117,13 +135,14 @@ def mailbox(ident_address, mailbox, page, msg_id):
                 except Exception as err:
                     logger.error("Error: {}".format(err))
                 finally:
+                    time.sleep(config.API_PAUSE)
                     lf.lock_release(config.LOCKFILE_API)
 
         elif mailbox == "sent":
             lf = LF()
-            if lf.lock_acquire(config.LOCKFILE_API, to=60):
+            if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                 try:
-                    msg_selected = nexus._api.getSentMessageById(msg_id)
+                    msg_selected = api.getSentMessageById(msg_id)
                     if "sentMessage" in msg_selected:
                         msg_selected = msg_selected["sentMessage"][0]
                         expires = get_msg_expires_time(msg_id)
@@ -132,6 +151,7 @@ def mailbox(ident_address, mailbox, page, msg_id):
                 except Exception as err:
                     logger.error("Error: {}".format(err))
                 finally:
+                    time.sleep(config.API_PAUSE)
                     lf.lock_release(config.LOCKFILE_API)
 
     if request.method == 'POST':
@@ -151,17 +171,17 @@ def mailbox(ident_address, mailbox, page, msg_id):
 
             if form_mail.bulk_action.data == "delete":
                 lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=60):
+                if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                     try:
                         for each_id in msg_ids:
                             if mailbox == "inbox":
-                                nexus._api.trashInboxMessage(each_id)
+                                api.trashInboxMessage(each_id)
                             elif mailbox == "sent":
-                                nexus._api.trashSentMessage(each_id)
-                            time.sleep(0.1)
+                                api.trashSentMessage(each_id)
                     except Exception as err:
                         logger.error("Error: {}".format(err))
                     finally:
+                        time.sleep(config.API_PAUSE)
                         lf.lock_release(config.LOCKFILE_API)
 
                 return redirect(url_for("routes_mail.mailbox",
@@ -172,19 +192,19 @@ def mailbox(ident_address, mailbox, page, msg_id):
 
             if form_mail.bulk_action.data in ["mark_read", "mark_unread"]:
                 lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=60):
+                if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                     try:
                         for each_id in msg_ids:
-                            nexus._api.getInboxMessageById(
+                            api.getInboxMessageById(
                                 each_id,
                                 form_mail.bulk_action.data == "mark_read")
-                            time.sleep(0.1)
                     except Exception as err:
                         logger.error("Error: {}".format(err))
                     finally:
+                        time.sleep(config.API_PAUSE)
                         lf.lock_release(config.LOCKFILE_API)
 
-                nexus.set_unread_mail_count(ident_address)
+                daemon_com.update_unread_mail_count(ident_address)
 
                 return redirect(url_for("routes_mail.mailbox",
                                         ident_address=ident_address,
@@ -194,9 +214,9 @@ def mailbox(ident_address, mailbox, page, msg_id):
 
         elif form_mail.reply.data and form_mail.message_id.data:
             lf = LF()
-            if lf.lock_acquire(config.LOCKFILE_API, to=60):
+            if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                 try:
-                    msg_selected = nexus._api.getInboxMessageById(form_mail.message_id.data, True)
+                    msg_selected = api.getInboxMessageById(form_mail.message_id.data, True)
                     if "inboxMessage" in msg_selected:
                         msg_selected = msg_selected["inboxMessage"][0]
                         form_populate = {
@@ -213,6 +233,7 @@ def mailbox(ident_address, mailbox, page, msg_id):
                 except Exception as err:
                     logger.error("Error: {}".format(err))
                 finally:
+                    time.sleep(config.API_PAUSE)
                     lf.lock_release(config.LOCKFILE_API)
 
             return redirect(url_for("routes_mail.compose",
@@ -220,9 +241,9 @@ def mailbox(ident_address, mailbox, page, msg_id):
 
         elif form_mail.forward.data and form_mail.message_id.data:
             lf = LF()
-            if lf.lock_acquire(config.LOCKFILE_API, to=60):
+            if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                 try:
-                    msg_selected = nexus._api.getInboxMessageById(form_mail.message_id.data, True)
+                    msg_selected = api.getInboxMessageById(form_mail.message_id.data, True)
                     if "inboxMessage" in msg_selected:
                         msg_selected = msg_selected["inboxMessage"][0]
                         form_populate = {
@@ -238,6 +259,7 @@ def mailbox(ident_address, mailbox, page, msg_id):
                 except Exception as err:
                     logger.error("Error: {}".format(err))
                 finally:
+                    time.sleep(config.API_PAUSE)
                     lf.lock_release(config.LOCKFILE_API)
 
             return redirect(url_for("routes_mail.compose",
@@ -245,12 +267,13 @@ def mailbox(ident_address, mailbox, page, msg_id):
 
         elif form_mail.delete.data and form_mail.message_id.data:
             lf = LF()
-            if lf.lock_acquire(config.LOCKFILE_API, to=60):
+            if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                 try:
-                    nexus._api.trashMessage(form_mail.message_id.data)
+                    api.trashMessage(form_mail.message_id.data)
                 except Exception as err:
                     logger.error("Error: {}".format(err))
                 finally:
+                    time.sleep(config.API_PAUSE)
                     lf.lock_release(config.LOCKFILE_API)
 
             return redirect(url_for("routes_mail.mailbox",
@@ -260,11 +283,13 @@ def mailbox(ident_address, mailbox, page, msg_id):
                                     msg_id="0"))
 
     if ident_address != '0' and mailbox == "inbox":
-        nexus.set_unread_mail_count(ident_address)
+        daemon_com.update_unread_mail_count(ident_address)
 
+    total_mail_counts = {}
     unread_mail_counts = {}
     for each_identity in Identity.query.all():
         unread_mail_counts[each_identity.address] = each_identity.unread_messages
+        total_mail_counts[each_identity.address] = each_identity.total_messages
 
     return render_template("mailbox/mailbox.html",
                            base64_decode=base64_decode,
@@ -278,15 +303,15 @@ def mailbox(ident_address, mailbox, page, msg_id):
                            page=page,
                            status_msg=status_msg,
                            timestamp_format=timestamp_format,
+                           total_mail_counts=total_mail_counts,
                            unread_mail_counts=unread_mail_counts)
 
 
 def get_from_list_all():
-    from bitchan_flask import nexus
     from_addresses = {}
-    address_labels = nexus.get_address_labels()
-    all_chans = nexus.get_all_chans()
-    identities = nexus.get_identities()
+    address_labels = daemon_com.get_address_labels()
+    all_chans = daemon_com.get_all_chans()
+    identities = daemon_com.get_identities()
 
     for each_address in identities:
         from_addresses[each_address] = "Identity: "
@@ -331,7 +356,11 @@ def get_from_list_all():
 
 @blueprint.route('/compose/<address_from>/<address_to>', methods=('GET', 'POST'))
 def compose(address_from, address_to):
-    from bitchan_flask import nexus
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    if not global_admin:
+        return allow_msg
+
     from_all = []
 
     form_msg = forms_mailbox.Compose()
@@ -342,8 +371,8 @@ def compose(address_from, address_to):
     if address_to == "0":
         address_to = ""
 
-    from_all.extend(nexus.get_identities().keys())
-    from_all.extend(nexus.get_all_chans().keys())
+    from_all.extend(daemon_com.get_identities().keys())
+    from_all.extend(daemon_com.get_all_chans().keys())
 
     form_populate = session.get('form_populate', {})
     status_msg = session.get('status_msg', {"status_message": []})
@@ -373,36 +402,50 @@ def compose(address_from, address_to):
                 else:
                     message = ""
 
-                lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=60):
-                    try:  # TODO: message sends but results in error. Diagnose.
-                        status_msg['status_title'] = "Success"
-                        status_msg['status_message'].append("Message sent to queue")
-                        try:
-                            return_str = nexus._api.sendMessage(
-                                form_msg.to_address.data,
-                                form_msg.from_address.data,
-                                subject,
-                                message,
-                                2,
-                                form_msg.ttl.data)
+                # Don't allow a message to send while Bitmessage is restarting
+                allow_send = False
+                timer = time.time()
+                while not allow_send:
+                    if daemon_com.bitmessage_restarting() is False:
+                        allow_send = True
+                    if time.time() - timer > config.BM_WAIT_DELAY:
+                        logger.error(
+                            "Unable to send message: "
+                            "Could not detect Bitmessage running.")
+                        return
+                    time.sleep(1)
+
+                if allow_send:
+                    lf = LF()
+                    if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+                        try:  # TODO: message sends but results in error. Diagnose.
+                            status_msg['status_title'] = "Success"
+                            status_msg['status_message'].append("Message sent to queue")
+                            try:
+                                return_str = api.sendMessage(
+                                    form_msg.to_address.data,
+                                    form_msg.from_address.data,
+                                    subject,
+                                    message,
+                                    2,
+                                    form_msg.ttl.data)
+                            except Exception as err:
+                                if err.__str__() == "<Fault 21: 'Unexpected API Failure - too many values to unpack'>":
+                                    return_str = "Error: API Failure (despite this error, the message probably still sent)"
+                                else:
+                                    return_str = "Error: {}".format(err)
+                            if return_str:
+                                logger.info("Send message from {} to {}. Returned: {}".format(
+                                    form_msg.from_address.data,
+                                    form_msg.to_address.data,
+                                    return_str))
+                                status_msg['status_message'].append(
+                                    "Bitmessage returned: {}".format(return_str))
                         except Exception as err:
-                            if err.__str__() == "<Fault 21: 'Unexpected API Failure - too many values to unpack'>":
-                                return_str = "Error: API Failure (despite this error, the message probably still sent)"
-                            else:
-                                return_str = "Error: {}".format(err)
-                        if return_str:
-                            logger.info("Send message from {} to {}. Returned: {}".format(
-                                form_msg.from_address.data,
-                                form_msg.to_address.data,
-                                return_str))
-                            status_msg['status_message'].append(
-                                "Bitmessage returned: {}".format(return_str))
-                        time.sleep(0.1)
-                    except Exception as err:
-                        logger.exception("Error: {}".format(err))
-                    finally:
-                        lf.lock_release(config.LOCKFILE_API)
+                            logger.exception("Error: {}".format(err))
+                        finally:
+                            time.sleep(config.API_PAUSE)
+                            lf.lock_release(config.LOCKFILE_API)
 
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
@@ -418,8 +461,11 @@ def compose(address_from, address_to):
         session['form_populate'] = form_populate
         session['status_msg'] = status_msg
 
+        if not address_from:
+            address_from = "0"
+
         return redirect(url_for("routes_mail.compose",
-                                address_from="0",
+                                address_from=address_from,
                                 address_to="0"))
 
     return render_template("mailbox/compose.html",

@@ -10,13 +10,17 @@ from threading import Thread
 import PIL
 import gnupg
 from PIL import Image
+from sqlalchemy import and_
 
 import config
+from bitchan_client import DaemonCom
 from database.models import Chan
-from database.models import UploadSites
+from database.models import Command
 from database.models import Flags
+from database.models import GlobalSettings
 from database.models import Threads
 from database.models import UploadProgress
+from database.models import UploadSites
 from database.utils import session_scope
 from utils.anonfile import AnonFile
 from utils.download import generate_hash
@@ -27,22 +31,59 @@ from utils.files import delete_file
 from utils.files import delete_files_recursive
 from utils.files import human_readable_size
 from utils.files import return_non_overlapping_sequences
+from utils.gateway import api
 from utils.general import get_random_alphanumeric_string
+from utils.routes import has_permission
+from utils.routes import is_logged_in
+from utils.shared import get_access
 from utils.steg import steg_encrypt
-from utils.upload import upload_curl
+from utils.upload import UploadCurl
 
 DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 
 logger = logging.getLogger('bitchan.message_post')
+daemon_com = DaemonCom()
 
 
-def post_message(form_post, form_steg):
+def post_message(form_post, form_steg, status_msg):
     form_populate = {}
     return_str = None
-    status_msg = {"status_message": []}
+    status_msg = status_msg
+    settings = GlobalSettings.query.first()
+
+    if settings.enable_kiosk_mode:
+        if is_logged_in() and has_permission("is_global_admin"):
+            pass
+        elif settings.kiosk_allow_posting or has_permission("can_post"):
+            now = time.time()
+            last_post_ts = daemon_com.get_last_post_ts()
+            if now < last_post_ts + settings.kiosk_post_rate_limit:
+                status_msg['status_message'].append(
+                    "Posting is limited to 1 post per {} second period. Wait {:.0f} more seconds.".format(
+                        settings.kiosk_post_rate_limit,
+                        (last_post_ts + settings.kiosk_post_rate_limit) - now))
 
     if not form_post.from_address.data:
         status_msg['status_message'].append("A From Address is required.")
+
+    # Check if thread currently locked
+    if form_post.thread_id.data and form_post.board_id.data:
+        thread = Threads.query.filter(
+            Threads.thread_hash == form_post.thread_id.data).first()
+        if thread and thread.chan:
+            admin_cmd = Command.query.filter(and_(
+                Command.action == "set",
+                Command.action_type == "thread_options",
+                Command.thread_id == thread.thread_hash)).first()
+            try:
+                options = json.loads(admin_cmd.options)
+            except:
+                options = {}
+            if ("lock" in options and options["lock"]) or thread.locked_local:
+                access = get_access(thread.chan.address)
+                if form_post.from_address.data not in access["primary_addresses"]:
+                    status_msg['status_message'].append(
+                        "Only Owner address can post to a locked thread.")
 
     if form_post.is_op.data == "yes":
         if len(form_post.subject.data.strip()) == 0:
@@ -95,7 +136,12 @@ def post_message(form_post, form_steg):
                 status_msg['status_message'].append("Steg comments require an image attachment.")
 
     if "status_message" not in status_msg or not status_msg["status_message"]:
+        if settings.enable_kiosk_mode:
+            if settings.kiosk_allow_posting or has_permission("can_post"):
+                daemon_com.set_last_post_ts(time.time())
+
         return_str, errors = submit_post(form_post, form_steg=steg_submit)
+
         if return_str == "Error":
             status_msg['status_title'] = "Error"
             status_msg['status_message'] = status_msg['status_message'] + errors
@@ -110,6 +156,7 @@ def post_message(form_post, form_steg):
             "from_address": form_post.from_address.data,
             "subject": form_post.subject.data,
             "comment": form_post.body.data,
+            "sage": form_post.sage.data,
             "file1": bool(form_post.file1.data),
             "file2": bool(form_post.file2.data),
             "file3": bool(form_post.file3.data),
@@ -121,7 +168,8 @@ def post_message(form_post, form_steg):
             "image3_spoiler": form_post.image3_spoiler.data,
             "image4_spoiler": form_post.image4_spoiler.data,
             "steg_comment": form_steg.steg_message.data,
-            "ttl": form_post.ttl.data
+            "ttl": form_post.ttl.data,
+            "upload_cipher_and_key": form_post.upload_cipher_and_key.data
         }
 
     return status_msg, return_str, form_populate
@@ -129,8 +177,6 @@ def post_message(form_post, form_steg):
 
 def submit_post(form_post, form_steg=None):
     """Process the form for making a post"""
-    from bitchan_flask import nexus
-
     errors = []
 
     file_list = []
@@ -157,6 +203,7 @@ def submit_post(form_post, form_steg=None):
         "file_uploaded": None,
         "upload_filename": None,
         "op_sha256_hash": None,
+        "sage": None,
         "subject": None,
         "message": None,
         "nation": None,
@@ -166,12 +213,10 @@ def submit_post(form_post, form_steg=None):
     }
 
     if form_post.is_op.data != "yes":
-        chan_thread = nexus.get_chan_thread(
-            form_post.board_id.data, form_post.thread_id.data)
         with session_scope(DB_PATH) as new_session:
             thread = new_session.query(Threads).filter(
                 Threads.thread_hash == form_post.thread_id.data).first()
-            if chan_thread and thread:
+            if thread:
                 sub_strip = thread.subject.encode('utf-8').strip()
                 sub_unescape = html.unescape(sub_strip.decode())
                 sub_b64enc = base64.b64encode(sub_unescape.encode())
@@ -206,6 +251,9 @@ def submit_post(form_post, form_steg=None):
                     dict_send["nation_base64"] = flag.flag_base64
         else:
             dict_send["nation"] = form_post.nation.data
+
+    if form_post.sage.data:
+        dict_send["sage"] = True
 
     if form_post.body.data:
         dict_send["message"] = form_post.body.data.encode('utf-8').strip().decode()
@@ -315,8 +363,6 @@ def submit_post(form_post, form_steg=None):
 
 def send_message(errors, form_post, form_steg, dict_send):
     """Conduct the file upload and sending of a message"""
-    from bitchan_flask import nexus
-
     zip_file = "/tmp/{}".format(
         get_random_alphanumeric_string(15, with_punctuation=False, with_spaces=False))
 
@@ -351,7 +397,7 @@ def send_message(errors, form_post, form_steg, dict_send):
             # encrypt steg message into image
             # Get first image that steg can be inserted into
             if (form_steg and i == form_steg.image_steg_insert.data and
-                    file_extension in ["jpg", "jpeg", "png"] and
+                    file_extension in ["jpg", "jpeg"] and
                     not steg_inserted):
                 logger.info("{}: Adding steg message to image {}".format(dict_send["post_id"], fp))
 
@@ -454,7 +500,7 @@ def send_message(errors, form_post, form_steg, dict_send):
                     dict_send["post_id"], dict_send["file_sha256_hash"]))
 
             file_size = os.path.getsize(save_encrypted_path)
-            number_of_extracts = 3
+            number_of_extracts = config.UPLOAD_FRAG_AMT
             if file_size < 2000:
                 extract_starts_sizes = [{
                     "start": 0,
@@ -463,18 +509,22 @@ def send_message(errors, form_post, form_steg, dict_send):
             else:
                 extract_starts_sizes = [{
                     "start": 0,
-                    "size": 200
+                    "size": config.UPLOAD_FRAG_START_BYTES
                 }]
                 sequences = return_non_overlapping_sequences(
-                    number_of_extracts, 200, file_size - 200, 200, 1000)
+                    number_of_extracts,
+                    config.UPLOAD_FRAG_START_BYTES,
+                    file_size - config.UPLOAD_FRAG_END_BYTES,
+                    config.UPLOAD_FRAG_MIN_BYTES,
+                    config.UPLOAD_FRAG_MAX_BYTES)
                 for pos, size in sequences:
                     extract_starts_sizes.append({
                         "start": pos,
                         "size": size
                     })
                 extract_starts_sizes.append({
-                    "start": file_size - 200,
-                    "size": 200
+                    "start": file_size - config.UPLOAD_FRAG_END_BYTES,
+                    "size": config.UPLOAD_FRAG_END_BYTES
                 })
             logger.info("{}: File extraction positions and sizes: {}".format(
                 dict_send["post_id"], extract_starts_sizes))
@@ -522,6 +572,7 @@ def send_message(errors, form_post, form_steg, dict_send):
                 elif ("type" in dict_send["file_upload_settings"] and
                         dict_send["file_upload_settings"]["type"] == "curl"):
                     curl_options = dict_send["file_upload_settings"]
+                    curl_upload = UploadCurl(upload_id=upload_id)
 
                 for i in range(3):
                     logger.info("{}: Uploading {} file".format(
@@ -533,13 +584,12 @@ def send_message(errors, form_post, form_steg, dict_send):
                     elif (curl_options and
                             "type" in dict_send["file_upload_settings"] and
                             dict_send["file_upload_settings"]["type"] == "curl"):
-                        status, web_url = upload_curl(
+                        status, web_url = curl_upload.upload_curl(
                             dict_send["post_id"],
                             curl_options["domain"],
                             curl_options["uri"],
                             save_encrypted_path,
                             download_prefix=curl_options["download_prefix"],
-                            extra_curl_options=curl_options["extra_curl_options"],
                             upload_word=curl_options["upload_word"],
                             response=curl_options["response"])
 
@@ -558,6 +608,8 @@ def send_message(errors, form_post, form_steg, dict_send):
                                 new_session.commit()
                         break
                     time.sleep(15)
+            except:
+                logger.exception("uploading file")
             finally:
                 delete_file(save_encrypted_path)
                 with session_scope(DB_PATH) as new_session:
@@ -576,6 +628,15 @@ def send_message(errors, form_post, form_steg, dict_send):
                 return "Error", errors
 
     elif any(dict_send["file_order"]) and form_post.upload.data == "bitmessage":
+        with session_scope(DB_PATH) as new_session:
+            settings = new_session.query(GlobalSettings).first()
+            if settings.enable_kiosk_mode and settings.kiosk_disable_bm_attach:
+                msg = "Attaching files using the Bitmessage Upload Method is currently prohibited. " \
+                      "Use one of the alternate upload methods."
+                errors.append(msg)
+                logger.error("{}: {}".format(dict_send["post_id"], msg))
+                return "Error", errors
+
         # encrypt file
         try:
             dict_send["file_enc_cipher"] = form_post.upload_cipher_and_key.data.split(",")[0]
@@ -615,11 +676,11 @@ def send_message(errors, form_post, form_steg, dict_send):
         delete_file(save_encrypted_path)
 
     dict_message = {
-        "version": config.VERSION_BITCHAN,
+        "version": config.VERSION_MSG,
         "message_type": "post",
         "is_op": form_post.is_op.data == "yes",
         "op_sha256_hash": dict_send["op_sha256_hash"],
-        "timestamp_utc": nexus.get_utc(),
+        "timestamp_utc": daemon_com.get_utc(),
         "file_size": dict_send["file_size"],
         "file_amount": dict_send["file_amount"],
         "file_url_type": dict_send["file_url_type"],
@@ -637,6 +698,7 @@ def send_message(errors, form_post, form_steg, dict_send):
         "image3_spoiler": form_post.image3_spoiler.data,
         "image4_spoiler": form_post.image4_spoiler.data,
         "upload_filename": dict_send["upload_filename"],
+        "sage": dict_send["sage"],
         "subject": dict_send["subject"],
         "message": dict_send["message"],
         "nation": dict_send["nation"],
@@ -675,15 +737,29 @@ def send_message(errors, form_post, form_steg, dict_send):
 
     # prolong inventory clear if sending a message
     now = time.time()
-    if nexus.timer_clear_inventory > now:
-        nexus.timer_clear_inventory = now + config.CLEAR_INVENTORY_WAIT
+    if daemon_com.get_timer_clear_inventory() > now:
+        daemon_com.update_timer_clear_inventory(config.CLEAR_INVENTORY_WAIT)
+
+    # Don't allow a message to send while Bitmessage is restarting
+    allow_send = False
+    timer = time.time()
+    while not allow_send:
+        if daemon_com.bitmessage_restarting() is False:
+            allow_send = True
+        if time.time() - timer > config.BM_WAIT_DELAY:
+            logger.error(
+                "{}: Unable to send message: "
+                "Could not detect Bitmessage running.".format(dict_send["post_id"]))
+            msg = "Unable to send message."
+            errors = ["Could not detect Bitmessage running."]
+            return msg, errors
+        time.sleep(1)
 
     lf = LF()
-    if lf.lock_acquire(config.LOCKFILE_API, to=60):
+    if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
         return_str = None
         try:
-            time.sleep(0.1)
-            return_str = nexus._api.sendMessage(
+            return_str = api.sendMessage(
                 form_post.board_id.data,
                 form_post.from_address.data,
                 "",
@@ -697,11 +773,10 @@ def send_message(errors, form_post, form_steg, dict_send):
                     form_post.board_id.data,
                     form_post.ttl.data,
                     return_str))
-                nexus.post_delete_queue(form_post.from_address.data, return_str)
-            time.sleep(0.1)
         except Exception:
             pass
         finally:
+            time.sleep(config.API_PAUSE)
             lf.lock_release(config.LOCKFILE_API)
             return_msg = "Post of size {} placed in send queue. The time it " \
                          "takes to send a message is related to the size of the " \

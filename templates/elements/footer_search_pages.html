@@ -1,0 +1,27 @@
+{% if search_count == 0 %}
+    {% set pages = [] %}
+{% else %}
+    {% set pages = range(1, total_pages + 1) %}
+{% endif %}
+
+{% if pages|length > 1 %}
+<center>
+    <div class="pages plaque">
+    {% if search_page > 1 %}
+        {% if search_page > 2 %}
+            <a class="link page-nav" href="/search/{{search_string_b64}}/1">&lt;&lt;</a>&nbsp;&nbsp;
+        {% endif %}
+        <a class="link page-nav" href="/search/{{search_string_b64}}/{{search_page - 1}}">&lt;</a>&nbsp;&nbsp;
+    {% endif %}
+    {% for page in pages %}
+        {% if page == search_page %}<span class="page-nav" style="font-weight: bold">[{{page}}]</span>{% else %}<a class="link page-nav" href="/search/{{search_string_b64}}/{{page}}">[{{page}}]</a>{% endif %}{% if not loop.last or search_page < pages|length %}&nbsp;&nbsp;{% endif %}
+    {% endfor %}
+    {% if search_page < pages|length %}
+        <a class="link page-nav" href="/search/{{search_string_b64}}/{{search_page + 1}}">&gt;</a>{% if search_page < total_pages - 1 %}&nbsp;&nbsp;{% endif %}
+        {% if search_page < total_pages - 1 %}
+            <a class="link page-nav" href="/search/{{search_string_b64}}/{{total_pages}}">&gt;&gt;</a>
+        {% endif %}
+    {% endif %}
+    </div>
+</center>
+{% endif %}

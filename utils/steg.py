@@ -19,7 +19,7 @@ def steg_encrypt(orig_img, steg_img, sec_msg, gpg_pass):
     org_file_ext = orig_img.split(".")[-1].lower()
 
     try:
-        if org_file_ext in ["jpg", "jpeg", "tiff", "png"]:
+        if org_file_ext in ["jpg", "jpeg", "tiff"]:
             # PGP-encrypt steg message
             gpg = gnupg.GPG()
             sec_msg = gpg.encrypt(
@@ -31,10 +31,10 @@ def steg_encrypt(orig_img, steg_img, sec_msg, gpg_pass):
             if org_file_ext in ["jpg", "jpeg", "tiff"]:
                 exifHeader.hide(orig_img, steg_img, secret_message=msg_enc_b64enc)
                 return "success"
-            elif org_file_ext == "png":
-                secret = lsb.hide(orig_img, msg_enc_b64enc, auto_convert_rgb=True)
-                secret.save(steg_img)
-                return "success"
+            # elif org_file_ext == "png":
+            #     secret = lsb.hide(orig_img, msg_enc_b64enc, auto_convert_rgb=True)
+            #     secret.save(steg_img)
+            #     return "success"
             else:
                 return "Unsupported file type for Steg"
     except Exception as err:
@@ -50,8 +50,8 @@ def steg_decrypt(steg_img, gpg_pass, file_extension=None):
     try:
         if steg_file_ext.lower() in ["jpg", "jpeg", "tiff"]:
             base64_message = exifHeader.reveal(steg_img).decode()
-        elif steg_file_ext.lower() == "png":
-            base64_message = lsb.reveal(steg_img)
+        # elif steg_file_ext.lower() == "png":
+        #     base64_message = lsb.reveal(steg_img)
         else:
             logger.error("File type not accepted for steg decryption: {}".format(
                 steg_file_ext.lower()))
@@ -72,9 +72,7 @@ def check_steg(message_id, file_extension, passphrase=config.PGP_PASSPHRASE_STEG
     """Check image for steg message"""
     try:
         if file_path and os.path.exists(file_path):
-            steg_message = steg_decrypt(
-                file_path,
-                passphrase)
+            steg_message = steg_decrypt(file_path, passphrase)
         elif file_decoded:
             steg_message = steg_decrypt(
                 BytesIO(file_decoded),

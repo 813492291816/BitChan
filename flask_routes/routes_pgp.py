@@ -10,7 +10,9 @@ from flask import session
 from flask import url_for
 from flask.blueprints import Blueprint
 
+from database.models import GlobalSettings
 from forms import forms_settings
+from utils.routes import allowed_access
 from utils.routes import page_dict
 
 logger = logging.getLogger('bitchan.routes_pgp')
@@ -26,8 +28,22 @@ def global_var():
     return page_dict()
 
 
+@blueprint.before_request
+def before_view():
+    if (GlobalSettings.query.first().enable_verification and
+            ("verified" not in session or not session["verified"])):
+        session["verified_msg"] = "You are not verified"
+        return redirect(url_for('routes_verify.verify_wait'))
+    session["verified_msg"] = "You are verified"
+
+
 @blueprint.route('/pgp', methods=('GET', 'POST'))
 def pgp():
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    if not global_admin:
+        return allow_msg
+
     form_pgp = forms_settings.PGP()
 
     status_msg = session.get("status_msg", {"status_message": []})

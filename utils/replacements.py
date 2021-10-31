@@ -4,24 +4,27 @@ import json
 import logging
 import re
 from urllib import parse
-
+import uuid
 from sqlalchemy import and_
 
+import config
+from bitchan_client import DaemonCom
 from config import DATABASE_BITCHAN
 from database.models import AddressBook
 from database.models import Chan
 from database.models import Identity
 from database.models import Messages
-from database.models import Threads
 from database.utils import db_return
 from utils import replacements_simple
 from utils.general import get_random_alphanumeric_string
 from utils.general import pairs
 from utils.general import process_passphrase
+from utils.message_summary import get_reply_link_html
 
 DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 
 logger = logging.getLogger("bitchan.replacements")
+daemon_com = DaemonCom()
 
 
 def replace_lt_gt(s):
@@ -33,20 +36,24 @@ def replace_lt_gt(s):
 
 def is_post_id_reply(text):
     dict_ids_strings = {}
-    list_strings = re.findall(r'(?<!\S)&gt;&gt;[A-Z0-9]{9}(?!\S)', text)
-    for each_string in list_strings:
-        dict_ids_strings[each_string] = each_string[-9:]
-    for each_string, each_id in dict_ids_strings.items():
-        try:
-            post_id = int(each_id, 16)
-        except Exception as e:
-            logger.exception("Not a post reply: {}".format(text))
+    list_strings_local = re.findall(r'(?<!&gt;)&gt;&gt;[A-Z0-9]{9}(?!\.\\.)', text)
+    list_strings_remote = re.findall(r'&gt;&gt;&gt;[A-Z0-9]{9}(?!\.\\.)', text)
+    for each_string in list_strings_local:
+        dict_ids_strings[each_string] = {
+            "id": each_string[-9:],
+            "location": "local"
+        }
+    for each_string in list_strings_remote:
+        dict_ids_strings[each_string] = {
+            "id": each_string[-9:],
+            "location": "remote"
+        }
     return dict_ids_strings
 
 
-def isChanThreadReply(text):
+def is_board_post_reply(text):
     dict_ids_strings = {}
-    list_strings = re.findall(r'(?<!\S)&gt;&gt;&gt;BM-[a-zA-Z0-9]{34}\/[A-Z0-9]{9}|&gt;&gt;&gt;BM-[a-zA-Z0-9]{33}\/[A-Z0-9]{9}|&gt;&gt;&gt;BM-[a-zA-Z0-9]{32}\/[A-Z0-9]{9}', text)
+    list_strings = re.findall(r'&gt;&gt;&gt;BM-[a-zA-Z0-9]{34}\/[A-Z0-9]{9}|&gt;&gt;&gt;BM-[a-zA-Z0-9]{33}\/[A-Z0-9]{9}|&gt;&gt;&gt;BM-[a-zA-Z0-9]{32}\/[A-Z0-9]{9}', text)
     for each_string in list_strings:
         if len(each_string) == 59:
             dict_ids_strings[each_string] = each_string[-47:]
@@ -57,9 +64,9 @@ def isChanThreadReply(text):
     return dict_ids_strings
 
 
-def isChanReply(text):
+def is_chan_reply(text):
     dict_ids_strings = {}
-    list_strings = re.findall(r'(?<!\S)&gt;&gt;&gt;BM-[a-zA-Z0-9]{34}|&gt;&gt;&gt;BM-[a-zA-Z0-9]{33}|&gt;&gt;&gt;BM-[a-zA-Z0-9]{32}', text)
+    list_strings = re.findall(r'&gt;&gt;&gt;BM-[a-zA-Z0-9]{34}|&gt;&gt;&gt;BM-[a-zA-Z0-9]{33}|&gt;&gt;&gt;BM-[a-zA-Z0-9]{32}', text)
     for each_string in list_strings:
         if len(each_string) == 49:
             dict_ids_strings[each_string] = each_string[-37:]
@@ -70,7 +77,7 @@ def isChanReply(text):
     return dict_ids_strings
 
 
-def format_body(body):
+def format_body(message_id, body, truncate):
     """
     Formatting of post body text at time of page render
     Mostly to allow links to properly form after initial message processing from bitmessage
@@ -78,11 +85,29 @@ def format_body(body):
     if not body:
         return ""
 
+    split = False
+
+    this_message = Messages.query.filter(
+        Messages.message_id == message_id).first()
+
     lines = body.split("<br/>")
+
+    if ((truncate and len(lines) > config.BOARD_MAX_LINES) or
+            (truncate and len(body) > config.BOARD_MAX_CHARACTERS)):
+        split = True
+
+    if split:
+        lines = lines[:config.BOARD_MAX_LINES]
+
+    total_popups = 0
 
     regex_passphrase = r"""(\[\"(private|public)\"\,\s\"(board|list)\"\,\s\".{1,25}?\"\,\s\".{1,128}?\"\,\s\[(\"BM\-[a-zA-Z0-9]{32,34}(\"\,\s)?|\"?)*\]\,\s\[(\"BM\-[a-zA-Z0-9]{32,34}(\"\,\s)?|\"?)*\]\,\s\[(\"BM\-[a-zA-Z0-9]{32,34}(\"\,\s)?|\"?)*\]\,\s\[((\"BM\-[a-zA-Z0-9]{32,34}(\"\,\s)?|\"?)*\]\,\s\{(.*?)(\})|(\}\}))\,\s\"(.*?)\"\])"""
     regex_passphrase_base64_link = r"""http\:\/\/(172\.28\.1\.1|\blocalhost\b)\:8000\/join_base64\/([A-Za-z0-9+&]+={0,2})(\s|\Z)"""
     regex_address = r'(\[identity\](BM\-[a-zA-Z0-9]{32,34})\[\/identity\])'
+
+    # Used to store multi-line strings to replace >>> crosspost text.
+    # Needs to occur at end after all crossposts have been found.
+    dict_replacements = {}
 
     for line in range(len(lines)):
         # Search and append identity addresses with useful links
@@ -214,59 +239,35 @@ def format_body(body):
             if url:
                 lines[line] = lines[line].replace(link.strip(), url, 1)
 
-        # Search and replace Post Reply ID with link
-        dict_ids_strings = is_post_id_reply(lines[line])
-        if dict_ids_strings:
-            for each_string, targetpostid in dict_ids_strings.items():
-                # Determine if OP or identity/address book label is to be appended to reply post ID
-                name_str = ""
-                message = Messages.query.filter(
-                    Messages.message_id.endswith(targetpostid.lower())).first()
-                if message:
-                    if message.thread.op_sha256_hash == message.message_sha256_hash:
-                        name_str = " (OP)"
-                    identity = Identity.query.filter(
-                        Identity.address == message.address_from).first()
-                    if not name_str and identity and identity.label:
-                        name_str = " (You, {})".format(identity.label)
-                    address_book = AddressBook.query.filter(
-                        AddressBook.address == message.address_from).first()
-                    if not name_str and address_book and address_book.label:
-                        name_str = " ({})".format(address_book.label)
-                # replace body reply with link
-                rep_str = "<a class=\"link\" class=\"underlined link\" href=\"#{}\">{}{}</a>".format(
-                    targetpostid, each_string, name_str)
-                lines[line] = lines[line].replace(each_string, rep_str)
-
         # Search and replace BM address with post ID with link
-        dict_chans_threads_strings = isChanThreadReply(lines[line])
+        dict_chans_threads_strings = is_board_post_reply(lines[line])
         if dict_chans_threads_strings:
             for each_string, each_address in dict_chans_threads_strings.items():
-                address_split = each_address.split("/")
+                total_popups += lines[line].count(each_string)
+                if total_popups > 50:
+                    break
+
+                board_address = each_address.split("/")[0]
+                board_post_id = each_address.split("/")[1]
                 chan_entry = db_return(Chan).filter(and_(
                     Chan.type == "board",
-                    Chan.address == address_split[0])).first()
+                    Chan.address == board_address)).first()
                 if chan_entry:
-                    from bitchan_flask import nexus
-                    for each_page in range(1, 99):
-                        thread = nexus.get_chan_threads(chan_entry.address, each_page)
-                        if not thread:
-                            break
-                        for each_thread in thread:
-                            for each_post in each_thread.posts:
-                                thread_db = db_return(Threads).filter(
-                                    Threads.thread_hash == each_post.thread_id).first()
-                                if thread_db and address_split[1] == each_post.post_id:
-                                    lines[line] = lines[line].replace(
-                                        each_string,
-                                        '<a  class="link" href="/thread/{a}/{t}#{p}" title="{d} // {s}">>>>/{l}/{p}</a>'.format(
-                                            a=each_post.chan, t=each_post.thread_id,
-                                            d=chan_entry.description.replace('"', '&quot;'), s=thread_db.subject.replace('"', '&quot;'),
-                                            l=html.escape(chan_entry.label), p=each_post.post_id))
-                                    break
+                    message = db_return(Messages).filter(
+                        Messages.post_id == board_post_id).first()
+                    if message:
+                        link_text = '&gt;&gt;&gt;/{l}/{p}'.format(
+                            l=html.escape(chan_entry.label), p=message.post_id)
+                        rep_str = get_reply_link_html(
+                            message, external_thread=True, external_board=True, link_text=link_text)
+
+                        # Store replacement in dict to conduct after all matches have been found
+                        new_id = str(uuid.uuid4())
+                        dict_replacements[new_id] = rep_str
+                        lines[line] = lines[line].replace(each_string, new_id)
 
         # Search and replace only BM address with link
-        dict_chans_strings = isChanReply(lines[line])
+        dict_chans_strings = is_chan_reply(lines[line])
         if dict_chans_strings:
             for each_string, each_address in dict_chans_strings.items():
                 chan_entry = db_return(Chan).filter(and_(
@@ -278,7 +279,7 @@ def format_body(body):
                 if chan_entry:
                     lines[line] = lines[line].replace(
                         each_string,
-                        '<a class=" link"href="/board/{a}/1" title="{d}">>>>/{l}/</a>'.format(
+                        '<a class="link" href="/board/{a}/1" title="{d}">>>>/{l}/</a>'.format(
                             a=each_address, d=chan_entry.description.replace('"', '&quot;'), l=html.escape(chan_entry.label)))
                 elif list_entry:
                     lines[line] = lines[line].replace(
@@ -286,17 +287,108 @@ def format_body(body):
                         '<a class="link" href="/list/{a}" title="{d}">>>>/{l}/</a>'.format(
                             a=each_address, d=list_entry.description, l=list_entry.label))
 
+        # Find and replace hyperlinks
         list_links = []
         for each_word in lines[line].split(" "):
             parsed = parse.urlparse(each_word)
             if parsed.scheme and parsed.netloc:
-                list_links.append(parsed.geturl())
+                if "&gt;" not in parsed.geturl():
+                    list_links.append(parsed.geturl())
         for each_link in list_links:
             lines[line] = lines[line].replace(
                 each_link,
                 '<a class="link" href="{l}" target="_blank">{l}</a>'.format(l=each_link))
 
-    return "<br/>".join(lines)
+        # Search and replace Post Reply ID with link
+        # Must come after replacement of hyperlinks
+        dict_ids_strings = is_post_id_reply(lines[line])
+        if dict_ids_strings:
+            for each_string, targetpostdata in dict_ids_strings.items():
+                total_popups += lines[line].count(each_string)
+                if total_popups > 50:
+                    break
+
+                # Determine if OP or identity/address book label is to be appended to reply post ID
+                message = Messages.query.filter(
+                    Messages.post_id == targetpostdata["id"]).first()
+
+                name_str = ""
+                self_post = False
+                if message:
+                    identity = Identity.query.filter(
+                        Identity.address == message.address_from).first()
+                    if not name_str and identity and identity.label:
+                        self_post = True
+                        name_str = " ({})".format(identity.label)
+                    address_book = AddressBook.query.filter(
+                        AddressBook.address == message.address_from).first()
+                    if not name_str and address_book and address_book.label:
+                        name_str = " ({})".format(address_book.label)
+
+                # Same-thread reference
+                if (targetpostdata["location"] == "local" and
+                        message and
+                        message.thread and
+                        this_message and
+                        this_message.thread and
+                        message.thread.thread_hash == this_message.thread.thread_hash):
+                    if message.thread.op_sha256_hash == message.message_sha256_hash:
+                        name_str = " (OP)"
+                    rep_str = get_reply_link_html(
+                        message, self_post=self_post, name_str=name_str)
+
+                # Off-board cross-post
+                elif (targetpostdata["location"] == "remote" and
+                      message and
+                      message.thread and
+                      this_message and
+                      this_message.thread and
+                      message.thread.thread_hash != this_message.thread.thread_hash and
+                      message.thread.chan.address != this_message.thread.chan.address):
+                    rep_str = get_reply_link_html(
+                        message,
+                        self_post=self_post,
+                        name_str=name_str,
+                        external_thread=True,
+                        external_board=True)
+
+                # Off-thread cross-post
+                elif (targetpostdata["location"] == "remote" and
+                      message and
+                      message.thread and
+                      this_message and
+                      this_message.thread and
+                      message.thread.thread_hash != this_message.thread.thread_hash):
+                    rep_str = get_reply_link_html(
+                        message,
+                        self_post=self_post,
+                        name_str=name_str,
+                        external_thread=True)
+
+                # No reference/cross-post found
+                else:
+                    rep_str = each_string
+
+                # Store replacement in dict to conduct after all matches have been found
+                new_id = str(uuid.uuid4())
+                dict_replacements[new_id] = rep_str
+                lines[line] = lines[line].replace(each_string, new_id)
+
+    return_body = "<br/>".join(lines)
+
+    for id_to_replace, replace_with in dict_replacements.items():
+        return_body = return_body.replace(id_to_replace, replace_with)
+
+    if split:
+        truncate_str = '<br/><br/><span class="expand">Comment truncated. ' \
+                       '<a class="link" href="/thread/{ca}/{th}#{pid}">Click here</a>' \
+                       ' to view the full post.</span>'.format(
+            ca=this_message.thread.chan.address,
+            th=this_message.thread.thread_hash_short,
+            pid=this_message.post_id)
+        return_body += truncate_str
+
+    return return_body
 
 
 def eliminate_buddy(op_matches, cl_matches):

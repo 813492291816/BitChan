@@ -1,4 +1,6 @@
 #!/bin/bash
+# Dependencies:
+# sudo apt install pandoc
 
 SOURCE="${BASH_SOURCE[0]}"
 LOC="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"

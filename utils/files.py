@@ -105,7 +105,7 @@ def data_file_multiple_extract(file_source, extract_starts_sizes, chunk=1000):
             while position < file_size:
                 if (extract_index < len(extract_starts_sizes) and
                         position == extract_starts_sizes[extract_index]["start"]):
-                    logger.info("Pos: {}. At extraction point: extract {} bytes".format(
+                    logger.debug("Pos: {}. At extraction point: extract {} bytes".format(
                         position, extract_starts_sizes[extract_index]["size"]))
                     data_extracted_start_base64.append({
                         "start": extract_starts_sizes[extract_index]["start"],
@@ -119,11 +119,11 @@ def data_file_multiple_extract(file_source, extract_starts_sizes, chunk=1000):
                         position + chunk > extract_starts_sizes[extract_index]["start"] and
                         not extracted[extract_index]):
                     new_chunk = extract_starts_sizes[extract_index]["start"] - position
-                    logger.info("Pos: {}. Smaller chunk to meet start: {}".format(position, new_chunk))
+                    logger.debug("Pos: {}. Smaller chunk to meet start: {}".format(position, new_chunk))
                     out_file.write(in_file.read(new_chunk))
                     position += new_chunk
                 else:
-                    logger.info("Pos: {}. Normal chunk: {}".format(position, chunk))
+                    logger.debug("Pos: {}. Normal chunk: {}".format(position, chunk))
                     out_file.write(in_file.read(chunk))
                     position += chunk
     return data_extracted_start_base64
@@ -147,7 +147,7 @@ def data_file_multiple_insert(file_source, insert_starts_data, chunk=1000):
             while position < total_size:
                 if (insert_index < len(insert_starts_data) and
                         position == insert_starts_data[insert_index]["start"]):
-                    logger.info("Pos: {}. At insertion point: {} bytes".format(
+                    logger.debug("Pos: {}. At insertion point: {} bytes".format(
                         position, len(base64.b64decode(insert_starts_data[insert_index]["data"]))))
                     out_file.write(base64.b64decode(insert_starts_data[insert_index]["data"]))
                     inserted[insert_index] = True
@@ -157,11 +157,11 @@ def data_file_multiple_insert(file_source, insert_starts_data, chunk=1000):
                         position + chunk > insert_starts_data[insert_index]["start"] and
                         not inserted[insert_index]):
                     new_chunk = insert_starts_data[insert_index]["start"] - position
-                    logger.info("Pos: {}. Smaller chunk to meet start: {}".format(position, new_chunk))
+                    logger.debug("Pos: {}. Smaller chunk to meet start: {}".format(position, new_chunk))
                     out_file.write(in_file.read(new_chunk))
                     position += new_chunk
                 else:
-                    logger.info("Pos: {}. Normal chunk: {}".format(position, chunk))
+                    logger.debug("Pos: {}. Normal chunk: {}".format(position, chunk))
                     out_file.write(in_file.read(chunk))
                     position += chunk
 
@@ -270,10 +270,9 @@ class LF:
                 break
             except:
                 pass
-            time.sleep(0.1)
 
         if not self.is_lock[lf]:
-            logger.debug("no lock in {:.1f} sec. breaking.".format(to))
+            logger.debug("No lock in {:.1f} sec. breaking.".format(to))
             self.lock_release(lf)
         else:
             return True
@@ -286,7 +285,6 @@ class LF:
 
     def lock_release(self, lf):
         try:
-            time.sleep(0.1)
             logger.debug("releasing {}".format(lf))
             self.fl[lf].release(force=True)
             os.remove(lf)

@@ -1,0 +1,68 @@
+{% extends "layout.html" %}
+
+{% block title %}Bulk Delete Threads - {% endblock %}
+
+{% block head %}
+    <script>
+    function toggle(source) {
+        var inputs = document.getElementsByTagName("input");
+        for (let x=0; x<inputs.length; x++){
+            if (inputs[x].type == "checkbox" &&
+                    inputs[x].name.indexOf("deletethreadbulk_") == 0) {
+                inputs[x].checked = source.checked;
+            }
+        }
+    }
+    </script>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div class="themed" style="width: 100%; text-align: center; padding-bottom: 2em">
+                {% if board != "0" %}
+                <form action="/bulk_delete_thread/{{board.address}}" method="post">
+                <h1 class="title themed bold">Bulk Delete Threads for {{board.address}}, Board /{{board.label}}/</h1>
+                {% else %}
+                <form action="/bulk_delete_thread/0" method="post">
+                <h1 class="title themed bold">Bulk Delete Threads (from all boards)</h1>
+                {% endif %}
+                <table style="text-align: left; margin-left: auto; margin-right: auto;">
+                    <tr>
+                        <td><input type="checkbox" onClick="toggle(this)"/></td>
+                        <td>Last Post</td>
+                        <td>Subject</td>
+                        <td>Board</td>
+                    </tr>
+    {% for each_thread in threads %}
+                    <tr>
+                        <td>
+                            <input type="checkbox" id="deletethreadbulk_{{each_thread.thread_hash}}" name="deletethreadbulk_{{each_thread.thread_hash}}" value="y">
+                        </td>
+                        <td style="font-family: monospace">{{timestamp_to_date(each_thread.timestamp_sent)}}</td>
+                        <td><a class="link" href="/thread/{{each_thread.chan.address}}/{{each_thread.thread_hash_short}}">{{each_thread.subject|safe}}</a></td>
+                        <td><a class="link" href="/board/{{each_thread.chan.address}}/1">/{{each_thread.chan.label|safe}}/</a></td>
+                    </tr>
+    {% endfor %}
+                </table>
+
+                <div>
+                    <input type="submit" name="bulk_delete_threads" value="Submit"/>
+                </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/footer_links.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

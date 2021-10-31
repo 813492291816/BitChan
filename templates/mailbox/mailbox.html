@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}Mailbox{% if ident_address %} - {{ident_address}}{% endif %}{% endblock %}
+{% block title %}Mailbox{% if ident_address %} - {{ident_address}}{% endif %} - {% endblock %}
 
 {% block head %}
     <style>
@@ -64,6 +64,7 @@
                 <td></td>
                 <td>Address</td>
                 <td>Label</td>
+                <td>Inbox</td>
                 <td>Unread</td>
             </tr>
             {% for each_ident_address in identities %}
@@ -76,6 +77,9 @@
                 </td>
                 <td>
                     {{identities[each_ident_address]["label"]}}
+                </td>
+                <td>
+                    {{total_mail_counts[each_ident_address]}}
                 </td>
                 <td>
                     {{unread_mail_counts[each_ident_address]}}
@@ -130,7 +134,7 @@
         </div>
 
         {% if messages_sorted|length == 0 %}
-        <div class="themed" style="padding-bottom: 0.5em; text-align: center">
+        <div class="themed" style="padding: 1em 0em; text-align: center">
             No Messages
         </div>
         {% else %}
@@ -197,6 +201,9 @@
                     </td>
                     <td>Subject</td>
                     <td>{{time_str}}</td>
+                    {% if mailbox == "sent" %}
+                    <td>Status</td>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -233,6 +240,11 @@
                         <a class="link" href="/mailbox/{{ident_address}}/{{mailbox}}/{{page}}/{{each_msg['msgid']}}">{{timestamp_format(each_msg[time_point])}}</a>
                 {% endif %}
                     </td>
+                    {% if mailbox == "sent" %}
+                    <td>
+                        {{each_msg["status"]}}
+                    </td>
+                    {% endif %}
                 </tr>
             {% endfor %}
             </tbody>

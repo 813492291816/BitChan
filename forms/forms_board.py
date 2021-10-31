@@ -30,6 +30,7 @@ class Post(FlaskForm):
     nation = SelectField("Nations")
     subject = StringField("Subject")
     body = StringField("Body")
+    sage = BooleanField("Sage")
     ttl = IntegerField("TTL")
     file1 = MultipleFileField("Upload Images/Files")
     file2 = MultipleFileField("Upload Images/Files")
@@ -43,6 +44,7 @@ class Post(FlaskForm):
     upload = SelectField("Upload")
     upload_cipher_and_key = StringField("Upload Encryption Cipher")
     message_id = StringField("Message ID")
+    page_id = StringField("Page ID")
     start_download = SubmitField("Download File")
     submit = SubmitField("Submit")
 
@@ -82,7 +84,7 @@ class Join(FlaskForm):
     automatic_wipe = BooleanField("Automatic Wipe")
     allow_list_pgp_metadata = BooleanField("Allow Lists to Store PGP Passphrases")
     wipe_epoch = IntegerField("Time to Clear (UTC Epoch)")
-    interval_seconds = IntegerField("Interval (Seconds)")
+    interval_seconds = IntegerField("Interval (seconds)")
     restricted_additional = StringField("Restricted Additional Addresses")
     primary_additional = StringField("Primary Additional Addresses")
     secondary_additional = StringField("Secondary Additional Addresses")
@@ -105,6 +107,7 @@ class List(FlaskForm):
     from_address = StringField("From Address")
     save_from = SubmitField("Save From")
     add = SubmitField("Add")
+    add_bulk = SubmitField("Bulk Add")
     delete = SubmitField("Delete")
 
 
@@ -114,9 +117,18 @@ class BugReport(FlaskForm):
 
 
 class DeleteComment(FlaskForm):
+    address = StringField("Address")
     delete_comment = StringField("Delete Comment")
     send = SubmitField("Send")
 
 
 class Confirm(FlaskForm):
+    text = StringField("Text")
+    address = StringField("Address")
     confirm = SubmitField("Confirm")
+
+
+class Search(FlaskForm):
+    search = StringField("Search String")
+    page = IntegerField("Page")
+    submit = SubmitField("Search")

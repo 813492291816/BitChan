@@ -1,2 +1,16 @@
 SocksPort 172.28.1.2:9060
 ControlPort 172.28.1.2:9061
+
+# Random address (do not edit, enabled/disabled by BitChan)
+# These can be uncommented before building for the first time to start a hidden service
+# Command to view hostname after being built: sudo docker exec -it tor cat /usr/local/tor/rand/hostname
+#HiddenServiceDir /usr/local/tor/rand/
+#HiddenServicePort 80 unix:/usr/local/nginx/nginx.sock
+
+# Custom address (do not edit, enabled/disabled by BitChan)
+#HiddenServiceDir /usr/local/tor/cus/
+#HiddenServicePort 80 unix:/usr/local/nginx/nginx.sock
+
+# You can enable client authorization if using a hidden onion service
+# See BitChan/docker/tor/Dockerfile for instructions how to generate and enable the auth file
+# ClientOnionAuthDir /usr/local/tor/authorized_clients

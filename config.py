@@ -1,28 +1,71 @@
 import logging
 import os
+from datetime import timedelta
 from logging import handlers
 
-VERSION_BITCHAN = "0.11.1"
-VERSION_ALEMBIC = '000000000000'
-VERSION_MIN_MSG = "0.11.0"
+VERSION_BITCHAN = "1.0.0"
+VERSION_ALEMBIC = '000000000033'
+VERSION_MSG = "1.0.0"
+VERSION_MIN_MSG = "1.0.0"
 
 LOG_LEVEL = logging.INFO
 
 #
+# Bitmessage
+#
+BM_HOST = "172.28.1.3"
+BM_PORT = 8445
+BM_USERNAME = "bitchan"
+BM_PASSWORD = ""
+messages_dat = "/usr/local/bitmessage/messages.dat"
+keys_dat = "/usr/local/bitmessage/keys.dat"
+with open(keys_dat) as f:
+    for line in f:
+        if "apipassword" in line:
+            BM_PASSWORD = line.split("=")[1].strip()
+
+#
+# tor
+#
+TOR_HOST = "172.28.1.2"
+TOR_SOCKS_PORT = 9060
+TOR_CONTROL_PORT = 9061
+TOR_PASS = "torpass1234"  # also change tor password in docker-compose.yml
+TOR_PROXIES = {
+    "http": "socks5://{host}:{port}".format(host=TOR_HOST, port=TOR_SOCKS_PORT),
+    "https": "socks5://{host}:{port}".format(host=TOR_HOST, port=TOR_SOCKS_PORT)
+}
+
+#
 # BitChan
 #
+INSTALL_DIR = "/usr/local/bitchan"
+REFRESH_BOARD_INFO = 20
+REFRESH_CHECK_DOWNLOAD = 5
+REFRESH_ADDRESS_MSG = 20
+REFRESH_CHECK_SYNC = 60
+REFRESH_THREAD_QUEUE = 5
+REFRESH_CHECK_LISTS = (60 * 60 * 6)  # 6 hours
+REFRESH_CHECK_CMDS = (60 * 60 * 6)  # 6 hours
+REFRESH_CLEAR_PROGRESS = 600
+REFRESH_EXPIRES_TIME = (60 * 10)  # 10 minutes
+REFRESH_DELETE_SENT = (60 * 10)  # 10 minutes
+REFRESH_REMOVE_DEL = (60 * 60 * 24)  # 1 day
+REFRESH_UNREAD_COUNT = 120
+MAX_PROC_THREADS = 5
+API_CHECK_FREQ = 15
 API_TIMEOUT = 15
-THREADS_PER_PAGE = 15
+API_PAUSE = 0.3
+API_LOCK_TIMEOUT = 120
+BM_WAIT_DELAY = 120
+BM_TTL = 60 * 60 * 24 * 28  # 28 days
+BM_PAYLOAD_MAX_SIZE = 2 ** 18 - 500  # 261,644
+CLEAR_INVENTORY_WAIT = 60 * 5  # 5 minutes
+LIST_ADD_WAIT_TO_SEND_SEC = 60 * 5  # 5 minutes
 ID_LENGTH = 9
 LABEL_LENGTH = 25
 DESCRIPTION_LENGTH = 128
 LONG_DESCRIPTION_LENGTH = 1000
-CLEAR_INVENTORY_WAIT = 60 * 5  # 5 minutes
-BM_TTL = 60 * 60 * 24 * 28  # 28 days
-BM_PAYLOAD_MAX_SIZE = 2 ** 18 - 500  # 261,644
-BM_REFRESH_PERIOD = 5
-BM_SYNC_CHECK_PERIOD = 10
-BM_UNREAD_CHECK_PERIOD = 120
 BANNER_MAX_WIDTH = 650
 BANNER_MAX_HEIGHT = 400
 SPOILER_MAX_WIDTH = 250
@@ -30,13 +73,16 @@ SPOILER_MAX_HEIGHT = 250
 DOWNLOAD_ATTEMPTS = 5
 MAX_FILE_EXT_LENGTH = 8
 SEND_BEFORE_EXPIRE_DAYS = 20
-UPLOAD_SIZE_TO_THREAD = 5000000
+UPLOAD_SIZE_TO_THREAD = 5 * 1024 * 1024  # 5 MB
+UPLOAD_FRAG_AMT = 3
+UPLOAD_FRAG_START_BYTES = 100
+UPLOAD_FRAG_END_BYTES = 100
+UPLOAD_FRAG_MIN_BYTES = 50
+UPLOAD_FRAG_MAX_BYTES = 500
 FLAG_MAX_WIDTH = 25
 FLAG_MAX_HEIGHT = 15
 FLAG_MAX_SIZE = 3500
 MAX_SUBJECT_COMMENT = 246250
-THREAD_MAX_LINES = 18
-THREAD_MAX_CHARACTERS = 4000
 THREAD_MAX_HEIGHT_EM = 45
 BOARD_MAX_LINES = 12
 BOARD_MAX_CHARACTERS = 6000
@@ -45,8 +91,10 @@ PASSPHRASE_EXTRA_STRING_LENGTH = 250
 PASSPHRASE_ADDRESSES_LENGTH = 1000
 WIPE_INTERVAL_MAX = 15778800000
 WIPE_START_MAX = 33134749200
+INDEX_CARDS_OP_TRUNCATE_CHARS = 110
+INDEX_CARDS_REPLY_TRUNCATE_CHARS = 75
 FILE_ATTACHMENTS_MAX = 4
-FILE_EXTENSIONS_AUDIO = ["wav", "mp3", "ogg"]
+FILE_EXTENSIONS_AUDIO = ["m4a", "opus", "wav", "mp3", "ogg"]
 FILE_EXTENSIONS_IMAGE = ["jpg", "jpeg", "png", "gif", "webp"]
 FILE_EXTENSIONS_VIDEO = ["mp4", "webm", "ogg"]
 RESTRICTED_WORDS = ['bitchan', 'bltchan']
@@ -56,20 +104,23 @@ PGP_PASSPHRASE_STEG = """[J;-Ao2id-1M$;Q:.=`[q5n'/QD,=h_M'B[S-_A"SMI^HEKejZT&Au0
 BITCHAN_DEVELOPER_ADDRESS = "BM-2cWyqGJHrwCPLtaRvs3f67xsnj8NmPvRWZ"
 BITCHAN_BUG_REPORT_ADDRESS = "BM-2cVzMZfiP9qQw5MiKHD8whxrqdCwqtvdyE"
 
-INSTALL_DIR = "/usr/local/bitchan"
 ALEMBIC_POST = os.path.join(INSTALL_DIR, 'post_alembic_versions')
 DATABASE_BITCHAN = os.path.join(INSTALL_DIR, 'bitchan.db')
 FILE_DIRECTORY = os.path.join(INSTALL_DIR, "downloaded_files")
 LOG_DIRECTORY = os.path.join(INSTALL_DIR, "log")
 LOG_FILE = os.path.join(LOG_DIRECTORY, "bitchan.log")
+
+LOCKFILE_ADMIN_CMD = "/var/lock/bc_admin_cmd.lock"
 LOCKFILE_API = "/var/lock/bm_api.lock"
 LOCKFILE_MSG_PROC = "/var/lock/bm_msg_proc.lock"
+LOCKFILE_STORE_POST = "/var/lock/card_generate.lock"
 
 ADMIN_OPTIONS = [
     "delete_comment",
     "delete_post",
     "delete_thread",
-    "ban_address",
+    "board_ban_silent",
+    "board_ban_public",
     "modify_admin_addresses",
     "modify_user_addresses",
     "modify_restricted_addresses",
@@ -77,7 +128,7 @@ ADMIN_OPTIONS = [
     "css",
     "banner_base64",
     "spoiler_base64",
-    "long_description"
+    "long_description",
 ]
 
 DICT_UPLOAD_SERVERS = {
@@ -251,35 +302,17 @@ MSGS_PER_PAGE = [
 ]
 
 #
-# Bitmessage
-#
-messages_dat = "/usr/local/bitmessage/messages.dat"
-keys_dat = "/usr/local/bitmessage/keys.dat"
-host = "bitmessage"
-port = 8445
-username = "bitchan"
-password = ""
-with open(keys_dat) as f:
-    for line in f:
-        if "apipassword" in line:
-            password = line.split("=")[1].strip()
-
-#
-# tor
-#
-TOR_PASS = "torpass1234"
-TOR_PROXIES = {
-    "http": "socks5://tor:9060",
-    "https": "socks5://tor:9060"
-}
-
-#
 # Misc.
 #
-if os.environ.get('DOCKER', False) == 'TRUE':
-    DOCKER = True
+DOCKER = os.environ.get('DOCKER', False) == 'TRUE'
+
+if DOCKER:
+    PYRO_URI = 'PYRO:bitchan.pyro_server@bitchan_daemon:9099'
 else:
-    DOCKER = False
+    PYRO_URI = 'PYRO:bitchan.pyro_server@127.0.0.1:9099'
+
+PATH_RUN = '/var/run'
+PATH_DAEMON_PID = os.path.join(PATH_RUN, 'bitchan.pid')
 
 directories = [LOG_DIRECTORY, FILE_DIRECTORY]
 for each_directory in directories:
@@ -304,6 +337,14 @@ logging.basicConfig(
 
 class ProdConfig(object):
     SECRET_KEY = os.urandom(32)
+    CAPTCHA_ENABLE = True
+    CAPTCHA_LENGTH = 5
+    CAPTCHA_WIDTH = 160
+    CAPTCHA_HEIGHT = 50
+    CAPTCHA_FONTS = ['/home/bitchan/static/fonts/carbontype.ttf']
     DB_PATH = 'sqlite:///{}'.format(DATABASE_BITCHAN)
     SQLALCHEMY_DATABASE_URI = 'sqlite:///{}'.format(DATABASE_BITCHAN)
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SESSION_TYPE = "filesystem"
+    SESSION_PERMANENT = True
+    PERMANENT_SESSION_LIFETIME = timedelta(days=31)

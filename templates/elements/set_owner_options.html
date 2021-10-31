@@ -35,7 +35,7 @@
         <textarea rows="6" maxlength="{{config.LONG_DESCRIPTION_LENGTH}}" class="form" style="width: 100%; box-sizing: border-box;" id="long_description" name="long_description">
     {%- if board['current_chan'].address in command_options and
            "long_description" in command_options[board['current_chan'].address] -%}
-            {{command_options[board['current_chan'].address]["long_description"]}}
+            {{command_options[board['current_chan'].address]["long_description"]|safe}}
     {%- endif -%}
         </textarea>
     </div>

@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}Configure{% endblock %}
+{% block title %}Configure - {% endblock %}
 
 {% block head %}
     <style>
@@ -17,6 +17,14 @@
             text-decoration: underline;
             text-align: left;
         }
+
+        .wrap {
+            text-align: center;
+        }
+        .outer {
+            display: inline-block;
+            margin: 0 auto;
+        }
     </style>
 {% endblock %}
 
@@ -28,104 +36,13 @@
         {% include '/elements/status.html' %}
     {% endif %}
 
+<div class='wrap'>
+
     <h1 class="title themed bold" style="text-align: center">BitChan Configuration</h1>
 
-    <div style="max-width: 800px; text-align: center; margin: auto">
-        <div class="heading-2 head-center themed">Export</div>
-        <p class="themed">Useful for backing up addresses and passphrases in order to add addresses or join boards/lists at a later time.</p>
+    <div class="heading-2 head-center themed">General Settings</div>
 
-        <div style="padding: 1em 0 3em 0">
-            <form method="post">
-                <input type="submit" name="export_chans" value="Export Boards/Lists"/>
-                <input type="submit" name="export_identities" value="Export Identities"/>
-                <input type="submit" name="export_address_book" value="Export Address Book"/>
-            </form>
-        </div>
-    </div>
-
-    <div style="width: 100%; text-align: center; margin: auto">
-        <div class="heading-2 head-center themed">Post Attachment Upload Sites</div>
-        <div class="head-center themed">Edit or add external upload sites. You don't have to worry if users viewing the post have the same settings as they are sent within the post.</div>
-
-        <div style="padding: 1em 0 3em 0">
-            <table class="themed">
-                <tr>
-                    <th class="table-heading">Domain</th>
-                    <th class="table-heading">Type</th>
-                    <th class="table-heading">URI</th>
-                    <th class="table-heading">Download Prefix</th>
-                    <th class="table-heading">Response</th>
-                    <th class="table-heading">Direct DL URL</th>
-                    <th class="table-heading">Extra cURL Options</th>
-                    <th class="table-heading">cURL Upload Word</th>
-                    <th class="table-heading">Form Name</th>
-                    <th></th>
-                </tr>
-            {% for each_site in upload_sites %}
-                <tr>
-                    <td>{% if each_site.domain %}{{each_site.domain}}{% endif %}</td>
-                    <td>{% if each_site.type %}{{each_site.type}}{% endif %}</td>
-                    <td>{% if each_site.uri %}{{each_site.uri}}{% endif %}</td>
-                    <td>{% if each_site.download_prefix %}{{each_site.download_prefix}}{% endif %}</td>
-                    <td>{% if each_site.response %}{{each_site.response}}{% endif %}</td>
-                    <td>{{each_site.direct_dl_url}}</td>
-                    <td>{% if each_site.extra_curl_options %}{{each_site.extra_curl_options}}{% endif %}</td>
-                    <td>{% if each_site.upload_word %}{{each_site.upload_word}}{% endif %}</td>
-                    <td>{% if each_site.form_name %}{{each_site.form_name}}{% endif %}</td>
-                    <td>
-                        <a class="link" href="/upload_site/edit/{{each_site.id}}">Edit</a>
-                        <a class="link" href="/upload_site/delete/{{each_site.id}}">Delete</a>
-                    </td>
-                </tr>
-            {% endfor %}
-            </table>
-            <div style="padding-top: 0.5em">
-                <a class="link" href="/upload_site/add/0">Add Upload Site</a>
-            </div>
-        </div>
-    </div>
-
-    <div style="max-width: 800px; text-align: center; margin: auto">
-        <div class="heading-2 head-center themed">Custom Flags</div>
-        <div class="head-center themed">Maximum size of {{"%.1f"|format(config.FLAG_MAX_SIZE / 1000)}} KB and dimensions of {{config.FLAG_MAX_WIDTH}}x{{config.FLAG_MAX_HEIGHT}} pixels</div>
-
-        <div style="padding: 1em 0 3em 0">
-            <form method="post" enctype="multipart/form-data">
-                <div class="themed">
-                    Name
-                    <input name="flag_name" type="text"/>
-                    <input name="flag_file" type="file"/>
-                </div>
-                <div style="padding: 1em">
-                    <input type="submit" name="flag_upload" value="Upload Flag"/>
-                </div>
-            </form>
-
-        {% if custom_flags %}
-        <div class="heading-2 head-center themed">Uploaded Flags</div>
-        <table class="themed" style="margin-left: auto; margin-right: auto;">
-            {% for each_flag in custom_flags %}
-            <tr>
-                <td>
-                    <img src="/custom_flag_by_flag_id/{{each_flag.id}}">
-                </td>
-                <td>
-                    <form method="post">
-                        <input type="hidden" name="flag_id" value="{{each_flag.id}}"/>
-                        <input type="text" name="flag_name" value="{{each_flag.name}}"/>
-                        <input type="submit" name="flag_rename" value="Rename"/>
-                        <input type="submit" name="flag_delete" value="Delete" onclick="return confirm('Are you sure you want to delete this flag?')"/>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </table>
-        {% endif %}
-        </div>
-    </div>
-
-    <div style="max-width: 800px; text-align: center; margin: auto">
-        <div class="heading-2 head-center themed">Settings</div>
+    <div class='outer' style="max-width: 800px; padding: 1.5em 0 3em 0">
 
         <form method="post">
         <table class="themed">
@@ -158,7 +75,16 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2">Max size (MB) of file to automatically download from external upload sites (0 disables auto-downloading).</td>
+                <td colspan="2">Max total size (MB) of post attachments to automatically download from external upload sites (0 disables auto-download).</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.max_extract_size.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" step="any" name="max_extract_size" value="{{settings.max_extract_size}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Max size (MB) of extracted/decrypted post attachments. If during extraction/decryption, the size surpasses this value, extraction/decryption will be cancelled.</td>
             </tr>
             <tr>
                 <td>{{form_settings.allow_net_file_size_check.label(class_='heading-bold')}}</td>
@@ -196,16 +122,380 @@
             <tr>
                 <td colspan="2">If a post has unencrypted attachments from upload sites, always require the Download button to be pressed to download them.</td>
             </tr>
+            <tr>
+                <td>{{form_settings.auto_dl_from_unknown_upload_sites.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="auto_dl_from_unknown_upload_sites" name="auto_dl_from_unknown_upload_sites" value="y"{% if settings.auto_dl_from_unknown_upload_sites %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Automatically download from upload sites received in posts that don't already exist in your saved upload sites list.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.delete_sent_identity_msgs.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="delete_sent_identity_msgs" name="delete_sent_identity_msgs" value="y"{% if settings.delete_sent_identity_msgs %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">This will automatically delete the sent messages in your identity mailboxes.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.results_per_page_board.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="results_per_page_board" value="{{settings.results_per_page_board}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The number of threads to display per page on board pages.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.results_per_page_overboard.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="results_per_page_overboard" value="{{settings.results_per_page_overboard}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The number of threads to display per page on the overboard page.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.results_per_page_catalog.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="results_per_page_catalog" value="{{settings.results_per_page_catalog}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The number of threads to display per page on catalog pages.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.results_per_page_recent.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="results_per_page_recent" value="{{settings.results_per_page_recent}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The number of posts to display per page on the recent page.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.results_per_page_search.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="results_per_page_search" value="{{settings.results_per_page_search}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The number of results to display per page on the search page.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.results_per_page_mod_log.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="results_per_page_mod_log" value="{{settings.results_per_page_mod_log}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The number of results to display per page on the mod log page.</td>
+            </tr>
+            <tr>
+                <td class="heading-bold" colspan="2">Home Page Message
+                    <textarea rows="7" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="home_page_msg" name="home_page_msg">{{settings.home_page_msg|safe}}</textarea>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">This is the message that will appear on the home page. HTML is allowed.</td>
+            </tr>
+            <tr>
+                <td class="heading-bold" colspan="2">Template HEAD HTML
+                    <textarea rows="7" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="html_head" name="html_head">{{settings.html_head|safe}}</textarea>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">This is HTML that will be inserted in the layout page HEAD.</td>
+            </tr>
+            <tr>
+                <td class="heading-bold" colspan="2">Template BODY HTML
+                    <textarea rows="7" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="html_body" name="html_body">{{settings.html_body|safe}}</textarea>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">This is HTML that will be inserted in the layout page BODY.</td>
+            </tr>
+            <tr></tr>
+            <tr style="background-color: initial">
+                <td colspan="2">
+                    <div class="heading-2 head-center themed">Kiosk Mode Settings</div>
+                </td>
+            </tr>
+            <tr>
+                <td>{{form_settings.enable_kiosk_mode.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="enable_kiosk_mode" name="enable_kiosk_mode" value="y"{% if settings.enable_kiosk_mode %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Enable Kiosk Mode.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_login_to_view.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="kiosk_login_to_view" name="kiosk_login_to_view" value="y"{% if settings.kiosk_login_to_view %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Require users to log in to access BitChan.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_allow_posting.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="kiosk_allow_posting" name="kiosk_allow_posting" value="y"{% if settings.kiosk_allow_posting %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Allow users to post.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_disable_bm_attach.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="kiosk_disable_bm_attach" name="kiosk_disable_bm_attach" value="y"{% if settings.kiosk_disable_bm_attach %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Allow users to use of the Bitmessage post Upload Method.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_allow_download.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="kiosk_allow_download" name="kiosk_allow_download" value="y"{% if settings.kiosk_allow_download %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Allow users to induce post attachment downloading with the Allow Download button.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_post_rate_limit.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="kiosk_post_rate_limit" value="{{settings.kiosk_post_rate_limit}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The refractory period (seconds) between posting.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_attempts_login.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="kiosk_attempts_login" value="{{settings.kiosk_attempts_login}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The number of login attempts before a temporary login ban is made.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_ban_login_sec.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="kiosk_ban_login_sec" value="{{settings.kiosk_ban_login_sec}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">How many seconds to ban the user from logging in.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_only_admin_access_mod_log.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="kiosk_only_admin_access_mod_log" name="kiosk_only_admin_access_mod_log" value="y"{% if settings.kiosk_only_admin_access_mod_log %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">When kiosk mode is enabled, only Admins can view the Mod Log.</td>
+            </tr>
+            <tr></tr>
+            <tr style="background-color: initial">
+                <td colspan="2">
+                    <div class="heading-2 head-center themed">Security Settings</div>
+                </td>
+            </tr>
+            <tr>
+                <td>{{form_settings.enable_captcha.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="enable_captcha" name="enable_captcha" value="y"{% if settings.enable_captcha %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Require the completion of a captcha in order to post. Useful when Kiosk mode is enabled.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.enable_verification.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="enable_verification" name="enable_verification" value="y"{% if settings.enable_verification %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Enable DoS-protection. Useful when Kiosk Mode is enabled.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.enable_page_rate_limit.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="enable_page_rate_limit" name="enable_page_rate_limit" value="y"{% if settings.enable_page_rate_limit %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Enable rate-limiting page requests. Useful when Kiosk Mode is enabled.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.max_requests_per_period.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="max_requests_per_period" value="{{settings.max_requests_per_period}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">When rate-limiting, the maximum number of requests per period before a user needs to reverify a session.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.rate_limit_period_seconds.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="rate_limit_period_seconds" value="{{settings.rate_limit_period_seconds}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">When rate-limiting, the period (seconds) to allow the Maximum Requests. E.g. maximum of 10 requests per 60 seconds.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.hide_all_board_list_passphrases.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="hide_all_board_list_passphrases" name="hide_all_board_list_passphrases" value="y"{% if settings.hide_all_board_list_passphrases %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Prevent passphrases from being shown in the Board/List Information.</td>
+            </tr>
         </table>
 
-        <div style="padding: 3em 0">
+        <div style="padding-top: 1em">
             <input type="submit" name="save" value="Save"/>
         </div>
         </form>
     </div>
 
+    <div class="heading-2 head-center themed">Export</div>
+
+    <div class="head-center themed">Useful for backing up addresses and passphrases in order to add addresses or join boards/lists at a later time.</div>
+
+    <div class='outer' style="padding: 1.5em 0 3em 0">
+        <form method="post">
+            <input type="submit" name="export_chans" value="Export Boards/Lists"/>
+            <input type="submit" name="export_identities" value="Export Identities"/>
+            <input type="submit" name="export_address_book" value="Export Address Book"/>
+        </form>
+    </div>
+
+
+    <div class="heading-2 head-center themed">Post Attachment Upload Sites</div>
+    <div class="head-center themed">Edit or add external upload sites. You don't have to worry if users viewing the post have the same settings as they are sent within the post.</div>
+
+    <div class='outer' style="padding: 1.5em 0 3em 0">
+        <table class="themed">
+        {% for each_site in upload_sites %}
+            <tr>
+                <td>{% if each_site.form_name %}{{each_site.form_name}}{% endif %}</td>
+                <td>
+                    <a class="link" href="/upload_site/edit/{{each_site.id}}">Edit</a>
+                </td>
+                <td>
+                    <a class="link" href="/upload_site/delete/{{each_site.id}}">Delete</a>
+                </td>
+            </tr>
+        {% endfor %}
+        </table>
+        <div style="padding-top: 0.5em">
+            <a class="link" href="/upload_site/add/0">Add Upload Site</a>
+        </div>
+    </div>
+
+    <div class="heading-2 head-center themed">Custom Flags</div>
+    <div class="head-center themed">Maximum size of {{"%.1f"|format(config.FLAG_MAX_SIZE / 1000)}} KB and dimensions of {{config.FLAG_MAX_WIDTH}}x{{config.FLAG_MAX_HEIGHT}} pixels</div>
+
+    <div class='outer' style="padding: 1.5em 0 3em 0">
+        <form method="post" enctype="multipart/form-data">
+            <div class="themed">
+                Name
+                <input name="flag_name" type="text"/>
+                <input name="flag_file" type="file"/>
+            </div>
+            <div style="padding-top: 1em">
+                <input type="submit" name="flag_upload" value="Upload Flag"/>
+            </div>
+        </form>
+
+        {% if custom_flags %}
+        <div class="heading-2 head-center themed">Uploaded Flags</div>
+        <table class="themed" style="padding-top: 1.5em">
+            {% for each_flag in custom_flags %}
+            <tr>
+                <td>
+                    <img src="/custom_flag_by_flag_id/{{each_flag.id}}">
+                </td>
+                <td>
+                    <form method="post">
+                        <input type="hidden" name="flag_id" value="{{each_flag.id}}"/>
+                        <input type="text" name="flag_name" value="{{each_flag.name}}"/>
+                        <input type="submit" name="flag_rename" value="Rename"/>
+                        <input type="submit" name="flag_delete" value="Delete" onclick="return confirm('Are you sure you want to delete this flag?')"/>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% endif %}
+    </div>
+
+    <div class="heading-2 head-center themed">Hidden Onion Service</div>
+    <div class="head-center themed" style="padding-bottom: 0.5em">Random Address: {% if tor_enabled_rand and tor_address_rand %}<a class="link" href="http://{{tor_address_rand}}">http://{{tor_address_rand}}</a>{% else %}Disabled{% endif %}</div>
+    <div class="head-center themed" style="padding-bottom: 0.5em">Custom Address: {% if tor_enabled_cus and tor_address_cus %}<a class="link" href="http://{{tor_address_cus}}">http://{{tor_address_cus}}</a>{% else %}Disabled{% endif %}</div>
+
+    <form method="post" enctype="multipart/form-data">
+    <div class='outer' style="max-width: 800px; padding-top: 0.5em">
+        <table class="themed">
+            <tr>
+                <td>Enable Random Address</td>
+                <td>
+                    <input type="checkbox" id="enable_rand_tor_address" name="enable_rand_tor_address" value="y"{% if tor_enabled_rand %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Enabling a random address will cause tor to restart with a hidden onion service enabled with a randomly-generated onion address.</td>
+            </tr>
+            <tr>
+                <td>Enable Custom Address</td>
+                <td>
+                    <input type="checkbox" id="enable_cus_tor_address" name="enable_cus_tor_address" value="y"{% if tor_enabled_cus %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Enabling a custom address will use the public and private keys from the ZIP attached, below.</td>
+            </tr>
+            <tr>
+                <td>ZIP with Pub/Priv Keys</td>
+                <td>
+                    <input name="tor_file" type="file"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The ZIP archive must contain public and private keys (hs_ed25519_public_key and hs_ed25519_secret_key) for v3 hidden onion.</td>
+            </tr>
+        </table>
+        <div class="themed" style="padding-top: 1em;">
+            Note: If a Custom Address is currently enabled and you click Save Tor Settings or Get New Random Onion Address without selecting the ZIP file, your custom onion address will be replaced with a random onion address. Additionally, if tor restarts for any reason, your custom address will be replaced by a random address as well. This is due to the private key being deleted immediately after tor startup to prevent compromising your key if BitChan is running on a remote server.
+        </div>
+        <div style="padding-top: 1em;">
+            <input type="submit" name="save_tor_settings" value="Save Tor Settings"/>
+        </div>
+        <div style="padding-top: 1em;">
+            <input type="submit" name="get_new_rand_tor" value="Get New Random Onion Address"/>
+        </div>
+    </div>
+    </form>
+
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
+
+</div>
 {% endblock %}

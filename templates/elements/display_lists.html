@@ -1,8 +1,6 @@
 <div class="chans themed">
     <center>
-        Lists
-        <br/>
-        [
+        Lists [
         {% for address in chans_list_info %}
             {% if board and 'current_chan' in board and board['current_chan'] and address == board['current_chan'].address %}
             {{chans_list_info[address]["label_short"]|safe}}

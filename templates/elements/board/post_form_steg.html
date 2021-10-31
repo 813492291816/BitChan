@@ -42,22 +42,21 @@
 					<td colspan="2"><textarea rows="7" maxlength="246250" class="form" name="body">{% if "comment" in form_populate and form_populate["comment"] %}{{form_populate["comment"]}}{% endif %}</textarea></td>
 				</tr>
 				<tr>
-					<td class="form themed bold">Steg Comment<br/>(JPG/PNG only)</td>
+					<td class="form themed bold">Steg Comment<br/>(JPG only)</td>
 					<td colspan="2"><textarea rows="7" maxlength="246250" class="form" name="steg_message">{% if "steg_comment" in form_populate and form_populate["steg_comment"] %}{{form_populate["steg_comment"]}}{% endif %}</textarea></td>
 				</tr>
 				<tr>
-					<td class="form themed bold">TTL (seconds)</td>
-					<td colspan="2">
-						<input type="number" name="ttl" value="{% if 'ttl' in form_populate and form_populate['ttl'] %}{{form_populate['ttl']}}{% else %}2419200{% endif %}"/>
-					</td>
+				  <td colspan="3">
+					{% include '/elements/board/form_post_options.html' %}
+				  </td>
 				</tr>
 				<tr>
 					<td class="form themed bold">Image/File</td>
 					<td colspan="2">
-						<button type="button" class="btn" title="Remove File" onclick="ClearFile('file1')">&#10060;</button> <input id="file1" name="file1" type="file"/>
-						<br/><button type="button" class="btn" title="Remove File" onclick="ClearFile('file2')">&#10060;</button> <input id="file2" name="file2" type="file"/>
-						<br/><button type="button" class="btn" title="Remove File" onclick="ClearFile('file3')">&#10060;</button> <input id="file3" name="file3" type="file"/>
-						<br/><button type="button" class="btn" title="Remove File" onclick="ClearFile('file4')">&#10060;</button> <input id="file4" name="file4" type="file"/>
+						1 <button type="button" class="btn" title="Remove File" onclick="ClearFile('file1')">&#8856;</button> <input id="file1" name="file1" type="file"/>
+						<br/>2 <button type="button" class="btn" title="Remove File" onclick="ClearFile('file2')">&#8856;</button> <input id="file2" name="file2" type="file"/>
+						<br/>3 <button type="button" class="btn" title="Remove File" onclick="ClearFile('file3')">&#8856;</button> <input id="file3" name="file3" type="file"/>
+						<br/>4 <button type="button" class="btn" title="Remove File" onclick="ClearFile('file4')">&#8856;</button> <input id="file4" name="file4" type="file"/>
 						{%- if "file1" in form_populate and form_populate["file1"] %}<br/><strong>PLEASE RESELECT FILE/IMAGE</strong>{% endif %}
 					</td>
 				</tr>

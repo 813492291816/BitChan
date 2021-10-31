@@ -1,4 +1,4 @@
-version: "3.6"
+version: "2.4"
 
 services:
   nginx:
@@ -12,28 +12,32 @@ services:
       dockerfile: docker/nginx/Dockerfile
     volumes:
       - bitchan:/usr/local/bitchan
+      - nginx:/usr/local/nginx
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     ports:
       - "8000:8000"
-    depends_on:
-      - bitchan
+    cpuset: '0'
 
   tor:
     container_name: tor
     networks:
       bc_net:
         ipv4_address: 172.28.1.2
-    user: tor
     restart: always
     build:
       context: ../
       dockerfile: docker/tor/Dockerfile
       args:
-        password: "torpass1234"
-    ports:
-      - "9060:9060"
-      - "9061:9061"
+        password: "torpass1234"  # also change TOR_PASS in config.py
+    privileged: true
+    volumes:
+      - nginx:/usr/local/nginx
+      - tor:/usr/local/tor
+      - tor_etc:/etc/tor
+    cpuset: '0'
     command: tor -f /etc/tor/torrc
+    depends_on:
+      - nginx
 
   bitmessage:
     container_name: bitmessage
@@ -50,16 +54,14 @@ services:
       - bitmessage:/usr/local/bitmessage
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
-    ports:
-      - "8445:8445"
     command: >
       bash -c "/home/bitchan/database/upgrade_database.sh &&
                /usr/local/bin/pybitmessage -d"
     depends_on:
       - tor
 
-  bitchan:
-    container_name: bitchan
+  bitchan_flask:
+    container_name: bitchan_flask
     image: app
     networks:
       bc_net:
@@ -69,16 +71,43 @@ services:
     volumes:
       - bitchan:/usr/local/bitchan
       - bitmessage:/usr/local/bitmessage
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # For bitchan to restart bitmessage
+      - tor:/usr/local/tor
+      - tor_etc:/etc/tor
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # For bitchan to control docker containers
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
-    command: gunicorn --workers 1 --timeout 1800 --bind unix:/usr/local/bitchan/bitchan.sock bitchan_flask:app
+    cpuset: '0'
+    command: gunicorn --workers 1 --worker-class gthread --threads 4 --timeout 1800 --bind unix:/usr/local/bitchan/bitchan.sock bitchan_flask:app
     depends_on:
       - bitmessage
+
+  bitchan_daemon:
+    container_name: bitchan_daemon
+    image: app
+    networks:
+      bc_net:
+        ipv4_address: 172.28.1.5
+    restart: always
+    working_dir: /home/bitchan
+    volumes:
+      - bitchan:/usr/local/bitchan
+      - bitmessage:/usr/local/bitmessage
+      - tor:/usr/local/tor
+      - tor_etc:/etc/tor
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # For bitchan to control docker containers
+      - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
+    privileged: true
+    cpuset: '0'
+    command: bash -c "PYTHONPATH=/home/bitchan python3 bitchan_daemon.py"
+    depends_on:
+      - bitchan_flask
 
 volumes:
   bitchan:
   bitmessage:
+  nginx:
+  tor:
+  tor_etc:
 
 networks:
     bc_net:

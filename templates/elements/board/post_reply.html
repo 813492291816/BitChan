@@ -1,10 +1,11 @@
 {% set is_op_post = False %}
+{% set is_board_view = board['current_thread'] == None %}
 {% set file_order, attach, number_files = attachment_info(post.message_id) %}
 
 <input type="hidden" id="type_{{post.message_id}}" name="type" value="reply"/>
 <input type="hidden" id="num_files_{{post.message_id}}" name="num_files" value="{{number_files}}"/>
 
-<div class="post plaque" id="{{post_id(post.message_id)}}">
+<div class="post plaque" id="{{post.post_id}}">
     <div class="themed" style="display: block; vertical-align: top;">
         <div>
         {% include '/elements/board/post_header.html' %}
@@ -14,12 +15,14 @@
 
     {% if post.file_currently_downloading %}
             <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; margin-right: 1em">
+                {% include '/elements/board/post_filenames_only.html' %}
                 Processing attachment(s): {{post.file_progress}}. <br/>Please wait.
             </div>
     {% elif not post.file_currently_downloading and
         post.file_progress and
         post.file_progress != "Attachment processing successful" %}
             <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; margin-right: 1em">
+                {% include '/elements/board/post_filenames_only.html' %}
                 Issue processing attachment(s): {{post.file_progress}}
                 <form method="post" enctype="multipart/form-data" autocomplete="off">
                     <input name="message_id" value="{{post.message_id}}" type="hidden">
@@ -28,14 +31,16 @@
             </div>
     {% elif post.file_do_not_download %}
             <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; margin-right: 1em">
+                {% include '/elements/board/post_filenames_only.html' %}
                 Attachment(s) too large to auto-download<br/>
-                <form method="post" enctype="multipart/form-data" autocomplete="off">
+                <form style="padding-top: 0.5em" method="post" enctype="multipart/form-data" autocomplete="off">
                     <input name="message_id" value="{{post.message_id}}" type="hidden">
                     <input type="submit" name="start_download" value="Allow Download"/>
                 </form>
             </div>
     {% elif post.file_sha256_hash and not post.file_sha256_hashes_match %}
             <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; margin-right: 1em">
+                {% include '/elements/board/post_filenames_only.html' %}
                 Attachment(s) discarded (SHA256 hashes don't match, likely an issue downloading)<br/>
                 <form method="post" enctype="multipart/form-data" autocomplete="off">
                     <input name="message_id" value="{{post.message_id}}" type="hidden">
@@ -64,19 +69,19 @@
                 {{")<br>"|safe}}
             {%- endif %}
 
-                <a class="link" title="{{file_name|safe}}" href="/files/file/{{post.message_id}}/{{file_name}}">
+                <a class="link" title="{{file_name|safe}}" href="/files/file/{{post.message_id}}/{{quote(file_name)}}">
             {%- if file_name|safe|length > 25 -%}
                 {{(file_name|safe)[:19]}}...{{(file_name|safe)[-3:]}}
             {%- else -%}
                 {{file_name|safe}}
             {%- endif -%}
-                </a> (<a class="link" href="/dl/{{post.message_id}}/{{file_name}}">dl</a>)
+                </a> (<a class="link" href="/dl/{{post.message_id}}/{{quote(file_name)}}">dl</a>)
                 <br>
 
             {% if attach[file_name]["extension"] in config.FILE_EXTENSIONS_IMAGE or
                   attach[file_name]["extension"] in config.FILE_EXTENSIONS_VIDEO %}
-                <input type="hidden" id="width_{{post.message_id}}{{file_name}}" name="width" value="{{attach[file_name]['width']}}"/>
-                <input type="hidden" id="height_{{post.message_id}}{{file_name}}" name="height" value="{{attach[file_name]['height']}}"/>
+                <input type="hidden" id="width_{{post.message_id}}_{{loop.index}}" name="width" value="{{attach[file_name]['width']}}"/>
+                <input type="hidden" id="height_{{post.message_id}}_{{loop.index}}" name="height" value="{{attach[file_name]['height']}}"/>
             {% endif %}
 
             {% if not post.file_currently_downloading and
@@ -87,29 +92,29 @@
                                                      config.FILE_EXTENSIONS_AUDIO) %}
 
                 {% if attach[file_name]["extension"] in config.FILE_EXTENSIONS_IMAGE %}
-                <input type="hidden" id="spoiler_{{post.message_id}}{{file_name}}" name="spoiler" value="{% if attach[file_name]['spoiler'] %}1{% else %}0{% endif %}"/>
-                <input type="hidden" id="src_thumb_{{post.message_id}}{{file_name}}" name="src_thumb" value="{% if attach[file_name]['spoiler'] %}/spoiler/{{board['current_chan'].address}}{% else %}/files/thumb/{{post.message_id}}/{{file_name}}{% endif %}"/>
-                <input type="hidden" id="filename_{{post.message_id}}{{file_name}}" name="filename" value="{{file_name}}"/>
-                <img id="{{post.message_id}}" name="{{file_name}}" style="border-radius: 2px" class="postimg pic" src="{% if attach[file_name]['spoiler'] %}/spoiler/{{board['current_chan'].address}}{% else %}/files/thumb/{{post.message_id}}/{{file_name}}{% endif %}">
+                <input type="hidden" id="spoiler_{{post.message_id}}_{{loop.index}}" name="spoiler" value="{% if attach[file_name]['spoiler'] %}1{% else %}0{% endif %}"/>
+                <input type="hidden" id="src_thumb_{{post.message_id}}_{{loop.index}}" name="src_thumb" value="{% if attach[file_name]['spoiler'] %}/spoiler/{{board['current_chan'].address}}{% else %}/files/thumb/{{post.message_id}}/{{quote(file_name)}}{% endif %}"/>
+                <input type="hidden" id="filename_{{post.message_id}}_{{loop.index}}" name="filename" value="{{quote(file_name)}}"/>
+                <img id="{{post.message_id}}" name="{{loop.index}}" style="border-radius: 2px" class="postimg pic" src="{% if attach[file_name]['spoiler'] %}/spoiler/{{board['current_chan'].address}}{% else %}/files/thumb/{{post.message_id}}/{{quote(file_name)}}{% endif %}">
                 {% elif attach[file_name]["extension"] in config.FILE_EXTENSIONS_AUDIO %}
-                <div id="{{post.message_id}}{{file_name}}" class="video" style="border-radius: 5px; margin: 3px 3px 2px 2px; max-width: 450px;">
+                <div id="{{post.message_id}}_{{loop.index}}" class="video" style="border-radius: 5px; margin: 3px 3px 2px 2px; max-width: 450px;">
                     <audio class="video-insert volume-75" controls>
-                      <source src="/files/file/{{post.message_id}}/{{file_name}}" type="audio/{{attach[file_name]['extension']}}">
+                      <source src="/files/file/{{post.message_id}}/{{quote(file_name)}}">
                       Your browser does not support the audio tag.
                     </audio>
                 </div>
                 {% elif attach[file_name]["extension"] in config.FILE_EXTENSIONS_VIDEO %}
-                <div id="{{post.message_id}}" name="{{file_name}}" class="video" style="border: 0px solid #000; border-radius: 5px; margin: 3px 3px 2px 2px; width: 190px; height: 130px;">
+                <div id="{{post.message_id}}" name="{{loop.index}}" class="video" style="border: 0px solid #000; border-radius: 5px; margin: 3px 3px 2px 2px; width: 190px; height: 130px;">
+                    Click to Enlarge/Shrink<br/>
                     <video class="video-insert volume-75" controls>
-                      <source src="/files/file/{{post.message_id}}/{{file_name}}" type="video/{{attach[file_name]['extension']}}">
-                      Your browser does not support the video tag.
+                        <source src="/files/file/{{post.message_id}}/{{quote(file_name)}}">
+                        Your browser does not support the video tag.
                     </video>
-                    <center>Click Enlarge/Shrink</center>
                 </div>
                 {% endif %}
             {% elif attach[file_name]["extension"] %}
                 <div class="container_file" style="margin: 3px 3px 1px 2px">
-                    <a class="link" href="/files/file/{{post.message_id}}/{{file_name}}">
+                    <a class="link" href="/files/file/{{post.message_id}}/{{quote(file_name)}}">
                         <img style="height: 130px" src="/static/file_blank.png">
                         <div class="centered_file">{{attach[file_name]["extension"]|upper}}</div>
                     </a>
@@ -119,13 +124,6 @@
         {% endfor %}
     {% endif %}
 
-    {% set is_board_view = board['current_thread'] == None %}
-    {% set groups = format_body(text).split("<br/>") %}
-    {% set num_characters = 0 %}
-    {% if text %}
-        {% set num_characters = text|length %}
-    {% endif %}
-    {% set need_truncating = groups|length > config.THREAD_MAX_LINES or num_characters > config.THREAD_MAX_CHARACTERS %}
             <input type="hidden" id="truncate_{{post.message_id}}" name="truncate" value="{% if need_truncating %}1{% else %}0{% endif %}"/>
             <br id="newline_{{post.message_id}}" style="
                 {%- if number_files > 2 or (not is_board_view and need_truncating) %}
@@ -139,7 +137,7 @@
                     overflow-y: auto; max-height: {{config.THREAD_MAX_HEIGHT_EM}}em;
                 {%- endif -%}
             ">
-            {%- include '/elements/board/post.html' -%}
+            {{format_body(post.message_id, text, is_board_view)|safe}}
             </blockquote>
         </div>
     </div>

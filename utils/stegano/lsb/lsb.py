@@ -29,6 +29,9 @@ from typing import IO, Union
 
 from utils.stegano import tools
 
+import logging
+logger = logging.getLogger('bitchan.lsb')
+
 
 def hide(
     input_image: Union[str, IO[bytes]],

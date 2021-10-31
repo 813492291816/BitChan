@@ -163,7 +163,7 @@ def make_quote_from_book(lines_book, random_):
 
 
 def replace_8ball(text, seed):
-    regex = r"(?i)#8ball"
+    regex = r"(?:\A|\s)(?i)#8ball"
     lines = text.split("\n")
 
     find_count = 0
@@ -177,7 +177,7 @@ def replace_8ball(text, seed):
                 match = lines[line_index][each_find.start():each_find.end()]
                 start_string = lines[line_index][:each_find.start()]
                 end_string = lines[line_index][each_find.end():]
-                middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                     match, random.choice(replacements_data.list_8ball))
                 find_count += 1
                 lines[line_index] = start_string + middle_string + end_string
@@ -192,7 +192,7 @@ def replace_card_pulls(text, seed):
         "2♦", "3♦", "4♦", "5♦", "6♦", "7♦", "8♦", "9♦", "10♦", "J♦", "Q♦", "K♦", "A♦",
         "2♣", "3♣", "4♣", "5♣", "6♣", "7♣", "8♣", "9♣", "10♣", "J♣", "Q♣", "K♣", "A♣",
     ]
-    regex = r"(?i)#c(\d+)"
+    regex = r"(?:\A|\s)(?i)#c(\d+)"
     lines = text.split("\n")
 
     find_count = 1
@@ -226,10 +226,10 @@ def replace_card_pulls(text, seed):
                     cards_str.append(cards[each_index])
 
                 if len(cards_str) > 1:
-                    middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                         match, " ".join(cards_str))
                 else:
-                    middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                         match, cards_str[0])
 
                 find_count += 1
@@ -299,7 +299,7 @@ var x_{rand_str} = setInterval(function() {{
 
 def replace_dice_rolls(text, seed):
     lines = text.split("\n")
-    regex = r"(?i)#(\d*)d(\d+)"
+    regex = r"(?:\A|\s)(?i)#(\d*)d(\d+)"
     find_count = 1
 
     lines_finds = IterFinds(lines, regex)
@@ -340,10 +340,10 @@ def replace_dice_rolls(text, seed):
                     rolls_int.append(int(roll_str))
 
                 if len(rolls_str) > 1:
-                    middle_string = '<span class="replace-funcs">{}({} = {})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({} = {})</span>'.format(
                         match, " + ".join(rolls_str), sum(rolls_int))
                 else:
-                    middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                         match, rolls_str[0])
 
                 find_count += 1
@@ -357,7 +357,7 @@ def replace_flip_flop(text, seed):
         0: "flip",
         1: "flap"
     }
-    regex = r"(?i)#flip"
+    regex = r"(?:\A|\s)(?i)#flip"
     lines = text.split("\n")
 
     find_count = 1
@@ -371,7 +371,7 @@ def replace_flip_flop(text, seed):
                 match = lines[line_index][each_find.start():each_find.end()]
                 start_string = lines[line_index][:each_find.start()]
                 end_string = lines[line_index][each_find.end():]
-                middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                     match, dict_flip_flap[random.randint(0, 1)])
                 find_count += 1
                 lines[line_index] = start_string + middle_string + end_string
@@ -380,7 +380,7 @@ def replace_flip_flop(text, seed):
 
 
 def replace_god_song(text, seed, message_id):
-    regex = r"(?i)#godsong"
+    regex = r"(?:\A|\s)(?i)#godsong"
     lines = text.split("\n")
     stichomancy_lf = "/var/lock/stichomancy.lock"
     lf = LF()
@@ -432,18 +432,18 @@ def replace_god_song(text, seed, message_id):
                                 '<source src="/files/god_song/{}/god_song.mp3" type="audio/mp3">' \
                                 '</audio>'.format(message_id)
                     if quote:
-                        middle_string = '<span class="replace-funcs">{}(</span>{} ' \
+                        middle_string = ' <span class="replace-funcs">{}(</span>{} ' \
                                         '<span class="replace-funcs">{} -{})</span>'.format(
                                             match, audio_rep, quote, book_link)
                     else:
-                        middle_string = '<span class="replace-funcs">{}</span> {}'.format(
+                        middle_string = ' <span class="replace-funcs">{}</span> {}'.format(
                             match, book_link, audio_rep)
                 else:  # After God song, only get random Bible quote
                     if quote:
-                        middle_string = '<span class="replace-funcs">{}({} -{})</span>'.format(
+                        middle_string = ' <span class="replace-funcs">{}({} -{})</span>'.format(
                             match, quote, book_link)
                     else:
-                        middle_string = '<span class="replace-funcs">{}</span>'.format(match)
+                        middle_string = ' <span class="replace-funcs">{}</span>'.format(match)
 
                 find_count += 1
                 lines[line_index] = start_string + middle_string + end_string
@@ -455,7 +455,7 @@ def replace_iching(text, seed):
     yin_yang = [  # ratio 3/8+3/8+1/8+1/8
         '-   -', '-   -', '-   -', '-----', '-----', '-----', '- x -', '--o--'
     ]
-    regex = r"(?i)#iching"
+    regex = r"(?:\A|\s)(?i)#iching"
     lines = text.split("\n")
 
     find_count = 1
@@ -509,7 +509,7 @@ def replace_iching(text, seed):
                         replacements_data.iching[hexagrams[0] + 1],
                         replacements_data.iching[hexagrams[1] + 1])
 
-                middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                     match, str_return)
 
                 find_count += 1
@@ -524,7 +524,7 @@ def replace_rock_paper_scissors(text, seed):
         1: "paper",
         2: "scissors"
     }
-    regex = r"(?i)#rps"
+    regex = r"(?:\A|\s)(?i)#rps"
     lines = text.split("\n")
 
     find_count = 1
@@ -538,7 +538,7 @@ def replace_rock_paper_scissors(text, seed):
                 match = lines[line_index][each_find.start():each_find.end()]
                 start_string = lines[line_index][:each_find.start()]
                 end_string = lines[line_index][each_find.end():]
-                middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                     match, dict_rps[random.randint(0, 2)])
                 find_count += 1
                 lines[line_index] = start_string + middle_string + end_string
@@ -547,7 +547,7 @@ def replace_rock_paper_scissors(text, seed):
 
 
 def replace_rune_b_pulls(text, seed):
-    regex = r"(?i)#rb(\d+)"
+    regex = r"(?:\A|\s)(?i)#rb(\d+)"
     lines = text.split("\n")
 
     find_count = 1
@@ -582,10 +582,10 @@ def replace_rune_b_pulls(text, seed):
                         replacements_data.runes_b[each_index][random.randint(0, 1)])
 
                 if len(runes_str) > 1:
-                    middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                         match, ", ".join(runes_str))
                 else:
-                    middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                         match, runes_str[0])
 
                 find_count += 1
@@ -595,7 +595,7 @@ def replace_rune_b_pulls(text, seed):
 
 
 def replace_rune_pulls(text, seed):
-    regex = r"(?i)#r(\d+)"
+    regex = r"(?:\A|\s)(?i)#r(\d+)"
     lines = text.split("\n")
 
     find_count = 1
@@ -630,10 +630,10 @@ def replace_rune_pulls(text, seed):
                         replacements_data.runes[each_index][random.randint(0, 1)])
 
                 if len(runes_str) > 1:
-                    middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                         match, ", ".join(runes_str))
                 else:
-                    middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                         match, runes_str[0])
 
                 find_count += 1
@@ -644,7 +644,7 @@ def replace_rune_pulls(text, seed):
 
 def replace_stich(text, message_id):
     lines = text.split("\n")
-    regex = r"(?i)#stich"
+    regex = r"(?:\A|\s)(?i)#stich"
     stichomancy_lf = "/var/lock/stichomancy.lock"
     lf = LF()
 
@@ -687,7 +687,7 @@ def replace_stich(text, message_id):
                 except:
                     time.sleep(3)
                     continue
-                middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                     match, random_quote)
 
                 find_count += 1
@@ -697,7 +697,7 @@ def replace_stich(text, message_id):
 
 
 def replace_tarot_pulls(text, seed):
-    regex = r"(?i)#t(\d+)"
+    regex = r"(?:\A|\s)(?i)#t(\d+)"
     lines = text.split("\n")
 
     find_count = 1
@@ -732,10 +732,10 @@ def replace_tarot_pulls(text, seed):
                         replacements_data.tarot[each_index][random.randint(0, 1)])
 
                 if len(tcards_str) > 1:
-                    middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                         match, ", ".join(tcards_str))
                 else:
-                    middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                         match, tcards_str[0])
 
                 find_count += 1
@@ -746,7 +746,7 @@ def replace_tarot_pulls(text, seed):
 
 def replace_tarot_c_pulls(text, seed):
 
-    regex = r"(?i)#ct(\d+)"
+    regex = r"(?:\A|\s)(?i)#ct(\d+)"
     lines = text.split("\n")
 
     find_count = 1
@@ -781,10 +781,10 @@ def replace_tarot_c_pulls(text, seed):
                         replacements_data.tarot_c[each_index][random.randint(0, 1)])
 
                 if len(ctcards_str) > 1:
-                    middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                         match, ", ".join(ctcards_str))
                 else:
-                    middle_string = '<span class="replace-funcs">{}({})</span>'.format(
+                    middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
                         match, ctcards_str[0])
 
                 find_count += 1

@@ -44,28 +44,14 @@ Private
 Public
 {% endif %}
 Board
-{% endblock %}
+ - {% endblock %}
 
 {% block head %}
-    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.min.css">
-    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.theme.min.css">
-    <script src="/static/js/jquery-ui-1.12.1.min.js"></script>
     <script>
         function checkForm(form) {
             form.submit_post.disabled = true;
             form.submit_post.value = "Please wait...";
         }
-
-        $(function() {
-            $("#accordion-formatting").show().accordion({
-                collapsible: true,
-                active: false
-            });
-            $("#accordion-add-options").show().accordion({
-                collapsible: true,
-                active: false
-            });
-        });
 
         $(window).scroll(function() {
             var height = $(window).scrollTop();
@@ -91,8 +77,10 @@ Board
             });
 
             var volume_set = document.getElementsByClassName("volume-75");
-            for(var i = 0; i <= volume_set.length; i++) {
-                volume_set[i].volume = 0.75;
+            if (volume_set.length) {
+                for(var i = 0; i <= volume_set.length; i++) {
+                    volume_set[i].volume = 0.75;
+                }
             }
 
             document.getElementById('back2Top').style.display  = 'block';
@@ -114,7 +102,7 @@ Board
 
 {% block body %}
     <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
-    <a id="back2Bottom" title="Go to Bottom" style="display: none" href="#">&GreaterGreater;</a>
+    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
@@ -127,7 +115,7 @@ Board
     {% else %}
             Public
     {% endif %}
-            Board
+            Board <span style="font-size: 0.7em">[<a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a> / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a>]</span>
         </span>
     </center>
     <br/>
@@ -147,11 +135,12 @@ Board
 
     <div style="padding-top: 1em">
         <center>
-            <a class="title themed bold" style="text-decoration: none;" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">{{board["current_thread"].subject|safe}}</a>
+            <a class="title themed bold" style="text-decoration: none;" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}">{{board["current_thread"].subject|safe}}</a>
         </center>
     </div>
 
     {% set thread = board["current_thread"] %}
+    {% set thread_options = get_thread_options(thread.thread_hash) %}
 
     {% set steg_found = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
@@ -183,11 +172,11 @@ Board
 
     <hr/>
     <center>
-    {% if not is_private or (is_private and on_any_access_list) %}
+    {% if ((not is_private or (is_private and on_any_access_list)) and (not thread_options['lock_remote'] and not thread_options['lock_local'])) or primary_access %}
         {% set is_reply = True %}
         {% include '/elements/board/post_form.html' %}
     {% else %}
-        Insufficient permissions to post
+        <span class="themed">Insufficient permissions to post</span>
     {% endif %}
     </center>
     <hr/>
@@ -219,6 +208,9 @@ Board
         <br/>
     {% endfor %}
     </div>
+
+    <div class="themed" style="clear: both; text-align: right; padding-right: 1.5em;"><a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a> / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a></div>
+
     <hr/>
 
     {% include '/elements/display_boards.html' %}

@@ -1,0 +1,33 @@
+{% extends "layout.html" %}
+
+{% block title %}Login - {% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    {% if not logged_in -%}
+    <div class="container">
+        <form method="post" enctype="multipart/form-data" autocomplete="off" action="/login">
+            <div>
+                <input type="password" name="password"/>
+            </div>
+            <div style="padding-top: 1em; text-align: center;">
+                <input type="submit" name="login" value="Login"/>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if logged_in or
+          (not logged_in and not settings.kiosk_login_to_view) %}
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/footer_links.html' %}
+    {% endif %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

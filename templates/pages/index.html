@@ -1,12 +1,10 @@
 {% extends "layout.html" %}
 
-{% block title %}HOME{% endblock %}
-
 {% block head %}
     <style>
         .column {
           float: left;
-          width: 32.3%;
+          width: 24%;
           padding: 0 0.5%;
         }
 
@@ -43,9 +41,39 @@
           margin: 0 3px;
         }
     </style>
+    <script>
+        $(window).scroll(function() {
+            var height = $(window).scrollTop();
+            if (height > 100) {
+                $('#back2Top').fadeIn();
+                $('#back2Bottom').fadeOut();
+            } else {
+                $('#back2Bottom').fadeIn();
+                $('#back2Top').fadeOut();
+            }
+        });
+
+        $(document).ready(function() {
+            $("#back2Top").click(function(event) {
+                event.preventDefault();
+                $("html, body").animate({scrollTop: 0}, "slow");
+                return false;
+            });
+            $("#back2Bottom").click(function(event) {
+                event.preventDefault();
+                $("html, body").animate({scrollTop: $(document).height()}, "slow");
+                return false;
+            });
+
+            document.getElementById('back2Top').style.display  = 'block';
+            document.getElementById('back2Bottom').style.display  = 'block';
+        });
+    </script>
 {% endblock %}
 
 {% block body %}
+    <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
+    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
@@ -55,70 +83,98 @@
         {% include '/elements/status.html' %}
     {% endif %}
 
-    <div class="intro bold themed">
+    <div class="intro themed">
         <p>
             <center><h1 class="title themed bold">Welcome to BitChan {{config.VERSION_BITCHAN}}</h1></center>
-            <center>Mailboxes: <a class="bold link" href="/mailbox/0/0/0/0">{{unread_mail}} Unread Messages</a></center>
+            <center>{{current_time}}
+    {%- if not settings.enable_kiosk_mode or logged_in -%}
+            , <a class="bold link" href="/mailbox/0/0/0/0">{{unread_mail}} Unread Messages</a>
+    {% endif -%}
+            </center>
+    {% if settings.home_page_msg %}
             <br/>
-            <center>BitChan is a decentralized anonymous image board built on top of <a class="link" target="_blank" href="https://bitmessage.org">Bitmessage</a> with <a class="link" target="_blank" href="https://www.torproject.org">Tor</a> and <a class="link" target="_blank" href="https://gnupg.org">GnuPG</a>.</center>
-            <br/>
-            This is a beta release of BitChan. Some features are only partially implemented and there are likely to be bugs. Please report any issues or bugs you find with a <a class="link" href="/bug_report">Bug Report</a>. Also watch the official <a class="link" href="/board/BM-2cVZdtgUe7uq7LbWx12W2btJybAphF3VxG/1">BitChan-Dev Board</a> for announcements, the <a class="link" href="/list/BM-2cUYu7r41Bbnox4P8gEVtdnZGLnisgG7Yu">BitChan List</a> for other boards and lists that may appear for discussion and other purposes, and the <a class="link" href="https://www.github.com/813492291816/BitChan">BitChan GitHub page</a> for updates to the code.
+            {{settings.home_page_msg|safe}}
+    {% endif %}
         </p>
     </div>
 
     {% if newest_posts and settings.chan_update_display_number %}
-    <div class="intro">
+    <div class="intro themed">
+        <a class="link" style="margin-top: -10px; margin-left: -10px" href="/overboard/0/1">Overboard</a> / <a class="link" href="/recent/0/1">Recent</a>
         {% for each_chan in newest_posts %}
             {% if loop.index <= settings.chan_update_display_number %}
                 {% if newest_posts[each_chan]["type"] == "board" %}
-        <div class="themed" style="padding: {% if not loop.first %}1.5em{% else %}0{% endif %} 0 0.5em 0.5em">
-            <span style="font-size: 0.7em">{{timestamp_to_date(newest_posts[each_chan]["latest_timestamp"])}}</span>
+        <div class="themed" style="padding: {% if not loop.first %}1.5em{% else %}0{% endif %} 0 0.5em 0.25em" title="Last Post {{timestamp_to_date(newest_posts[each_chan]['latest_timestamp'])}}">
             <br/>Board: <a class="link" style="font-size: 1.2em;" href="/board/{{each_chan.address}}/1">/{{chans_board_info[each_chan.address]["label"]|safe}}/ - {{chans_board_info[each_chan.address]["description"]|safe}}</a>
+            [<a class="link" title="Catalog" href="/overboard/{{each_chan.address}}/1">C</a>
+            / <a class="link" title="Recent" href="/recent/{{each_chan.address}}/1">R</a>
+            {%- if not settings.enable_kiosk_mode or
+                   (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_mod_log and logged_in and has_permission("is_global_admin")) or
+                   (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_mod_log) %}
+            / <a class="link" title="Mod Log" href="/mod_log/{{each_chan.address}}/1">M</a>
+            {%- endif -%}
+            ]
+            <span style="font-size: 0.7em">{{newest_posts[each_chan]['total_threads']}} Thread{% if newest_posts[each_chan]['total_threads'] > 1 %}s{% endif %}, {{newest_posts[each_chan]['total_posts']}} Post{% if newest_posts[each_chan]['total_posts'] > 1 %}s{% endif %}{% if newest_posts[each_chan]["wipe_date"] %}, Wipe at {{newest_posts[each_chan]["wipe_date"]}}{% endif %}</span>
         </div>
         <div class="row">
-                    {% for each_thread in newest_posts[each_chan]["threads"] %}
-
+                    {% for each_thread_hash in newest_posts[each_chan]["threads"] %}
+                        {% set thread_options = get_thread_options(each_thread_hash) %}
             <div class="column">
-                        {% set op_post = newest_posts[each_chan]["threads"][each_thread][0] %}
+                <div class="themed" style="font-size: 0.7em; padding-left: 0.25em; padding-bottom: 0.25em">
+                    {{newest_posts[each_chan]["threads"][each_thread_hash]["last_post_past"]}} ago |
+                    {{newest_posts[each_chan]["threads"][each_thread_hash]["ppm"]}} PPM
+                    {% if thread_options["sticky"] %}
+                        <img style="position: relative; top: 1px; height: 10px" title="Stickied{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
+                        {%- if thread_options['sticky_local'] and not thread_options['sticky_remote'] -%}
+                            pin_green.png
+                        {%- elif not thread_options['sticky_local'] and thread_options['sticky_remote'] -%}
+                            pin_red.png
+                        {%- else -%}
+                            pin_green_red.png
+                        {%- endif -%}
+                        ">
+                    {% endif %}
 
-                <div class="card" style="font-size: 1.2em;
-                {%- if op_post and post_has_image(op_post.message_id) -%}
-                background-size: 100%; background-repeat: no-repeat; background-image: linear-gradient(rgba(255,255,255,0.2), rgba(255,255,255,0.2)), url(/files/thumb_first/{{op_post.message_id}}/0);
-                {%- endif -%}
-                ">
-                    <div class="card_bg themed" style="font-weight: bold; overflow-wrap: break-word;">
-                        <a class="link" style="font-size: 1.4em;" href="/thread/{{each_chan.address}}/{{each_thread.thread_hash}}">{{each_thread.subject|safe}}</a><br>
-                        {% for each_message in newest_posts[each_chan]["threads"][each_thread] %}
-                            {% set msg_str = clean_html(each_message.message) %}
-                            {% if not loop.first %}
-                        (<a class="link" href="/thread/{{each_chan.address}}/{{each_thread.thread_hash}}#{{post_id(each_message.message_id)}}">R</a>):
-                            {% endif %}
-                            {% if msg_str|length > 30 %}
-                        {{msg_str[:30]|safe}}...
-                            {% elif msg_str %}
-                        {{msg_str|safe}}
-                            {% else %}
-                        [No Text]
-                            {% endif %}
-                            {% if loop.first %}
-                        <div class="three-dots">
-                            <span></span>
-                            <span></span>
-                            <span></span>
-                        </div>
-                            {% elif not loop.last %}
-                        <br/>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
+                    {% if thread_options["lock"] %}
+                        <img style="position: relative; top: 1px; height: 10px" title="Locked{% if thread_options['lock_local'] %} (Local){% endif %}{% if thread_options['lock_remote'] %} (Remote){% endif %}" src="/static/
+                        {%- if thread_options['lock_local'] and not thread_options['lock_remote'] -%}
+                            lock_green.png
+                        {%- elif not thread_options['lock_local'] and thread_options['lock_remote'] -%}
+                            lock_red.png
+                        {%- else -%}
+                            lock_green_red.png
+                        {%- endif -%}
+                        ">
+                    {% endif %}
+
+                    {% if thread_options["anchor"] %}
+                        <img style="position: relative; top: 1px; height: 10px" title="Anchored{% if thread_options['anchor_local'] %} (Local){% endif %}{% if thread_options['anchor_remote'] %} (Remote){% endif %}" src="/static/
+                        {%- if thread_options['anchor_local'] and not thread_options['anchor_remote'] -%}
+                            anchor_green.png
+                        {%- elif not thread_options['anchor_local'] and thread_options['anchor_remote'] -%}
+                            anchor_red.png
+                        {%- else -%}
+                            anchor_green_red.png
+                        {%- endif -%}
+                        ">
+                    {% endif %}
                 </div>
+                {{generate_card(each_thread_hash)|safe}}
             </div>
                     {% endfor %}
         </div>
                 {% elif newest_posts[each_chan]["type"] == "list" %}
-        <div class="themed" style="padding: {% if not loop.first %}1.5em{% else %}0{% endif %} 0 0.5em 0.5em">
-            <span class="themed" style="font-size: 0.7em">{{timestamp_to_date(newest_posts[each_chan]["latest_timestamp"])}}</span>
+        <div class="themed" style="padding: {% if not loop.first %}2em{% else %}0{% endif %} 0 0.5em 0.25em">
             <br/>List: <a class="link" style="font-size: 1.2em;" href="/list/{{each_chan.address}}">/{{chans_list_info[each_chan.address]["label"]|safe}}/ - {{chans_list_info[each_chan.address]["description"]|safe}}</a>
+            {% if not settings.enable_kiosk_mode or
+                  (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_mod_log and logged_in and has_permission("is_global_admin")) or
+                  (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_mod_log) %}
+            [<a class="link" title="Mod Log" href="/mod_log/{{each_chan.address}}/1">M</a>]
+            {% endif %}
+            <span style="font-size: 0.7em">{{newest_posts[each_chan]['list_entries']}} Entries{% if newest_posts[each_chan]["wipe_date"] %}, Wipe at {{newest_posts[each_chan]["wipe_date"]}}{% endif %}</span>
+        </div>
+        <div class="themed" style="font-size: 0.7em; padding-left: 0.25em">
+            {{newest_posts[each_chan]['last_post_past']}} ago | {{timestamp_to_date(newest_posts[each_chan]['latest_timestamp'])}}
         </div>
                 {% endif %}
             {% endif %}

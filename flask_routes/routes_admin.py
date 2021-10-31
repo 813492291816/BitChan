@@ -7,26 +7,37 @@ from io import BytesIO
 
 import gnupg
 from PIL import Image
+from flask import redirect
 from flask import render_template
 from flask import request
+from flask import session
+from flask import url_for
 from flask.blueprints import Blueprint
 from sqlalchemy import and_
 
 import config
-from bitchan_flask import nexus
+from bitchan_client import DaemonCom
 from database.models import Chan
 from database.models import Command
+from database.models import GlobalSettings
 from database.models import Messages
 from database.models import Threads
 from forms import forms_board
 from utils.files import LF
-from utils.files import delete_message_files
 from utils.files import human_readable_size
+from utils.gateway import api
+from utils.gateway import delete_and_replace_comment
 from utils.general import check_bm_address_csv_to_list
-from utils.routes import get_access
+from utils.posts import delete_post
+from utils.posts import delete_thread
+from utils.routes import allowed_access
 from utils.routes import page_dict
+from utils.shared import add_mod_log_entry
+from utils.shared import get_access
+from utils.shared import regenerate_thread_card_and_popup
 
 logger = logging.getLogger('bitchan.routes_admin')
+daemon_com = DaemonCom()
 
 blueprint = Blueprint('routes_admin',
                       __name__,
@@ -39,108 +50,179 @@ def global_var():
     return page_dict()
 
 
-@blueprint.route('/delete/<current_chan>/<message_id>/<thread_id>/<delete_type>', methods=('GET', 'POST'))
-def delete(current_chan, message_id, thread_id, delete_type):
-    """Owners and Admins can delete messages and threads"""
+@blueprint.before_request
+def before_view():
+    if (GlobalSettings.query.first().enable_verification and
+            ("verified" not in session or not session["verified"])):
+        session["verified_msg"] = "You are not verified"
+        return redirect(url_for('routes_verify.verify_wait'))
+    session["verified_msg"] = "You are verified"
+
+
+@blueprint.route('/mod_thread/<current_chan>/<thread_id>/<mod_type>', methods=('GET', 'POST'))
+def mod_thread(current_chan, thread_id, mod_type):
+    """
+    Locally/remotely modify a thread or post
+    """
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    board_list_admin, allow_msg = allowed_access(
+        check_is_board_list_admin=True, check_admin_board=current_chan)
+    if not global_admin and not board_list_admin:
+        return allow_msg
+
     form_confirm = forms_board.Confirm()
 
+    message_id = None
     chan = Chan.query.filter(Chan.address == current_chan).first()
     thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
 
+    from_list = daemon_com.get_from_list(current_chan, only_owner_admin=True)
+
+    if not thread:
+        return "Thread doesn't exist"
+
     if request.method != 'POST' or not form_confirm.confirm.data:
         return render_template("pages/confirm.html",
-                               action="delete",
+                               action=mod_type,
                                chan=chan,
                                current_chan=current_chan,
-                               message_id=message_id,
+                               from_list=from_list,
                                thread=thread,
                                thread_id=thread_id,
-                               delete_type=delete_type)
+                               mod_type=mod_type)
 
     board = {
         "current_chan": chan,
-        "current_thread": thread_id,
+        "current_thread": thread_id
     }
     status_msg = {"status_message": []}
-    url = ""
-    url_text = ""
-    delete_thread = False
-    list_delete_message_ids = []
-
-    if ((delete_type in ["post", "post_all"] and len(thread.messages) == 1) or
-            delete_type in ["thread", "thread_all"]):
-        delete_thread = True
-
-    if delete_thread:
-        for message in thread.messages:
-            list_delete_message_ids.append(message.message_id)
-    elif thread:
-        list_delete_message_ids.append(message_id)
-        url = "/thread/{}/{}".format(current_chan, thread_id)
-        url_text = "{}".format(thread.subject)
+    url = "/thread/{}/{}".format(current_chan, thread.thread_hash_short)
+    url_text = "Thread: {}".format(thread.subject)
 
     lf = LF()
     if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
         try:
-            # First, delete messages from database
-            if list_delete_message_ids:
-                for each_id in list_delete_message_ids:
-                    this_message = Messages.query.filter(Messages.message_id == each_id).first()
-                    if this_message:
-                        # Delete all files associated with message
-                        delete_message_files(this_message.message_id)
-                        this_message.delete()
+            from_user = None
+            log_description = ""
 
-            # Next, delete message objects from bitchan objects and thread from DB
-            if not delete_thread:
-                nexus.delete_message(current_chan, thread_id, message_id)
-                status_msg['status_message'].append("Message deleted from thread: '{}'".format(thread.subject))
-                status_msg['status_title'] = "Deleted Message"
-            else:
-                status_msg['status_message'].append("Thread deleted: '{}'".format(thread.subject))
-                if thread:
-                    thread.delete()
-                nexus.delete_thread(current_chan, thread_id)
-                status_msg['status_title'] = "Deleted Thread"
+            message = Messages.query.filter(and_(
+                Messages.thread_id == thread.id,
+                Messages.is_op.is_(True))).first()
+            if message:
+                message_id = message.message_id
 
-            # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
-            time.sleep(2)
+            #
+            # Locally sticky/unsticky
+            #
+            if mod_type in ["thread_sticky_local", "thread_unsticky_local"]:
+                thread.stickied_local = bool(mod_type == "thread_sticky_local")
+                thread.save()
 
-            # Send message to remotely delete post/thread
-            if delete_type in ["post_all", "thread_all"]:
+                regenerate_thread_card_and_popup(thread.thread_hash)
+
+                if mod_type == "thread_sticky_local":
+                    log_description = "Locally stickied thread"
+                    status_msg['status_message'].append("Locally stickied thread: '{}'".format(thread.subject))
+                    status_msg['status_title'] = "Locally stickied thread"
+                else:
+                    log_description = "Locally unstickied thread"
+                    status_msg['status_message'].append("Locally unstickied thread: '{}'".format(thread.subject))
+                    status_msg['status_title'] = "Locally unstickied thread"
+
+            #
+            # Locally lock/unlock
+            #
+            elif mod_type in ["thread_lock_local", "thread_unlock_local"]:
+                thread.locked_local = bool(mod_type == "thread_lock_local")
+                thread.locked_local_ts = time.time()
+                thread.save()
+
+                regenerate_thread_card_and_popup(thread.thread_hash)
+
+                if mod_type == "thread_lock_local":
+                    log_description = "Locally locked thread"
+                    status_msg['status_message'].append("Locally locked thread: '{}'".format(thread.subject))
+                    status_msg['status_title'] = "Locally locked thread"
+                else:
+                    log_description = "Locally unlocked thread"
+                    status_msg['status_message'].append("Locally unlocked thread: '{}'".format(thread.subject))
+                    status_msg['status_title'] = "Locally unlocked thread"
+
+            #
+            # Locally anchor/unanchor
+            #
+            elif mod_type in ["thread_anchor_local", "thread_unanchor_local"]:
+                thread.anchored_local = bool(mod_type == "thread_anchor_local")
+                thread.anchored_local_ts = time.time()
+                thread.save()
+
+                regenerate_thread_card_and_popup(thread.thread_hash)
+
+                if mod_type == "thread_anchor_local":
+                    log_description = "Locally anchored thread"
+                    status_msg['status_message'].append("Locally anchored thread: '{}'".format(thread.subject))
+                    status_msg['status_title'] = "Locally anchored thread"
+                else:
+                    log_description = "Locally unanchored thread"
+                    status_msg['status_message'].append("Locally unanchored thread: '{}'".format(thread.subject))
+                    status_msg['status_title'] = "Locally unanchored thread"
+
+            #
+            # Send message to remotely sticky/unsticky thread
+            #
+            if mod_type in ["thread_sticky_remote",
+                            "thread_unsticky_remote",
+                            "thread_lock_remote",
+                            "thread_unlock_remote",
+                            "thread_anchor_remote",
+                            "thread_unanchor_remote"]:
                 dict_message = {
-                    "version": config.VERSION_BITCHAN,
-                    "timestamp_utc": nexus.get_utc(),
+                    "version": config.VERSION_MSG,
+                    "timestamp_utc": daemon_com.get_utc(),
                     "message_type": "admin",
                     "chan_type": "board",
-                    "action": "delete",
+                    "action": "set",
+                    "action_type": "thread_options",
+                    "thread_id": thread_id,
                     "options": {}
                 }
-                if delete_type == "post_all":
-                    dict_message["action_type"] = "delete_post"
-                    dict_message["options"]["delete_post"] = {
-                        "thread_id": thread_id,
-                        "message_id": message_id
-                    }
-                elif delete_type == "thread_all":
-                    dict_message["action_type"] = "delete_thread"
-                    dict_message["options"]["delete_thread"] = {
-                        "thread_id": thread_id,
-                        "message_id": message_id
-                    }
 
-                def admin_has_access(address):
-                    access = get_access(address)
-                    for id_type in [nexus.get_identities(), nexus.get_all_chans()]:
-                        for address in id_type:
-                            if id_type[address]['enabled'] and address in access["primary_addresses"]:
-                                return address
-                            if id_type[address]['enabled'] and address in access["secondary_addresses"]:
-                                return address
+                if not form_confirm.address.data:
+                    status_msg['status_message'].append("From address required")
+                    status_msg['status_title'] = "Error"
 
-                from_address = admin_has_access(current_chan)
+                if not status_msg['status_message']:
+                    # Set options to send
+                    if mod_type in ["thread_sticky_remote", "thread_unsticky_remote"]:
+                        dict_message["options"]["sticky"] = bool(mod_type == "thread_sticky_remote")
+                        if mod_type == "thread_sticky_remote":
+                            status_msg['status_message'].append("Remotely stickied thread: '{}'".format(thread.subject))
+                            status_msg['status_title'] = "Remotely stickied thread"
+                        else:
+                            status_msg['status_message'].append("Remotely unstickied thread: '{}'".format(thread.subject))
+                            status_msg['status_title'] = "Remotely unstickied thread"
 
-                if from_address:
+                    elif mod_type in ["thread_lock_remote", "thread_unlock_remote"]:
+                        dict_message["options"]["lock"] = bool(mod_type == "thread_lock_remote")
+                        dict_message["options"]["lock_ts"] = time.time()
+                        if mod_type == "thread_lock_remote":
+                            status_msg['status_message'].append("Remotely locked thread: '{}'".format(thread.subject))
+                            status_msg['status_title'] = "Remotely locked thread"
+                        else:
+                            status_msg['status_message'].append("Remotely unlocked thread: '{}'".format(thread.subject))
+                            status_msg['status_title'] = "Remotely unlocked thread"
+
+                    elif mod_type in ["thread_anchor_remote", "thread_unanchor_remote"]:
+                        dict_message["options"]["anchor"] = bool(mod_type == "thread_anchor_remote")
+                        dict_message["options"]["anchor_ts"] = time.time()
+                        if mod_type == "thread_anchor_remote":
+                            status_msg['status_message'].append("Remotely anchored thread: '{}'".format(thread.subject))
+                            status_msg['status_title'] = "Remotely anchored thread"
+                        else:
+                            status_msg['status_message'].append("Remotely unanchored thread: '{}'".format(thread.subject))
+                            status_msg['status_title'] = "Remotely unanchored thread"
+
                     pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
                     chan = Chan.query.filter(Chan.address == current_chan).first()
                     if chan and chan.pgp_passphrase_msg:
@@ -152,25 +234,52 @@ def delete(current_chan, message_id, thread_id, delete_type):
                         str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
                     message_send = base64.b64encode(message_encrypted.data).decode()
 
-                    lf = LF()
-                    if lf.lock_acquire(config.LOCKFILE_API, to=60):
-                        try:
-                            return_str = nexus._api.sendMessage(
-                                current_chan,
-                                from_address,
-                                "",
-                                message_send,
-                                2,
-                                config.BM_TTL)
-                            if return_str:
-                                logger.info("{}: Message to globally delete {} sent from {} to {}".format(
-                                    thread_id[0:6], delete_type, from_address, current_chan))
-                                nexus.post_delete_queue(from_address, return_str)
-                            time.sleep(0.1)
-                        finally:
-                            lf.lock_release(config.LOCKFILE_API)
-                else:
-                    logger.error("Could not authenticate access to globally delete post/thread")
+                    # Don't allow a message to send while Bitmessage is restarting
+                    allow_send = False
+                    timer = time.time()
+                    while not allow_send:
+                        if daemon_com.bitmessage_restarting() is False:
+                            allow_send = True
+                        if time.time() - timer > config.BM_WAIT_DELAY:
+                            logger.error(
+                                "{}: Unable to send message: "
+                                "Could not detect Bitmessage running.".format(thread_id[0:6]))
+                            return
+                        time.sleep(1)
+
+                    if allow_send:
+                        lf = LF()
+                        if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+                            try:
+                                return_str = api.sendMessage(
+                                    current_chan,
+                                    form_confirm.address.data,
+                                    "",
+                                    message_send,
+                                    2,
+                                    config.BM_TTL)
+                                if return_str:
+                                    logger.info("{}: Message to globally {} sent from {} to {}".format(
+                                        thread_id[0:6], mod_type, form_confirm.address.data, current_chan))
+                            finally:
+                                time.sleep(config.API_PAUSE)
+                                lf.lock_release(config.LOCKFILE_API)
+
+            if mod_type in ["thread_sticky_local",
+                            "thread_unsticky_local",
+                            "thread_lock_local",
+                            "thread_unlock_local",
+                            "thread_anchor_local",
+                            "thread_unanchor_local"]:
+                # Only log local events.
+                # Global events will be logged when the admin command message is processed
+                add_mod_log_entry(
+                    log_description,
+                    message_id=message_id,
+                    user_from=from_user,
+                    board_address=current_chan,
+                    thread_hash=thread_id)
+
         except Exception as err:
             logger.error("Exception while deleting message(s): {}".format(err))
         finally:
@@ -183,9 +292,325 @@ def delete(current_chan, message_id, thread_id, delete_type):
                            url_text=url_text)
 
 
+@blueprint.route('/bulk_delete_thread/<current_chan>', methods=('GET', 'POST'))
+def bulk_delete_thread(current_chan):
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    board_list_admin, allow_msg = allowed_access(
+        check_is_board_list_admin=True, check_admin_board=current_chan)
+    if not global_admin and not board_list_admin:
+        return allow_msg
+
+    if current_chan != "0":
+        board = Chan.query.filter(Chan.address == current_chan).first()
+        threads = board.threads
+    else:
+        board = "0"
+        threads = Threads.query.limit(100).all()
+
+    status_msg = {"status_message": []}
+    url = ""
+    url_text = ""
+
+    if request.method == 'POST':
+        try:
+            delete_bulk_thread_hashes = []
+            for each_input in request.form:
+                if each_input.startswith("deletethreadbulk_"):
+                    delete_bulk_thread_hashes.append(each_input.split("_")[1])
+
+            lf = LF()
+            if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
+                try:
+                    for each_thread_hash in delete_bulk_thread_hashes:
+                        thread = Threads.query.filter(
+                            Threads.thread_hash == each_thread_hash).first()
+                        if thread:
+                            list_delete_message_ids = []
+                            for message in thread.messages:
+                                list_delete_message_ids.append(message.message_id)
+
+                            # First, delete messages from database
+                            if list_delete_message_ids:
+                                for each_id in list_delete_message_ids:
+                                    delete_post(each_id)
+
+                            # Next, delete thread from DB
+                            delete_thread(each_thread_hash)
+                            status_msg['status_message'].append("Thread deleted: {}".format(thread.subject))
+                except Exception as err:
+                    logger.error("Exception while deleting message(s): {}".format(err))
+                finally:
+                    daemon_com.signal_generate_post_numbers()
+                    lf.lock_release(config.LOCKFILE_MSG_PROC)
+
+            status_msg['status_title'] = "Success"
+            status_msg['status_title'] = "Deleted Thread"
+        except:
+            logger.exception("/bulk_delete_thread")
+
+    return render_template("pages/bulk_delete_threads.html",
+                           board=board,
+                           status_msg=status_msg,
+                           threads=threads,
+                           url=url,
+                           url_text=url_text)
+
+
+@blueprint.route('/delete_thread_post/<current_chan>/<message_id>/<thread_id>/<delete_type>', methods=('GET', 'POST'))
+def delete(current_chan, message_id, thread_id, delete_type):
+    """
+    Owners and Admins can delete messages and threads
+
+    delete_type can be:
+    post: delete post from local instance
+    posts_all: delete post for all users (must be owner or admin)
+    thread: delete thread from local instance
+    thread_all: delete thread for all users (must be owner or admin)
+    """
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    board_list_admin, allow_msg = allowed_access(
+        check_is_board_list_admin=True, check_admin_board=current_chan)
+    if not global_admin and not board_list_admin:
+        return allow_msg
+
+    form_confirm = forms_board.Confirm()
+
+    chan = Chan.query.filter(Chan.address == current_chan).first()
+    thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
+
+    from_list = daemon_com.get_from_list(current_chan, only_owner_admin=True)
+
+    if request.method != 'POST' or not form_confirm.confirm.data:
+        return render_template("pages/confirm.html",
+                               action=delete_type,
+                               chan=chan,
+                               current_chan=current_chan,
+                               from_list=from_list,
+                               message_id=message_id,
+                               thread=thread,
+                               thread_id=thread_id)
+
+    board = {
+        "current_chan": chan,
+        "current_thread": thread_id
+    }
+    status_msg = {"status_message": []}
+    url = ""
+    url_text = ""
+
+    if message_id == "0":
+        message_id = None
+
+    if delete_type in ["delete_post", "delete_post_all"]:
+        url = "/thread/{}/{}".format(current_chan, thread_id)
+        url_text = "{}".format(thread.subject)
+
+    lf = LF()
+    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
+        try:
+            if delete_type in ["delete_post", "delete_thread"]:
+                list_delete_message_ids = []
+                if delete_type == "delete_thread" and thread:
+                    board["current_thread"] = None
+                    for message in thread.messages:
+                        list_delete_message_ids.append(message.message_id)
+                elif delete_type == "delete_post":
+                    list_delete_message_ids.append(message_id)
+
+                log_description = ""
+                if delete_type == "delete_post":
+                    status_msg['status_message'].append("Locally deleted post from thread: '{}'".format(thread.subject))
+                    status_msg['status_title'] = "Success"
+                    log_description = "Locally deleted post"
+                elif delete_type == "delete_thread":
+                    status_msg['status_message'].append("Locally deleted thread: {}".format(thread.subject))
+                    status_msg['status_title'] = "Success"
+                    log_description = 'Locally deleted thread "{}"'.format(thread.subject)
+
+                # If local, first delete messages
+                if list_delete_message_ids:
+                    for each_id in list_delete_message_ids:
+                        delete_post(each_id)
+                    daemon_com.signal_generate_post_numbers()
+
+                # If local, next delete thread
+                if delete_type in ["delete_thread"]:
+                    if thread:
+                        delete_thread(thread_id)
+
+                add_mod_log_entry(
+                    log_description,
+                    message_id=message_id,
+                    user_from=form_confirm.address.data,
+                    board_address=current_chan,
+                    thread_hash=thread_id)
+
+                # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
+                time.sleep(1)
+
+            # Send message to remotely delete post/thread
+            elif delete_type in ["delete_post_all", "delete_thread_all"]:
+                if not form_confirm.address.data and delete_type in ["delete_thread_all", "delete_post_all"]:
+                    status_msg['status_message'].append("From address required")
+
+                if not status_msg['status_message']:
+                    if delete_type == "delete_post_all":
+                        status_msg['status_message'].append("Remotely deleted post from thread: '{}'".format(thread.subject))
+                        status_msg['status_title'] = "Success"
+                    elif delete_type == "delete_thread_all":
+                        status_msg['status_message'].append("Remotely deleted thread: '{}'".format(thread.subject))
+                        status_msg['status_title'] = "Success"
+
+                    dict_message = {
+                        "version": config.VERSION_MSG,
+                        "timestamp_utc": daemon_com.get_utc(),
+                        "message_type": "admin",
+                        "chan_type": "board",
+                        "action": "delete",
+                        "options": {}
+                    }
+                    if delete_type == "delete_post_all":
+                        dict_message["action_type"] = "delete_post"
+                        dict_message["options"]["delete_post"] = {
+                            "thread_id": thread_id,
+                            "message_id": message_id
+                        }
+                    elif delete_type == "delete_thread_all":
+                        dict_message["action_type"] = "delete_thread"
+                        dict_message["options"]["delete_thread"] = {
+                            "thread_id": thread_id,
+                            "message_id": None
+                        }
+
+                    pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
+                    chan = Chan.query.filter(Chan.address == current_chan).first()
+                    if chan and chan.pgp_passphrase_msg:
+                        pgp_passphrase_msg = chan.pgp_passphrase_msg
+
+                    str_message = json.dumps(dict_message)
+                    gpg = gnupg.GPG()
+                    message_encrypted = gpg.encrypt(
+                        str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
+                    message_send = base64.b64encode(message_encrypted.data).decode()
+
+                    # Don't allow a message to send while Bitmessage is restarting
+                    allow_send = False
+                    timer = time.time()
+                    while not allow_send:
+                        if daemon_com.bitmessage_restarting() is False:
+                            allow_send = True
+                        if time.time() - timer > config.BM_WAIT_DELAY:
+                            logger.error(
+                                "{}: Unable to send message: "
+                                "Could not detect Bitmessage running.".format(thread_id[0:6]))
+                            return
+                        time.sleep(1)
+
+                    if allow_send:
+                        lf = LF()
+                        if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+                            try:
+                                return_str = api.sendMessage(
+                                    current_chan,
+                                    form_confirm.address.data,
+                                    "",
+                                    message_send,
+                                    2,
+                                    config.BM_TTL)
+                                if return_str:
+                                    logger.info("{}: Message to globally delete {} sent from {} to {}".format(
+                                        thread_id[0:6], delete_type, form_confirm.address.data, current_chan))
+                            finally:
+                                time.sleep(config.API_PAUSE)
+                                lf.lock_release(config.LOCKFILE_API)
+
+        except Exception as err:
+            logger.error("Exception while deleting message(s): {}".format(err))
+        finally:
+            lf.lock_release(config.LOCKFILE_MSG_PROC)
+
+    if 'status_title' not in status_msg and status_msg['status_message']:
+        status_msg['status_title'] = "Error"
+
+    return render_template("pages/alert.html",
+                           board=board,
+                           status_msg=status_msg,
+                           url=url,
+                           url_text=url_text)
+
+
+@blueprint.route('/delete_with_comment_local/<current_chan>/<message_id>/<thread_id>', methods=('GET', 'POST'))
+def delete_with_comment_local(current_chan, message_id, thread_id):
+    """Locally delete post with comment"""
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    board_list_admin, allow_msg = allowed_access(
+        check_is_board_list_admin=True, check_admin_board=current_chan)
+    if not global_admin and not board_list_admin:
+        return allow_msg
+
+    form_del_com = forms_board.DeleteComment()
+    chan = Chan.query.filter(Chan.address == current_chan).first()
+
+    board = {
+        "current_chan": chan,
+        "current_message_id": message_id,
+        "current_thread": thread_id
+    }
+    status_msg = {"status_message": []}
+    url = ""
+    url_text = ""
+
+    if request.method == 'POST':
+        if not form_del_com.delete_comment.data:
+            status_msg['status_message'].append("A comment is required.")
+
+        elif form_del_com.send.data:
+            # Find if thread/post exist and delete
+            if not chan:
+                logger.error("{}: Can't locally delete post with comment: Unknown board".format(
+                    message_id[-config.ID_LENGTH:].upper()))
+            else:
+                delete_and_replace_comment(
+                    message_id, form_del_com.delete_comment.data, local_delete=True)
+
+                status_msg['status_message'].append(
+                    "Message locally deleted from post and replaced with comment: '{}'".format(
+                        form_del_com.delete_comment.data))
+                status_msg['status_title'] = "Deleted Message with Comment"
+
+                url = "/thread/{}/{}".format(current_chan, thread_id)
+                url_text = "Return to Thread"
+
+                return render_template("pages/alert.html",
+                                       board=board,
+                                       status_msg=status_msg,
+                                       url=url,
+                                       url_text=url_text)
+
+        if 'status_title' not in status_msg and status_msg['status_message']:
+            status_msg['status_title'] = "Error"
+
+    return render_template("pages/delete_comment.html",
+                           board=board,
+                           local_delete=True,
+                           status_msg=status_msg,
+                           url=url,
+                           url_text=url_text)
+
+
 @blueprint.route('/delete_with_comment/<current_chan>/<message_id>/<thread_id>', methods=('GET', 'POST'))
 def delete_with_comment(current_chan, message_id, thread_id):
-    """Owners and Admins can delete messages and threads"""
+    """Globally delete post with comment"""
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    board_list_admin, allow_msg = allowed_access(
+        check_is_board_list_admin=True, check_admin_board=current_chan)
+    if not global_admin and not board_list_admin:
+        return allow_msg
+
     form_del_com = forms_board.DeleteComment()
     chan = Chan.query.filter(Chan.address == current_chan).first()
 
@@ -201,14 +626,17 @@ def delete_with_comment(current_chan, message_id, thread_id):
         if not form_del_com.delete_comment.data:
             status_msg['status_message'].append("A comment is required.")
 
-        elif form_del_com.send.data:
+        if not form_del_com.address.data:
+            status_msg['status_message'].append("A from address is required.")
+
+        if form_del_com.send.data and not status_msg['status_message']:
             lf = LF()
             if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
                 try:
                     # Send message to remotely delete post with comment
                     dict_message = {
-                        "version": config.VERSION_BITCHAN,
-                        "timestamp_utc": nexus.get_utc(),
+                        "version": config.VERSION_MSG,
+                        "timestamp_utc": daemon_com.get_utc(),
                         "message_type": "admin",
                         "chan_type": "board",
                         "action": "delete_comment",
@@ -221,35 +649,37 @@ def delete_with_comment(current_chan, message_id, thread_id):
                         }
                     }
 
-                    def admin_has_access(address):
-                        access = get_access(address)
-                        for id_type in [nexus.get_identities(), nexus.get_all_chans()]:
-                            for address in id_type:
-                                if id_type[address]['enabled'] and address in access["primary_addresses"]:
-                                    return address
-                                if id_type[address]['enabled'] and address in access["secondary_addresses"]:
-                                    return address
+                    pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
+                    chan = Chan.query.filter(Chan.address == current_chan).first()
+                    if chan and chan.pgp_passphrase_msg:
+                        pgp_passphrase_msg = chan.pgp_passphrase_msg
 
-                    from_address = admin_has_access(current_chan)
+                    str_message = json.dumps(dict_message)
+                    gpg = gnupg.GPG()
+                    message_encrypted = gpg.encrypt(
+                        str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
+                    message_send = base64.b64encode(message_encrypted.data).decode()
 
-                    if from_address:
-                        pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-                        chan = Chan.query.filter(Chan.address == current_chan).first()
-                        if chan and chan.pgp_passphrase_msg:
-                            pgp_passphrase_msg = chan.pgp_passphrase_msg
+                    # Don't allow a message to send while Bitmessage is restarting
+                    allow_send = False
+                    timer = time.time()
+                    while not allow_send:
+                        if daemon_com.bitmessage_restarting() is False:
+                            allow_send = True
+                        if time.time() - timer > config.BM_WAIT_DELAY:
+                            logger.error(
+                                "{}: Unable to send message: "
+                                "Could not detect Bitmessage running.".format(thread_id[0:6]))
+                            return
+                        time.sleep(1)
 
-                        str_message = json.dumps(dict_message)
-                        gpg = gnupg.GPG()
-                        message_encrypted = gpg.encrypt(
-                            str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
-                        message_send = base64.b64encode(message_encrypted.data).decode()
-
+                    if allow_send:
                         lf = LF()
-                        if lf.lock_acquire(config.LOCKFILE_API, to=60):
+                        if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                             try:
-                                return_str = nexus._api.sendMessage(
+                                return_str = api.sendMessage(
                                     current_chan,
-                                    from_address,
+                                    form_del_com.address.data,
                                     "",
                                     message_send,
                                     2,
@@ -258,9 +688,7 @@ def delete_with_comment(current_chan, message_id, thread_id):
                                     logger.info("{}: Message to globally delete with comment sent from {} to {}. "
                                                 "The message will need to propagate through the network before "
                                                 "the changes are reflected on the board.".format(
-                                                    thread_id[0:6], from_address, current_chan))
-                                    nexus.post_delete_queue(from_address, return_str)
-                                time.sleep(0.1)
+                                                    thread_id[0:6], form_del_com.address.data, current_chan))
 
                                 status_msg['status_message'].append(
                                     "Message deleted from post and replaced with comment: '{}'".format(
@@ -276,6 +704,7 @@ def delete_with_comment(current_chan, message_id, thread_id):
                                                        url=url,
                                                        url_text=url_text)
                             finally:
+                                time.sleep(config.API_PAUSE)
                                 lf.lock_release(config.LOCKFILE_API)
                     else:
                         logger.error("Could not authenticate access to globally delete post with comment")
@@ -287,81 +716,74 @@ def delete_with_comment(current_chan, message_id, thread_id):
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
 
+    from_list = daemon_com.get_from_list(current_chan, only_owner_admin=True)
+
     return render_template("pages/delete_comment.html",
                            board=board,
+                           from_list=from_list,
+                           local_delete=False,
                            status_msg=status_msg,
                            url=url,
                            url_text=url_text)
 
 
-@blueprint.route('/admin_board_ban_address/<chan_address>/<ban_address>', methods=('GET', 'POST'))
-def admin_board_ban_address(chan_address, ban_address):
+@blueprint.route('/admin_board_ban_address/<chan_address>/<ban_address>/<ban_type>', methods=('GET', 'POST'))
+def admin_board_ban_address(chan_address, ban_address, ban_type):
     """Owners and Admins can ban addresses"""
-    form_confirm = forms_board.Confirm()
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    board_list_admin, allow_msg = allowed_access(
+        check_is_board_list_admin=True, check_admin_board=chan_address)
+    if not global_admin and not board_list_admin:
+        return allow_msg
 
+    form_confirm = forms_board.Confirm()
     chan = Chan.query.filter(Chan.address == chan_address).first()
 
-    if request.method != 'POST' or not form_confirm.confirm.data:
-        return render_template("pages/confirm.html",
-                               action="admin_board_ban_address",
-                               chan=chan,
-                               chan_address=chan_address,
-                               ban_address=ban_address)
-
-    messages = Messages.query.filter(Messages.address_from == ban_address).all()
-
+    status_msg = {"status_message": []}
     board = {
         "current_chan": chan,
         "current_thread": None,
     }
-    status_msg = {"status_message": []}
-    list_delete_message_ids = []
 
-    for message in messages:
-        if message.thread.chan.address == chan_address:
-            list_delete_message_ids.append(message.message_id)
+    from_list = daemon_com.get_from_list(chan_address, only_owner_admin=True)
 
-    lf = LF()
-    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-        try:
-            # First, delete messages from database
-            if list_delete_message_ids:
-                for each_id in list_delete_message_ids:
-                    this_message = Messages.query.filter(Messages.message_id == each_id).first()
-                    if this_message:
-                        # Delete all files associated with message
-                        delete_message_files(this_message.message_id)
-                        this_message.delete()
+    if ban_address in daemon_com.get_identities():
+        status_msg['status_message'].append("You cannot ban your own identity")
+        status_msg['status_title'] = "Error"
 
-            # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
-            time.sleep(1)
+    elif request.method != 'POST' or not form_confirm.confirm.data:
+        return render_template("pages/confirm.html",
+                               action=ban_type,
+                               chan=chan,
+                               chan_address=chan_address,
+                               from_list=from_list,
+                               ban_address=ban_address)
 
-            # Send message to remotely ban user and delete all user messages
-            dict_message = {
-                "version": config.VERSION_BITCHAN,
-                "timestamp_utc": nexus.get_utc(),
-                "message_type": "admin",
-                "chan_type": "board",
-                "action": "ban",
-                "action_type": "ban_address",
-                "chan_address": chan_address,
-                "options": {"ban_address": ban_address}
-            }
+    elif request.method == 'POST' and form_confirm.confirm.data and not form_confirm.address.data:
+        status_msg['status_message'].append("From address required")
+        status_msg['status_title'] = "Error"
 
-            def admin_has_access(address):
-                access = get_access(address)
-                for id_type in [nexus.get_identities(), nexus.get_all_chans()]:
-                    for address in id_type:
-                        if id_type[address]['enabled'] and address in access["primary_addresses"]:
-                            return address
-                        if id_type[address]['enabled'] and address in access["secondary_addresses"]:
-                            return address
+    elif request.method == 'POST' and form_confirm.confirm.data:
+        lf = LF()
+        if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
+            try:
+                # Send message to remotely ban user and delete all user messages
+                dict_message = {
+                    "version": config.VERSION_MSG,
+                    "timestamp_utc": daemon_com.get_utc(),
+                    "message_type": "admin",
+                    "chan_type": "board",
+                    "action": ban_type,
+                    "action_type": "ban_address",
+                    "chan_address": chan_address,
+                    "options": {"ban_address": ban_address}
+                }
 
-            from_address = admin_has_access(chan_address)
+                if ban_type == "board_ban_public" and form_confirm.text.data:
+                    dict_message["options"]["reason"] = form_confirm.text.data
 
-            if from_address:
                 pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-                chan = Chan.query.filter(Chan.address == chan_address).first()
                 if chan and chan.pgp_passphrase_msg:
                     pgp_passphrase_msg = chan.pgp_passphrase_msg
 
@@ -371,31 +793,64 @@ def admin_board_ban_address(chan_address, ban_address):
                     str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
                 message_send = base64.b64encode(message_encrypted.data).decode()
 
-                lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=60):
-                    try:
-                        return_str = nexus._api.sendMessage(
-                            chan_address,
-                            from_address,
-                            "",
-                            message_send,
-                            2,
-                            config.BM_TTL)
-                        if return_str:
-                            status_msg['status_message'].append(
-                                "Message sent to globally ban {} from board {}".format(
-                                ban_address, chan_address))
-                            status_msg['status_title'] = "Ban Address"
-                            nexus.post_delete_queue(from_address, return_str)
-                        time.sleep(0.1)
-                    finally:
-                        lf.lock_release(config.LOCKFILE_API)
-            else:
-                logger.error("Could not authenticate access to globally ban")
-        except Exception as err:
-            logger.error("Exception while banning address: {}".format(err))
-        finally:
-            lf.lock_release(config.LOCKFILE_MSG_PROC)
+                # Don't allow a message to send while Bitmessage is restarting
+                allow_send = False
+                timer = time.time()
+                while not allow_send:
+                    if daemon_com.bitmessage_restarting() is False:
+                        allow_send = True
+                    if time.time() - timer > config.BM_WAIT_DELAY:
+                        logger.error(
+                            "Unable to send message: "
+                            "Could not detect Bitmessage running.")
+                        return
+                    time.sleep(1)
+
+                if allow_send:
+                    lf = LF()
+                    if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+                        try:
+                            return_str = api.sendMessage(
+                                chan_address,
+                                form_confirm.address.data,
+                                "",
+                                message_send,
+                                2,
+                                config.BM_TTL)
+                            if return_str:
+                                ban_type = ""
+                                if ban_type == "board_ban_public":
+                                    ban_type = " publicly"
+                                elif ban_type == "board_ban_silent":
+                                    ban_type = " silently"
+                                reason = ""
+                                if form_confirm.text.data:
+                                    reason = " Reason: {}".format(form_confirm.text.data)
+                                status_msg['status_message'].append(
+                                    "Global message sent to{} ban {} from board {}.{}".format(
+                                        ban_type, ban_address, chan_address, reason))
+                                status_msg['status_title'] = "Ban Address"
+                        finally:
+                            time.sleep(config.API_PAUSE)
+                            lf.lock_release(config.LOCKFILE_API)
+
+                    # If a public ban, add to mod log
+                    if ban_type == "board_ban_public":
+                        log_description = "Ban {}".format(ban_address)
+                        if form_confirm.text.data:
+                            log_description += ": Reason: {}".format(form_confirm.text.data)
+                        add_mod_log_entry(
+                            log_description,
+                            message_id=None,
+                            user_from=form_confirm.address.data,
+                            board_address=chan_address,
+                            thread_hash=None)
+                else:
+                    logger.error("Could not authenticate access to globally ban")
+            except Exception as err:
+                logger.error("Exception while banning address: {}".format(err))
+            finally:
+                lf.lock_release(config.LOCKFILE_MSG_PROC)
 
     return render_template("pages/alert.html",
                            board=board,
@@ -405,6 +860,11 @@ def admin_board_ban_address(chan_address, ban_address):
 @blueprint.route('/set_owner_options/<chan_address>', methods=('GET', 'POST'))
 def set_owner_options(chan_address):
     """Set options only Owner can change"""
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    if not global_admin:
+        return allow_msg
+
     chan = Chan.query.filter(Chan.address == chan_address).first()
 
     form_options = forms_board.SetOptions()
@@ -417,8 +877,6 @@ def set_owner_options(chan_address):
 
     if request.method == 'POST':
         if form_options.set_options.data:
-            from bitchan_flask import nexus
-
             modify_admin_addresses = None
             modify_user_addresses = None
             modify_restricted_addresses = None
@@ -616,7 +1074,7 @@ def set_owner_options(chan_address):
 
             def admin_has_access(address):
                 access = get_access(address)
-                for id_type in [nexus.get_identities(), nexus.get_all_chans()]:
+                for id_type in [daemon_com.get_identities(), daemon_com.get_all_chans()]:
                     for address in id_type:
                         if id_type[address]['enabled'] and address in access["primary_addresses"]:
                             return address
@@ -629,8 +1087,8 @@ def set_owner_options(chan_address):
             elif not status_msg['status_message']:
                 # Send message to remotely set options
                 dict_message = {
-                    "version": config.VERSION_BITCHAN,
-                    "timestamp_utc": nexus.get_utc(),
+                    "version": config.VERSION_MSG,
+                    "timestamp_utc": daemon_com.get_utc(),
                     "message_type": "admin",
                     "action": "set",
                     "action_type": "options",
@@ -675,27 +1133,40 @@ def set_owner_options(chan_address):
                     logger.info("Message size: {}".format(len(message_send)))
 
                 if not status_msg['status_message']:
-                    lf = LF()
-                    if lf.lock_acquire(config.LOCKFILE_API, to=60):
-                        try:
-                            return_str = nexus._api.sendMessage(
-                                chan.address,
-                                from_address,
-                                "",
-                                message_send,
-                                2,
-                                config.BM_TTL)
-                            if return_str:
-                                msg = "Message to globally set options sent. " \
-                                      "The message must be received before the settings take effect. " \
-                                      "Return: {}".format(from_address, chan.address, return_str)
-                                logger.info(msg)
-                                status_msg['status_title'] = "Success"
-                                status_msg['status_message'].append(msg)
-                                nexus.post_delete_queue(from_address, return_str)
-                            time.sleep(0.1)
-                        finally:
-                            lf.lock_release(config.LOCKFILE_API)
+                    # Don't allow a message to send while Bitmessage is restarting
+                    allow_send = False
+                    timer = time.time()
+                    while not allow_send:
+                        if daemon_com.bitmessage_restarting() is False:
+                            allow_send = True
+                        if time.time() - timer > config.BM_WAIT_DELAY:
+                            logger.error(
+                                "Unable to send message: "
+                                "Could not detect Bitmessage running.")
+                            return
+                        time.sleep(1)
+
+                    if allow_send:
+                        lf = LF()
+                        if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+                            try:
+                                return_str = api.sendMessage(
+                                    chan.address,
+                                    from_address,
+                                    "",
+                                    message_send,
+                                    2,
+                                    config.BM_TTL)
+                                if return_str:
+                                    msg = "Message to globally set options sent. " \
+                                          "The message must be received before the settings take effect. " \
+                                          "Return: {}".format(from_address, chan.address, return_str)
+                                    logger.info(msg)
+                                    status_msg['status_title'] = "Success"
+                                    status_msg['status_message'].append(msg)
+                            finally:
+                                time.sleep(config.API_PAUSE)
+                                lf.lock_release(config.LOCKFILE_API)
 
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
@@ -708,6 +1179,13 @@ def set_owner_options(chan_address):
 @blueprint.route('/set_info_options/<chan_address>', methods=('GET', 'POST'))
 def set_info_options(chan_address):
     """Set options users can change"""
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    board_list_admin, allow_msg = allowed_access(
+        check_is_board_list_admin=True, check_admin_board=chan_address)
+    if not global_admin and not board_list_admin:
+        return allow_msg
+
     chan = Chan.query.filter(Chan.address == chan_address).first()
 
     form_options = forms_board.SetOptions()

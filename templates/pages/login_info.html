@@ -1,0 +1,89 @@
+{% extends "layout.html" %}
+
+{% block title %}Ligin Information - {% endblock %}
+
+{% block head %}
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+
+        tr:nth-child(odd) {
+            background-color: {{themes[settings.theme].posthighlight}};
+        }
+
+        .table-heading {
+            text-decoration: underline;
+            text-align: left;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <h1 class="title themed bold" style="text-align: center">Login Information</h1>
+
+    {% if logged_in and login_credentials -%}
+    <div style="max-width: 500px; text-align: center; margin: auto">
+        <div class="heading-2 head-center themed">Permissions</div>
+        <table class="themed">
+            <tr>
+                <td>Session ID</td>
+                <td>{{login_credentials["uuid"]}}</td>
+            </tr>
+            <tr>
+                <td colspan="2">A randomly-generated ID for only this login session.</td>
+            </tr>
+            <tr>
+                <td>Global Admin</td>
+                <td>{{login_credentials["global_admin"]}}</td>
+            </tr>
+            <tr>
+                <td colspan="2">Credentials that provide global admin rights, essentially removing all restrictions.</td>
+            </tr>
+            <tr>
+                <td>Board/List Admin</td>
+                <td>{{login_credentials["board_list_admin"]}}</td>
+            </tr>
+            <tr>
+                <td colspan="2">Credentials that provide board/list admin rights, allowing the ability to perform some actions for the boards/lists listed below.</td>
+            </tr>
+            <tr>
+                <td>Admin Board/List Addresses</td>
+                <td>{% for each_chan in login_credentials["admin_boards"] %}{{", " if not loop.last else ""}}{% endfor %}</td>
+            </tr>
+            <tr>
+                <td colspan="2">The boards that some actions can be performed on (if Board Admin).</td>
+            </tr>
+            <tr>
+                <td>Single Session Only</td>
+                <td>{{login_credentials["single_session"]}}</td>
+            </tr>
+            <tr>
+                <td colspan="2">Credentials that permit only a single session be logged in at any given time. If a user logs in while another user is currently logged in with the same credentials, the user currently logged in will be logged out. This parameter discourages sharing of credentials.</td>
+            </tr>
+            <tr>
+                <td>Can Post</td>
+                <td>{{login_credentials["can_post"]}}</td>
+            </tr>
+            <tr>
+                <td colspan="2">Credentials that permit creating posts on boards.</td>
+            </tr>
+        </table>
+    </div>
+    {% else %}
+    <div class="heading-2 head-center themed">Not Logged In</div>
+    {% endif %}
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/footer_links.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

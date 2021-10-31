@@ -1,0 +1,9 @@
+<HTML><HEAD><TITLE>Verification - BitChan</TITLE></HEAD><BODY>
+<div style="text-align:center;padding-top:2em">
+<form method="post" enctype="multipart/form-data" autocomplete="off">
+<input type="hidden" name="page_id" value="{{page_id}}"/>
+{{captcha(page_id=page_id, img_id="post_captcha")}}
+<div style="padding:0.5em"><input type="text" name="captcha" autofocus/></div>
+<input type="submit" name="submit" value="Submit"/></form>
+</div>
+</BODY>

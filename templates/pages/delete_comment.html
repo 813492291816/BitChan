@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}Delete Post with Comment{% endblock %}
+{% block title %}Delete Post with Comment - {% endblock %}
 
 {% block body %}
     {% include '/elements/banner.html' %}
@@ -17,7 +17,20 @@
                 <h1 class="title themed bold">Delete Post with Comment</h1>
 
                 <div style="padding-bottom: 1em">
-                    This will delete this post for every user of the board and replace the content with the message below. The new comment will appear as "ORIGINAL COMMENT DELETED. REASON: " with the comment below following that text.
+                    {% if local_delete %}
+                    This will delete this post only for you and replace the content with the message below. The new comment will appear as "ORIGINAL COMMENT DELETED. REASON: " with the comment below following that text.
+                    {% else %}
+                    This will delete this post for every user of the board and replace the content with the message below. The new comment will appear as "ORIGINAL COMMENT DELETED. REASON: " with the comment.
+                    {% endif %}
+                </div>
+
+                <div style="padding-bottom: 1em">
+                    From
+                    <select name="address">
+                    {% for each_address in from_list %}
+                      <option value="{{each_address}}">{{from_list[each_address]}}</option>
+                    {% endfor %}
+                    </select>
                 </div>
 
                 <div style="padding-bottom: 1em">

@@ -2,26 +2,40 @@ import base64
 import json
 import logging
 import time
-import urllib.parse
+import uuid
 
+from flask import redirect
 from flask import render_template
 from flask import request
+from flask import session
+from flask import url_for
 from flask.blueprints import Blueprint
 
 import config
-from bitchan_flask import nexus
+from bitchan_client import DaemonCom
 from config import RESTRICTED_WORDS
+from credentials import credentials
 from database.models import Chan
+from database.models import Command
 from database.models import DeletedMessages
+from database.models import GlobalSettings
+from database.models import ModLog
+from flask_routes import flask_session_login
 from forms import forms_board
+from forms import forms_settings
 from utils.files import LF
-from utils.files import delete_message_files
 from utils.general import generate_passphrase
 from utils.general import process_passphrase
 from utils.general import set_clear_time_to_future
+from utils.posts import delete_chan
+from utils.posts import delete_post
+from utils.posts import delete_thread
+from utils.routes import allowed_access
 from utils.routes import page_dict
+from utils.shared import add_mod_log_entry
 
 logger = logging.getLogger('bitchan.routes_management')
+daemon_com = DaemonCom()
 
 blueprint = Blueprint('routes_management',
                       __name__,
@@ -34,8 +48,163 @@ def global_var():
     return page_dict()
 
 
+@blueprint.before_request
+def before_view():
+    if (GlobalSettings.query.first().enable_verification and
+            ("verified" not in session or not session["verified"])):
+        session["verified_msg"] = "You are not verified"
+        return redirect(url_for('routes_verify.verify_wait'))
+    session["verified_msg"] = "You are verified"
+
+
+def login_fail():
+    settings = GlobalSettings.query.first()
+    try:
+        session['login_cnt_fail'] += 1
+    except KeyError:
+        session['login_cnt_fail'] = 1
+
+    if session['login_cnt_fail'] > settings.kiosk_attempts_login - 1:
+        session['login_time_ban'] = time.time()
+        session['login_cnt_fail'] = 0
+        return 'Failed login attempts exceeded max of {}. ' \
+               'Banned from attempting login for {} seconds.'.format(
+                   settings.kiosk_attempts_login, settings.kiosk_ban_login_sec)
+    else:
+        return 'Login failed ({}/{})'.format(
+            session['login_cnt_fail'], settings.kiosk_attempts_login)
+
+
+def is_login_banned():
+    if not session.get('login_cnt_fail'):
+        session['login_cnt_fail'] = 0
+    if not session.get('login_time_ban'):
+        session['login_time_ban'] = 0
+    elif session['login_time_ban']:
+        settings = GlobalSettings.query.first()
+        session['ban_time_count'] = time.time() - session['login_time_ban']
+        if session['ban_time_count'] < settings.kiosk_ban_login_sec:
+            return 1
+        else:
+            session['login_time_ban'] = 0
+    return 0
+
+
+@blueprint.route('/login', methods=('GET', 'POST'))
+def login():
+    form_login = forms_settings.Login()
+
+    status_msg = {"status_message": []}
+
+    if request.method == 'POST':
+        if form_login.login.data:
+            if is_login_banned():
+                settings = GlobalSettings.query.first()
+                status_msg['status_message'].append("Banned from logging in for {:.0f} more seconds".format(
+                    settings.kiosk_ban_login_sec - session['ban_time_count']))
+
+            if not form_login.password.data:
+                status_msg['status_message'].append("Password required")
+
+            if form_login.password.data == "DEFAULT_PASSWORD_CHANGE_ME":
+                status_msg['status_message'].append("Cannot use the default password")
+
+            if not status_msg['status_message']:
+                login_credentials = credentials.get_user_by_password(form_login.password.data)
+                if login_credentials:
+                    # disable all logged-in sessions for this password
+                    if login_credentials["single_session"] and 'uuid' in session:
+                        for session_id, cred in flask_session_login.items():
+                            if ('credentials' in cred and
+                                    'password' in cred['credentials'] and
+                                    cred['credentials']['password'] == form_login.password.data and
+                                    cred['logged_in']):
+                                flask_session_login[session_id]['logged_in'] = False
+                                logger.info("LOG OUT (forced): {}, {}".format(
+                                    session['uuid'], login_credentials['id']))
+
+                    # create logged in session
+                    if 'uuid' not in session:
+                        session['uuid'] = uuid.uuid4()
+                    flask_session_login[session['uuid']] = {
+                        'logged_in': True,
+                        'credentials': login_credentials
+                    }
+                    logger.info("LOG IN: {}, {}".format(
+                        session['uuid'], login_credentials['id']))
+                    status_msg['status_title'] = "Success"
+                    status_msg['status_message'].append("Logged In")
+                else:
+                    if 'uuid' not in session:
+                        session['uuid'] = uuid.uuid4()
+                    if session['uuid'] not in flask_session_login:
+                        flask_session_login[session['uuid']] = {
+                            'logged_in': False,
+                            'credentials': {}
+                        }
+                    else:
+                        flask_session_login[session['uuid']]['logged_in'] = False
+                    status_msg['status_message'].append(login_fail())
+
+        if 'status_title' not in status_msg and status_msg['status_message']:
+            status_msg['status_title'] = "Error"
+
+    return render_template("pages/login.html",
+                           status_msg=status_msg)
+
+
+@blueprint.route('/logout', methods=('GET', 'POST'))
+def logout():
+    status_msg = {"status_message": []}
+    board = {"current_chan": None}
+
+    if ('uuid' in session and
+            session['uuid'] in flask_session_login and
+            'logged_in' in flask_session_login[session['uuid']]):
+        flask_session_login[session['uuid']]['logged_in'] = False
+        logger.info("LOG OUT: {}, {}".format(
+            session['uuid'], flask_session_login[session['uuid']]['credentials']['id']))
+
+    status_msg['status_title'] = "Success"
+    status_msg['status_message'].append("Logged Out")
+
+    return render_template("pages/alert.html",
+                           board=board,
+                           status_msg=status_msg)
+
+
+@blueprint.route('/login_info', methods=('GET', 'POST'))
+def login_info():
+    allowed, allow_msg = allowed_access()
+    if not allowed:
+        return allow_msg
+
+    status_msg = {"status_message": []}
+    board = {"current_chan": None}
+
+    if ('uuid' in session and
+            session['uuid'] in flask_session_login and
+            'logged_in' in flask_session_login[session['uuid']] and
+            flask_session_login[session['uuid']]['logged_in'] and
+            'credentials' in flask_session_login[session['uuid']]):
+        login_credentials = flask_session_login[session['uuid']]['credentials']
+        login_credentials['uuid'] = session['uuid']
+    else:
+        login_credentials = None
+
+    return render_template("pages/login_info.html",
+                           board=board,
+                           login_credentials=login_credentials,
+                           status_msg=status_msg)
+
+
 @blueprint.route('/join', methods=('GET', 'POST'))
 def join():
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    if not global_admin:
+        return allow_msg
+
     form_join = forms_board.Join()
 
     status_msg = {"status_message": []}
@@ -112,7 +281,7 @@ def join():
                             "bitchan is a restricted word for labels")
 
             if not status_msg['status_message']:
-                result = nexus.join_chan(passphrase, clear_inventory=form_join.resync.data)
+                result = daemon_com.join_chan(passphrase, clear_inventory=form_join.resync.data)
 
                 if dict_chan_info["rules"]:
                     dict_chan_info["rules"] = set_clear_time_to_future(dict_chan_info["rules"])
@@ -132,6 +301,8 @@ def join():
                 new_chan.pgp_passphrase_attach = form_join.pgp_passphrase_attach.data
                 new_chan.pgp_passphrase_steg = form_join.pgp_passphrase_steg.data
 
+                log_description = None
+
                 if result.startswith("BM-"):
                     new_chan.address = result
                     new_chan.is_setup = True
@@ -139,14 +310,24 @@ def join():
                         status_msg['status_message'].append("Joined board")
                         url = "/board/{}/1".format(result)
                         url_text = "/{}/ - {}".format(new_chan.label, new_chan.description)
+                        log_description = "Joined board {} ({})".format(url_text, result)
                     elif new_chan.type == "list":
                         status_msg['status_message'].append("Joined list")
                         url = "/list/{}".format(result)
                         url_text = "{} - {}".format(new_chan.label, new_chan.description)
+                        log_description = "Joined list {} ({})".format(url_text, result)
                 else:
                     status_msg['status_message'].append("Chan creation queued.")
                     new_chan.address = None
                     new_chan.is_setup = False
+
+                if log_description:
+                    add_mod_log_entry(
+                        log_description,
+                        message_id=None,
+                        user_from=None,
+                        board_address=result,
+                        thread_hash=None)
 
                 if 'status_title' not in status_msg:
                     status_msg['status_title'] = "Success"
@@ -377,7 +558,7 @@ def join():
                         status_msg['status_message'].append(error)
 
             if not status_msg['status_message']:
-                result = nexus.join_chan(passphrase, clear_inventory=form_join.resync.data)
+                result = daemon_com.join_chan(passphrase, clear_inventory=form_join.resync.data)
 
                 if rules:
                     rules = set_clear_time_to_future(rules)
@@ -397,6 +578,8 @@ def join():
                 new_chan.pgp_passphrase_attach = form_join.pgp_passphrase_attach.data
                 new_chan.pgp_passphrase_steg = form_join.pgp_passphrase_steg.data
 
+                log_description = None
+
                 if result.startswith("BM-"):
                     if stage == "public_board":
                         status_msg['status_message'].append("Created public board")
@@ -411,13 +594,23 @@ def join():
                     if stage in ["public_board", "private_board"]:
                         url = "/board/{}/1".format(result)
                         url_text = "/{}/ - {}".format(label, description)
+                        log_description = "Created board {} ({})".format(url_text, result)
                     elif stage in ["public_list", "private_list"]:
                         url = "/list/{}".format(result)
                         url_text = "{} - {}".format(label, description)
+                        log_description = "Created list {} ({})".format(url_text, result)
                 else:
                     status_msg['status_message'].append("Creation queued")
                     new_chan.address = None
                     new_chan.is_setup = False
+
+                if log_description:
+                    add_mod_log_entry(
+                        log_description,
+                        message_id=None,
+                        user_from=None,
+                        board_address=result,
+                        thread_hash=None)
 
                 if 'status_title' not in status_msg:
                     status_msg['status_title'] = "Success"
@@ -436,6 +629,11 @@ def join():
 
 @blueprint.route('/join_base64/<passphrase_base64>', methods=('GET', 'POST'))
 def join_base64(passphrase_base64):
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    if not global_admin:
+        return allow_msg
+
     pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
     pgp_passphrase_attach = config.PGP_PASSPHRASE_ATTACH
     pgp_passphrase_steg = config.PGP_PASSPHRASE_STEG
@@ -467,7 +665,6 @@ def join_base64(passphrase_base64):
             for error in errors:
                 status_msg['status_message'].append(error)
     except Exception as err:
-        logger.exception("TEST")
         status_msg['status_message'].append("Issue parsing base64 string: {}".format(err))
 
     if request.method == 'POST':
@@ -480,7 +677,7 @@ def join_base64(passphrase_base64):
                             "bitchan is a restricted word for labels")
 
             if not status_msg['status_message']:
-                result = nexus.join_chan(passphrase_json, clear_inventory=form_join.resync.data)
+                result = daemon_com.join_chan(passphrase_json, clear_inventory=form_join.resync.data)
 
                 if dict_chan_info["rules"]:
                     dict_chan_info["rules"] = set_clear_time_to_future(dict_chan_info["rules"])
@@ -508,6 +705,8 @@ def join_base64(passphrase_base64):
                 new_chan.restricted_addresses = json.dumps(dict_chan_info["restricted_addresses"])
                 new_chan.rules = json.dumps(dict_chan_info["rules"])
 
+                log_description = None
+
                 if result.startswith("BM-"):
                     new_chan.address = result
                     new_chan.is_setup = True
@@ -515,14 +714,24 @@ def join_base64(passphrase_base64):
                         status_msg['status_message'].append("Joined board")
                         url = "/board/{}/1".format(result)
                         url_text = "/{}/ - {}".format(new_chan.label, new_chan.description)
+                        log_description = "Joined board {} ({})".format(url_text, result)
                     elif new_chan.type == "list":
                         status_msg['status_message'].append("Joined list")
                         url = "/list/{}".format(result)
                         url_text = "{} - {}".format(new_chan.label, new_chan.description)
+                        log_description = "Joined list {} ({})".format(url_text, result)
                 else:
                     status_msg['status_message'].append("Creation queued")
                     new_chan.address = None
                     new_chan.is_setup = False
+
+                if log_description:
+                    add_mod_log_entry(
+                        log_description,
+                        message_id=None,
+                        user_from=None,
+                        board_address=result,
+                        thread_hash=None)
 
                 if 'status_title' not in status_msg:
                     status_msg['status_title'] = "Success"
@@ -548,6 +757,11 @@ def join_base64(passphrase_base64):
 
 @blueprint.route('/leave/<address>', methods=('GET', 'POST'))
 def leave(address):
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    if not global_admin:
+        return allow_msg
+
     form_confirm = forms_board.Confirm()
 
     chan = Chan.query.filter(Chan.address == address).first()
@@ -555,39 +769,48 @@ def leave(address):
     if request.method != 'POST' or not form_confirm.confirm.data:
         return render_template("pages/confirm.html",
                                action="leave",
-                               chan=chan,
-                               address=address)
+                               address=address,
+                               chan=chan)
 
     status_msg = {"status_message": []}
+
+    admin_cmds = Command.query.filter(
+        Command.chan_address == address).all()
+    for each_adm_cmd in admin_cmds:
+        each_adm_cmd.delete()
 
     lf = LF()
     if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
         try:
             for each_thread in chan.threads:
-                # Delete messages
                 for each_message in each_thread.messages:
-                    delete_message_files(each_message.message_id)
-                    each_message.delete()
+                    delete_post(each_message.message_id)  # Delete thread posts
+                delete_thread(each_thread.thread_hash)  # Delete thread
 
-                # Delete threads
-                nexus.delete_thread(chan.address, each_thread.thread_hash)
-                each_thread.delete()
-
-            deleted_msgs = DeletedMessages.query.filter(DeletedMessages.address_to == address).all()
+            deleted_msgs = DeletedMessages.query.filter(
+                DeletedMessages.address_to == address).all()
             for each_msg in deleted_msgs:
                 logger.info("DeletedMessages: Deleting entry: {}".format(each_msg.message_id))
                 each_msg.delete()
 
-            # Delete chan
-            nexus.leave_chan(chan.address)
-            chan.delete()
+            try:
+                daemon_com.leave_chan(address)  # Leave chan in Bitmessage
+                delete_chan(address)  # Delete chan
 
-            nexus.delete_and_vacuum()
+                # Delete mod log entries for address
+                mod_logs = ModLog.query.filter(
+                    ModLog.board_address == address).all()
+                for each_entry in mod_logs:
+                    each_entry.delete()
+            except:
+                logger.exception("Could not delete chan via daemon or delete_chan()")
+
+            daemon_com.delete_and_vacuum()
 
             status_msg['status_title'] = "Success"
             status_msg['status_message'].append("Deleted {}".format(address))
-            time.sleep(0.1)
         finally:
+            time.sleep(1)
             lf.lock_release(config.LOCKFILE_MSG_PROC)
 
     board = {"current_chan": None}

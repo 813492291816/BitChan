@@ -1,25 +1,18 @@
 <div class="themed" style="display: block; vertical-align: top;" id="{{thread.thread_hash}}">
-	<span style="overflow-wrap: break-word;" class="subject bold"><a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash}}">{{thread.subject|safe}}</a></span>
+	<span style="overflow-wrap: break-word;" class="subject bold"><a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}">{{thread.subject|safe}}</a></span>
 	<div tabindex="0" class="menu">
 		<span class="link clickable">&#9654;</span>
 		<table class="menu-content">
+			{% include '/elements/board/post_header_options/sticky_thread_for_you.html' %}
+			{% include '/elements/board/post_header_options/lock_thread_for_you.html' %}
+			{% include '/elements/board/post_header_options/anchor_thread_for_you.html' %}
+			{% include '/elements/board/post_header_options/delete_thread_for_you.html' %}
 		{% if primary_access %}
-		<tr class="menu-entry">
-			<td style="white-space: nowrap;">
-				<a class="link" href="/delete/{{thread.chan.address}}/0/{{thread.thread_hash}}/thread">Delete Thread (For You)</a>
-			</td>
-		</tr>
-		<tr class="menu-entry">
-			<td style="white-space: nowrap;">
-				<a class="link" href="/delete/{{thread.chan.address}}/0/{{thread.thread_hash}}/thread_all">Delete Thread (For Everyone)</a>
-			</td>
-		</tr>
-		{% else %}
-		<tr class="menu-entry">
-			<td style="white-space: nowrap;">
-				<a class="link" href="/delete/{{thread.chan.address}}/0/{{thread.thread_hash}}/thread">Delete Thread (For You)</a>
-			</td>
-		</tr>
+			<tr class="menu-entry"><td></td></tr>
+			{% include '/elements/board/post_header_options/sticky_thread_for_everyone.html' %}
+			{% include '/elements/board/post_header_options/lock_thread_for_everyone.html' %}
+			{% include '/elements/board/post_header_options/anchor_thread_for_everyone.html' %}
+			{% include '/elements/board/post_header_options/delete_thread_for_everyone.html' %}
 		{% endif %}
 		</table>
 	</div>

@@ -5,6 +5,7 @@ import logging
 import random
 import string
 import time
+
 import config
 
 logger = logging.getLogger('bitchan.general')
@@ -329,3 +330,25 @@ def check_bm_address_csv_to_list(status_msg, str_addresses):
         status_msg['status_message'].append(
             "Malformed address list. Must be in CSV format: {}".format(err))
         return status_msg, None
+
+
+intervals = (
+    ('week', 604800),  # 60 * 60 * 24 * 7
+    ('day', 86400),    # 60 * 60 * 24
+    ('hr', 3600),      # 60 * 60
+    ('min', 60),
+    ('sec', 1),
+)
+
+
+def display_time(seconds, granularity=2):
+    result = []
+
+    for name, count in intervals:
+        value = seconds // count
+        if value:
+            seconds -= value * count
+            if value == 1:
+                name = name.rstrip('s')
+            result.append("{} {}".format(int(value), name))
+    return ', '.join(result[:granularity])

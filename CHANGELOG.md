@@ -1,3 +1,44 @@
+## 1.0.0
+
+ - fix install issues
+ - fix leaving boards/lists
+ - fix session size issue
+ - fix sqlalchemy breaking flask-sqlalchemy
+ - fix displaying upload progress on status page
+ - fix improper substring regex matches
+ - fix board/list sorting (now case-insensitive)
+ - fix automatic deletion of messages from sent folder of Bitmessage
+ - fix Max Auto-Download size calculation
+ - fix decryption size exploit
+ - add popup images and post summary on reply link hover
+ - add ability to bulk join from list
+ - add Kiosk Mode
+ - add Kiosk Mode features: login, permissions, post rate limit
+ - refactor to allow multithreaded frontend (for Kiosk mode)
+ - add address to message when deleting post with comment
+ - add check if Bitmessage is restarting before sending messages
+ - add the ability to enable hidden v3 onion service (random or custom address)
+ - remove PNG from steg insertion (LSB mode) due to excessive RAM use on large images
+ - add error-handling for failed uploads
+ - page loading optimizations
+ - add post option: sage
+ - add bulk adding to lists
+ - add option to prevent automatically downloading from unknown upload sites
+ - add post stats to index cards
+ - add incrementing post numbering per board
+ - add embedded audio play support for OPUS and M4A
+ - add post option: Delete Post with Comment (For You)
+ - add captcha for posting
+ - add DoS protection
+ - add overboard page
+ - add catalog page
+ - add search page
+ - add recent posts page (all posts and individual board posts)
+ - add reference link limit (max 50)
+ - add ability to hide passphrases from Board/List Information
+ - add ability to pin/lock threads
+
+
 ## 0.11.1
 
 This is a bugfix release. Users with BitChan < 0.11.0 will need to follow the instructions listed in the 0.11.0 changelog notes, below, to upgrade to this version. Users with Bitchan 0.11.0 can merely pull the new code and rebuild to upgrade to 0.11.1:

@@ -1,19 +1,8 @@
 {% extends "layout.html" %}
 
-{% block title %}Status{% endblock %}
+{% block title %}Status - {% endblock %}
 
 {% block head %}
-    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.min.css">
-    <link rel="stylesheet" href="/static/css/jquery-ui-1.12.1.theme.min.css">
-    <script src="/static/js/jquery-ui-1.12.1.min.js"></script>
-    <script>
-        $(function() {
-            $("#accordion-tor-circuits").show().accordion({
-                collapsible: true,
-                active: false
-            });
-        });
-    </script>
     <style>
         .table th, td {
             text-align: left;
@@ -42,6 +31,14 @@
                     <tr>
                         <td>Version</td>
                         <td>{{config.VERSION_BITCHAN}}</td>
+                    </tr>
+                    <tr>
+                        <td>Message Version</td>
+                        <td>{{config.VERSION_MSG}}</td>
+                    </tr>
+                    <tr>
+                        <td>Min Message Version</td>
+                        <td>{{config.VERSION_MIN_MSG}}</td>
                     </tr>
                     <tr>
                         <td>Status</td>
@@ -119,7 +116,7 @@
     {% endfor %}
                     <tr>
                         <td>Sync Complete</td>
-                        <td>{{bitmessage.bm_sync_complete}}</td>
+                        <td>{{bitmessage.bm_sync_complete()}}</td>
                     </tr>
                 </table>
 
@@ -154,25 +151,27 @@
     {% if tor_circuit_dict %}
                     <tr>
                         <td colspan="2">
-                             <div id="accordion-tor-circuits">
-                                <h3>Tor Circuits</h3>
-                                <div>
-                                    <table class="table themed" style="margin-left: auto; margin-right: auto;">
-        {% for each_id in tor_circuit_dict %}
-                                        <tr>
-                                            <td>Circuit {{each_id}} ({{tor_circuit_dict[each_id]["purpose"]}})</td>
-                                            <td>
-            {% for each_sub_circuit in tor_circuit_dict[each_id]["subcircuits"] %}
-                                                {{each_sub_circuit["div"]}}- {{each_sub_circuit["fingerprint"]}} ({{each_sub_circuit["nickname"]}}, {{each_sub_circuit["address"]}})
-                                                {%- if not loop.last %}<br/>{% endif %}
-            {% endfor %}
-                                            </td>
-                                        </tr>
-        {% endfor %}
+                            <section>
+                                <details>
+                                    <summary>Tor Circuits</summary>
+                                        <div>
+                                            <table class="table themed" style="margin-left: auto; margin-right: auto;">
+                {% for each_id in tor_circuit_dict %}
+                                                <tr>
+                                                    <td>Circuit {{each_id}} ({{tor_circuit_dict[each_id]["purpose"]}})</td>
+                                                    <td>
+                    {% for each_sub_circuit in tor_circuit_dict[each_id]["subcircuits"] %}
+                                                        {{each_sub_circuit["div"]}}- {{each_sub_circuit["fingerprint"]}} ({{each_sub_circuit["nickname"]}}, {{each_sub_circuit["address"]}})
+                                                        {%- if not loop.last %}<br/>{% endif %}
+                    {% endfor %}
+                                                    </td>
+                                                </tr>
+                {% endfor %}
 
-                                    </table>
-                                </div>
-                            </div>
+                                            </table>
+                                        </div>
+                                </details>
+                            </section>
                         </td>
                     </tr>
     {% endif %}

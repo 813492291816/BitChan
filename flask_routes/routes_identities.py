@@ -10,15 +10,19 @@ from flask import url_for
 from flask.blueprints import Blueprint
 
 import config
-from bitchan_flask import nexus
+from bitchan_client import DaemonCom
+from database.models import GlobalSettings
 from database.models import Identity
 from forms import forms_board
 from forms import forms_settings
 from utils.files import LF
+from utils.gateway import api
 from utils.general import process_passphrase
+from utils.routes import allowed_access
 from utils.routes import page_dict
 
 logger = logging.getLogger('bitchan.routes_identities')
+daemon_com = DaemonCom()
 
 blueprint = Blueprint('routes_identities',
                       __name__,
@@ -31,8 +35,22 @@ def global_var():
     return page_dict()
 
 
+@blueprint.before_request
+def before_view():
+    if (GlobalSettings.query.first().enable_verification and
+            ("verified" not in session or not session["verified"])):
+        session["verified_msg"] = "You are not verified"
+        return redirect(url_for('routes_verify.verify_wait'))
+    session["verified_msg"] = "You are verified"
+
+
 @blueprint.route('/identities', methods=('GET', 'POST'))
 def identities():
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    if not global_admin:
+        return allow_msg
+
     form_identity = forms_settings.Identity()
     form_confirm = forms_board.Confirm()
 
@@ -53,24 +71,32 @@ def identities():
 
             if not status_msg['status_message']:
                 lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=60):
+                if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                     try:
                         b64_passphrase = base64.b64encode(form_identity.passphrase.data.encode())
-                        return_str = nexus._api.createDeterministicAddresses(b64_passphrase.decode())
+                        return_str = api.createDeterministicAddresses(b64_passphrase.decode())
                         if return_str:
                             if ("addresses" in return_str and
                                     len(return_str["addresses"]) == 1 and
                                     return_str["addresses"][0]):
-                                new_ident = Identity()
-                                new_ident.address = return_str["addresses"][0]
-                                new_ident.label = form_identity.label.data
-                                new_ident.passphrase_base64 = b64_passphrase
-                                new_ident.save()
 
-                                nexus._refresh_identities = True
+                                ident = Identity.query.filter(
+                                    Identity.address == return_str["addresses"][0]).first()
+                                if ident:
+                                    logger.info(
+                                        "Creating identity that already exists in the database. "
+                                        "Skipping adding entry")
+                                else:
+                                    new_ident = Identity()
+                                    new_ident.address = return_str["addresses"][0]
+                                    new_ident.label = form_identity.label.data
+                                    new_ident.passphrase_base64 = b64_passphrase
+                                    new_ident.save()
+
+                                daemon_com.refresh_identities()
 
                                 if form_identity.resync.data:
-                                    nexus.signal_clear_inventory()
+                                    daemon_com.signal_clear_inventory()
 
                                 status_msg['status_title'] = "Success"
                                 status_msg['status_message'].append(
@@ -83,8 +109,8 @@ def identities():
                                     "Error creating Identity: {}".format(return_str))
                         else:
                             status_msg['status_message'].append("Error creating Identity")
-                        time.sleep(0.1)
                     finally:
+                        time.sleep(config.API_PAUSE)
                         lf.lock_release(config.LOCKFILE_API)
 
         elif form_identity.rename.data:
@@ -97,7 +123,7 @@ def identities():
                 if ident:
                     ident.label = form_identity.ident_label.data
                     ident.save()
-                    nexus._refresh_identities = True
+                    daemon_com.refresh_identities()
                     status_msg['status_title'] = "Success"
                     status_msg['status_message'].append("Identity renamed.")
                     status_msg['status_message'].append(
@@ -118,13 +144,13 @@ def identities():
 
             if not status_msg['status_message']:
                 lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=60):
+                if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                     try:
-                        return_str = nexus._api.deleteAddress(form_identity.address.data)
+                        return_str = api.deleteAddress(form_identity.address.data)
                         if return_str == "success":
                             if ident:
                                 ident.delete()
-                            nexus._refresh_identities = True
+                            daemon_com.refresh_identities()
                             status_msg['status_title'] = "Success"
                             status_msg['status_message'].append("Identity deleted.")
                             status_msg['status_message'].append(
@@ -132,8 +158,8 @@ def identities():
                         else:
                             status_msg['status_message'].append(
                                 "Error deleting Identity: {}".format(return_str))
-                        time.sleep(0.1)
                     finally:
+                        time.sleep(config.API_PAUSE)
                         lf.lock_release(config.LOCKFILE_API)
 
         session['status_msg'] = status_msg

@@ -10,14 +10,18 @@ from flask import url_for
 from flask.blueprints import Blueprint
 
 import config
-from bitchan_flask import nexus
+from bitchan_client import DaemonCom
 from database.models import AddressBook
+from database.models import GlobalSettings
 from forms import forms_board
 from forms import forms_settings
 from utils.files import LF
+from utils.gateway import api
+from utils.routes import allowed_access
 from utils.routes import page_dict
 
 logger = logging.getLogger('bitchan.routes_address_book')
+daemon_com = DaemonCom()
 
 blueprint = Blueprint('routes_address_book',
                       __name__,
@@ -30,8 +34,22 @@ def global_var():
     return page_dict()
 
 
+@blueprint.before_request
+def before_view():
+    if (GlobalSettings.query.first().enable_verification and
+            ("verified" not in session or not session["verified"])):
+        session["verified_msg"] = "You are not verified"
+        return redirect(url_for('routes_verify.verify_wait'))
+    session["verified_msg"] = "You are verified"
+
+
 @blueprint.route('/address_book', methods=('GET', 'POST'))
 def address_book():
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    if not global_admin:
+        return allow_msg
+
     form_addres_book = forms_settings.AddressBook()
     form_confirm = forms_board.Confirm()
 
@@ -48,11 +66,11 @@ def address_book():
 
             if not status_msg['status_message']:
                 lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=60):
+                if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                     try:
                         label = base64.b64encode(form_addres_book.label.data.encode()).decode()
                         try:
-                            return_str = nexus._api.addAddressBookEntry(
+                            return_str = api.addAddressBookEntry(
                                 form_addres_book.address.data, label)
                         except Exception as e:
                             if e:
@@ -67,7 +85,7 @@ def address_book():
                                 new_add_book.label = form_addres_book.label.data
                                 new_add_book.save()
 
-                                nexus._refresh_address_book = True
+                                daemon_com.refresh_address_book()
                                 status_msg['status_title'] = "Success"
                                 status_msg['status_message'].append(
                                     "Added Address Book entry {}".format(
@@ -79,8 +97,8 @@ def address_book():
                         else:
                             status_msg['status_message'].append(
                                 "Error creating Address Book entry")
-                        time.sleep(0.1)
                     finally:
+                        time.sleep(config.API_PAUSE)
                         lf.lock_release(config.LOCKFILE_API)
 
         elif form_addres_book.rename.data:
@@ -93,7 +111,7 @@ def address_book():
                 if add_book:
                     add_book.label = form_addres_book.add_label.data
                     add_book.save()
-                    nexus._refresh_address_book = True
+                    daemon_com.refresh_address_book()
                     status_msg['status_title'] = "Success"
                     status_msg['status_message'].append("Address Book entry renamed.")
                     status_msg['status_message'].append(
@@ -114,13 +132,13 @@ def address_book():
 
             if not status_msg['status_message']:
                 lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=60):
+                if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                     try:
-                        return_str = nexus._api.deleteAddressBookEntry(form_addres_book.address.data)
+                        return_str = api.deleteAddressBookEntry(form_addres_book.address.data)
                         if "Deleted address book entry" in return_str:
                             if add_book:
                                 add_book.delete()
-                            nexus._refresh_address_book = True
+                            daemon_com.refresh_address_book()
                             status_msg['status_title'] = "Success"
                             status_msg['status_message'].append("Address Book entry deleted.")
                             status_msg['status_message'].append(
@@ -128,8 +146,8 @@ def address_book():
                         else:
                             status_msg['status_message'].append(
                                 "Error deleting Address Book entry: {}".format(return_str))
-                        time.sleep(0.1)
                     finally:
+                        time.sleep(config.API_PAUSE)
                         lf.lock_release(config.LOCKFILE_API)
 
         session['status_msg'] = status_msg
@@ -146,6 +164,11 @@ def address_book():
 
 @blueprint.route('/address_book_add/<address>', methods=('GET', 'POST'))
 def address_book_add(address):
+    global_admin, allow_msg = allowed_access(
+        check_is_global_admin=True)
+    if not global_admin:
+        return allow_msg
+
     form_addres_book = forms_settings.AddressBook()
 
     status_msg = session.get('status_msg', {"status_message": []})
@@ -161,11 +184,11 @@ def address_book_add(address):
 
             if not status_msg['status_message']:
                 lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=60):
+                if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                     try:
                         label = base64.b64encode(form_addres_book.label.data.encode()).decode()
                         try:
-                            return_str = nexus._api.addAddressBookEntry(
+                            return_str = api.addAddressBookEntry(
                                 form_addres_book.address.data, label)
                         except Exception as e:
                             if e:
@@ -180,7 +203,7 @@ def address_book_add(address):
                                 new_add_book.label = form_addres_book.label.data
                                 new_add_book.save()
 
-                                nexus._refresh_address_book = True
+                                daemon_com.refresh_address_book()
                                 status_msg['status_title'] = "Success"
                                 status_msg['status_message'].append(
                                     "Added Address Book entry {}".format(
@@ -192,8 +215,8 @@ def address_book_add(address):
                         else:
                             status_msg['status_message'].append(
                                 "Error creating Address Book entry")
-                        time.sleep(0.1)
                     finally:
+                        time.sleep(config.API_PAUSE)
                         lf.lock_release(config.LOCKFILE_API)
 
             session['status_msg'] = status_msg

@@ -1,0 +1,9 @@
+{% for file_name in file_order if file_name %}
+        <div style="font-size: 0.8em;">
+    {%- if file_name|safe|length > 25 -%}
+            <span style="font-size: 1em;" title="{{file_name|safe}}">{{(file_name|safe)[:19]}}...{{(file_name|safe)[-3:]}}</span>
+    {%- else -%}
+        {{file_name|safe}}
+    {%- endif %}
+        </div>
+{% endfor %}

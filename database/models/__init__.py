@@ -1,8 +1,8 @@
 import json
 import logging
+import time
 
 import config
-from utils.general import set_clear_time_to_future
 from .alembic import Alembic
 from .chans import AddressBook
 from .chans import AdminMessageStore
@@ -10,10 +10,13 @@ from .chans import Chan
 from .chans import Command
 from .chans import Identity
 from .chans import Messages
+from .chans import PostReplies
 from .chans import Threads
 from .chans import UploadProgress
 from .maintenance import DeletedMessages
-from .maintenance import PostMessages
+from .maintenance import ModLog
+from .maintenance import PostCards
+from .maintenance import SessionInfo
 from .settings import Flags
 from .settings import GlobalSettings
 from .settings import UploadSites
@@ -67,6 +70,17 @@ def populate_db():
                 each_chan["rules"],
                 each_chan["extra_string"]
             )
+
+            def set_clear_time_to_future(rules):
+                """Set auto clear time to the future"""
+                try:
+                    if ("automatic_wipe" in rules and
+                            rules["automatic_wipe"]["wipe_epoch"] < time.time()):
+                        while rules["automatic_wipe"]["wipe_epoch"] < time.time():
+                            rules["automatic_wipe"]["wipe_epoch"] += \
+                                rules["automatic_wipe"]["interval_seconds"]
+                finally:
+                    return rules
 
             if each_chan["rules"]:
                 each_chan["rules"] = set_clear_time_to_future(each_chan["rules"])

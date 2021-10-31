@@ -1,12 +1,31 @@
 {% extends "layout.html" %}
 
-{% block title %}Diag{% endblock %}
+{% block title %}Diag - {% endblock %}
 
 {% block head %}
+    <script>
+    function toggle(source) {
+        var inputs = document.getElementsByTagName("input");
+        for (let x=0; x<inputs.length; x++){
+            if (inputs[x].type == "checkbox" &&
+                    inputs[x].name.indexOf("delsendingmsgid_") == 0) {
+                inputs[x].checked = source.checked;
+            }
+        }
+    }
+    </script>
     <style>
         .table th, td {
             text-align: left;
             padding: 0.3em;
+        }
+
+        .wrap {
+            text-align: center;
+        }
+        .outer {
+            display: inline-block;
+            margin: 0 auto;
         }
     </style>
 {% endblock %}
@@ -19,30 +38,188 @@
         {% include '/elements/status.html' %}
     {% endif %}
 
-    <table class="table themed" style="margin: auto">
+<div class='wrap'>
+
+    <h1 class="title themed bold" style="text-align: center">Diagnostics</h1>
+
+    <table class="table themed" style="max-width: 900px; text-align: left; margin-left: auto; margin-right: auto;">
         <tr>
-            <td colspan=2 style="text-align: center; padding-bottom: 1em">
-                <h1 class="title themed bold">Diag</h1>
-            </td>
-        </tr>
-        <tr>
-            <td colspan=2 style="text-align: center; padding-bottom: 1em">
+            <td>
                 <form method="post">
                     <input type="submit" name="del_inventory" value="Delete Bitmessage Inventory"/>
                 </form>
             </td>
+            <td>Delete messages.dat and restart Bitmessage. Useful to download the entire blockchain again after clearing the deleted message table and deleting the bitmessage trash in order to restore posts that were previously deleted.</td>
         </tr>
         <tr>
-            <td colspan=2 style="text-align: center; padding-bottom: 1em">
+            <td>
                 <form method="post">
                     <input type="submit" name="del_trash" value="Delete Bitmessage Trash"/>
                 </form>
             </td>
+            <td>Empty the Bitmessage trash.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="del_deleted_msg_db" value="Clear Deleted Message Table"/>
+                </form>
+            </td>
+            <td>When posts are deleted in BitChan, an entry with that message ID is created to indicate that message has been deleted. If a message from Bitmessage arrives with that same message ID, it is deleted and not processed. If you would like to restore posts that have been deleted, first clear the deleted message table, then delete the Bitmessage inventory.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="del_non_bc_msg_list" value="Clear Non-BitChan Message List"/>
+                </form>
+            </td>
+            <td>If a message in Bitmessage arrives that cannot be decrypted by BitChan, it is assumed to be a non-BitChan message and its message ID is added as an entry to the Non_BitChan message table in the database.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="del_popup_html" value="Delete Popup HTML"/>
+                </form>
+            </td>
+            <td>Message popups that display posts have their HTML generated once upon their first load, then this saved HTML is used every subsequent query. If new code is created to generate the popup HTML, the saved popup HTML needs to be deleted for the new code to generate popups that were created prior to the new code being implemented.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="del_cards" value="Delete Card HTML"/>
+                </form>
+            </td>
+            <td>Card HTML is generated and saved the frist time a card is called for. If new code is created to generate the card HTML, the saved card HTML needs to be deleted for the new code to generate cards that were created prior to the new code being implemented.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="del_mod_log" value="Delete Mod Log"/>
+                </form>
+            </td>
+            <td>Delete all Mod Log Entries.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="del_posts_without_thread" value="Delete Posts Without a Thread"/>
+                </form>
+            </td>
+            <td>Delete all posts that are found to not have a thread associated with them. This will not delete posts for which there is not OP in the thread, but posts that have a missing thread ID.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="fix_thread_board_timestamps" value="Fix Thread and Board Timestamps"/>
+                </form>
+            </td>
+            <td>Scan boards and threads and set the latest sent timestamp based on the latest post per thread and latest thread per board.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="fix_thread_short_hashes" value="Fix Thread Short Hashes"/>
+                </form>
+            </td>
+            <td>Scan threads and generates the short truncated hash from the full hash. Useful if the short hash wasn't generated properly.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="download_backup" value="Download Backup Archive"/>
+                </form>
+            </td>
+            <td>Zip and export a whole BitChan backup file, which includes the Bitmessage inventory and BitChan database. This contains everything needed to completely restore BitChan to the exact state it was when it was backed up.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <div class="themed">
+                        Backup Tar Archive
+                        <input name="restore_backup_file" type="file"/>
+                    </div>
+                    <div>
+                        <input type="submit" name="restore_backup" value="Restore Backup Archive"/>
+                    </div>
+                </form>
+            </td>
+            <td>Restore a Zip backup file. This will delete the current Bitmessage inventory and BitChan database and replace it with the ones being restored.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="text" id="bulk_delete_threads_address" name="bulk_delete_threads_address"/>
+                    <input type="submit" name="bulk_delete_threads_submit" value="Bulk Delete Threads"/>
+                </form>
+            </td>
+            <td>To delete threads in bulk, leave the address field blank to load the latest 100 threads, or enter a board address to load all threads for a specific board. On the next page, you can select in bulk which threads to delete. It is also possible to delete threads from the Recent and Search pages, however this feature will only show threads, rather than threads and posts.</td>
         </tr>
     </table>
 
-    {% include '/elements/display_boards.html' %}
-    {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
+    {% if flask_session_login %}
+    <h1 class="title themed bold" style="padding-top: 1em; text-align: center">User Login</h1>
+
+    <div class="container">
+        <div class="themed" style="max-width: 800px;">
+            <div style="width: 100%; padding-bottom: 2em;">
+                <table class="table themed" style="margin-left: auto; margin-right: auto;">
+                    <tr>
+                        <td>UUID</td>
+                        <td>Logged In</td>
+                        <td>ID</td>
+                        <td>Single Session</td>
+                        <td>Admin</td>
+                    </tr>
+            {% for each_id, each_data in flask_session_login.items() %}
+                    <tr>
+                        <td>{{each_id}}</td>
+                        <td>{{each_data['logged_in']}}</td>
+                        <td>{% if each_data['credentials'] %}{{each_data['credentials']['id']}}{% endif %}</td>
+                        <td>{% if each_data['credentials'] %}{{each_data['credentials']['single_session']}}{% endif %}</td>
+                        <td>{% if each_data['credentials'] %}{{each_data['credentials']['admin']}}{% endif %}</td>
+                    </tr>
+            {% endfor %}
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="heading-2 head-center themed">Messages Sending</div>
+
+    <div class='outer' style="padding: 1.5em 0 3em 0">
+    {% if sending_msgs %}
+        <form method="post">
+            <table class="themed">
+                <tr>
+                    <td>
+                        <input type="checkbox" onClick="toggle(this)"/>
+                    </td>
+                    <td>From</td>
+                    <td>To</td>
+                    <td>lastactiontime</td>
+                    <td>Size</td>
+                    <td>status</td>
+                </tr>
+        {% for each_row in sending_msgs %}
+                <tr>
+                    <td>
+                        <input type="checkbox" id="delsendingmsgid_{{each_row[0]}}" name="delsendingmsgid_{{each_row[0]}}" value="y">
+                    </td>
+                    <td>{{each_row[1]}}</td>
+                    <td>{{each_row[2]}}</td>
+                    <td>{{each_row[3]}}</td>
+                    <td>{{each_row[4]}}</td>
+                    <td>{{each_row[5]}}</td>
+                </tr>
+        {% endfor %}
+            </table>
+            <input type="submit" name="del_sending_msg" value="Cancel Sending"/>
+        </form>
+    {% else %}
+        <div class="themed">No Messages Sending</div>
+    {% endif %}
+    </div>
     <div style="padding-top: 1em"></div>
+</div>
 {% endblock %}

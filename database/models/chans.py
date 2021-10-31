@@ -28,6 +28,7 @@ class Identity(CRUDMixin, db.Model):
     address = db.Column(db.String, unique=True, default=None)
     label = db.Column(db.String, default=None)
     passphrase_base64 = db.Column(db.String, default=None)
+    total_messages = db.Column(db.Integer, default=0)
     unread_messages = db.Column(db.Integer, default=0)
 
     def __repr__(self):
@@ -50,6 +51,16 @@ class Command(CRUDMixin, db.Model):
     thread_id = db.Column(db.String, default=None)
     message_id = db.Column(db.String, default=None)
     options = db.Column(db.String, default="{}")
+
+    # Thread options
+    thread_sticky = db.Column(db.Boolean, default=False)
+    thread_sticky_timestamp_utc = db.Column(db.Integer, default=0)
+    thread_lock = db.Column(db.Boolean, default=False)
+    thread_lock_ts = db.Column(db.Integer, default=0)
+    thread_lock_timestamp_utc = db.Column(db.Integer, default=0)
+    thread_anchor = db.Column(db.Boolean, default=False)
+    thread_anchor_ts = db.Column(db.Integer, default=0)
+    thread_anchor_timestamp_utc = db.Column(db.Integer, default=0)
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(
@@ -78,12 +89,12 @@ class Chan(CRUDMixin, db.Model):
     label = db.Column(db.String, default=None)
     description = db.Column(db.String, default=None)
     is_setup = db.Column(db.Boolean, default=False)
-    image_banner_base64 = db.Column(db.String, default=None)
-    image_banner_timestamp_utc = db.Column(db.Integer, default=0)
-    image_spoiler_base64 = db.Column(db.String, default=None)
-    image_spoiler_timestamp_utc = db.Column(db.Integer, default=0)
+    timestamp_sent = db.Column(db.Integer, default=0)
+    timestamp_received = db.Column(db.Integer, default=0)
     default_from_address = db.Column(db.String, default=None)
     allow_css = db.Column(db.Boolean, default=False)
+    last_post_number = db.Column(db.Integer, default=0)
+    regenerate_numbers = db.Column(db.Boolean, default=False)
 
     # List-specific
     list = db.Column(db.String, default="{}")
@@ -97,6 +108,12 @@ class Chan(CRUDMixin, db.Model):
     list_send = db.Column(db.Boolean, default=False)
 
     threads = relationship("Threads", back_populates="chan")
+
+    # Not used, can be removed
+    image_banner_base64 = db.Column(db.String, default=None)
+    image_banner_timestamp_utc = db.Column(db.Integer, default=0)
+    image_spoiler_base64 = db.Column(db.String, default=None)
+    image_spoiler_timestamp_utc = db.Column(db.Integer, default=0)
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(
@@ -112,11 +129,17 @@ class Threads(CRUDMixin, db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True)
     chan_id = db.Column(db.Integer, db.ForeignKey('chan.id'), default=None)
     thread_hash = db.Column(db.String, unique=True, default=None)
+    thread_hash_short = db.Column(db.String, default=None)
     op_sha256_hash = db.Column(db.String, default=None)  # The hash of the OP
     default_from_address = db.Column(db.String, default=None)
     subject = db.Column(db.String, default=None)
     timestamp_sent = db.Column(db.Integer, default=0)
     timestamp_received = db.Column(db.Integer, default=0)
+    stickied_local = db.Column(db.Boolean, default=False)
+    locked_local = db.Column(db.Boolean, default=False)
+    locked_local_ts = db.Column(db.Integer, default=0)
+    anchored_local = db.Column(db.Boolean, default=False)
+    anchored_local_ts = db.Column(db.Integer, default=0)
 
     chan = relationship("Chan", back_populates="threads")
     messages = relationship("Messages", back_populates="thread")
@@ -135,12 +158,15 @@ class Messages(CRUDMixin, db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True)
     thread_id = db.Column(db.String, db.ForeignKey('thread.id'), default=None)
     message_id = db.Column(db.String, default=None)
+    post_id = db.Column(db.String, default=None)
+    post_number = db.Column(db.Integer, default=None)
     expires_time = db.Column(db.Integer, default=None)
     address_from = db.Column(db.String, default=None)
-    timestamp_received = db.Column(db.Integer, default=None)
-    timestamp_sent = db.Column(db.Integer, default=None)
+    timestamp_received = db.Column(db.Integer, default=0)
+    timestamp_sent = db.Column(db.Integer, default=0)
     is_op = db.Column(db.Boolean, default=None)  # Is this message an OP or not
     message_sha256_hash = db.Column(db.String, default=None)  # This message payload SHA256 hash
+    sage = db.Column(db.Boolean, default=False)
     subject = db.Column(db.String, default=None)
     message = db.Column(db.String, default=None)
     nation = db.Column(db.String, default=None)
@@ -176,13 +202,25 @@ class Messages(CRUDMixin, db.Model):
     image4_spoiler = db.Column(db.Boolean, default=None)
     message_original = db.Column(db.String, default=None)
     message_steg = db.Column(db.String, default="{}")
-    replies = db.Column(db.String, default="[]")
+    popup_html = db.Column(db.String, default="")
+    regenerate_popup_html = db.Column(db.Boolean, default=False)
 
     thread = relationship("Threads", back_populates="messages")
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(
             cls=self.__class__.__name__, rep=self)
+
+
+class PostReplies(CRUDMixin, db.Model):
+    __tablename__ = "post_replies"
+    __table_args__ = {
+        'extend_existing': True
+    }
+
+    id = db.Column(db.Integer, unique=True, primary_key=True)
+    post_id = db.Column(db.String, db.ForeignKey('thread.id'), default=None)  # post that people replied to
+    reply_ids = db.Column(db.String, default="[]")  # posts that replied to post_id
 
 
 class UploadProgress(CRUDMixin, db.Model):

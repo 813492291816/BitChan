@@ -1,0 +1,235 @@
+{% extends "layout.html" %}
+
+{% set is_private = board['current_chan'].access == "private" %}
+
+{% set rules = chans_list_info[board['current_chan'].address]["rules"] %}
+
+{% set primary_addresses = chans_list_info[board['current_chan'].address]["primary_addresses"] %}
+{% set secondary_addresses = chans_list_info[board['current_chan'].address]["secondary_addresses"] %}
+{% set tertiary_addresses = chans_list_info[board['current_chan'].address]["tertiary_addresses"] %}
+{% set restricted_addresses = chans_list_info[board['current_chan'].address]["restricted_addresses"] %}
+
+{% set primary_access = [] %}
+{% set secondary_access = [] %}
+{% set tertiary_access = [] %}
+{% set on_any_access_list = [] %}
+
+{% for id_type in [identities, all_chans] %}
+    {% for address in id_type if id_type[address]['enabled'] %}
+        {% if address in primary_addresses %}
+            {%- do primary_access.append(1) %}
+        {% endif %}
+        {% if address in secondary_addresses %}
+            {%- do secondary_access.append(1) %}
+        {% endif %}
+        {% if address in tertiary_addresses %}
+            {%- do tertiary_access.append(1) %}
+        {% endif %}
+    {% endfor %}
+{% endfor %}
+
+{% if primary_access or secondary_access or tertiary_access %}
+    {%- do on_any_access_list.append(1) %}
+{% endif %}
+
+{% block head %}
+    <script>
+    {% if rules and "automatic_wipe" in rules %}
+    {% include '/elements/timer_content_wipe.html' %}
+    {% endif %}
+
+    function toggle(source) {
+        var inputs = document.getElementsByTagName("input");
+        for (let x=0; x<inputs.length; x++){
+            if (inputs[x].type == "checkbox" &&
+                    inputs[x].name.indexOf("add_bulk_") == 0) {
+                inputs[x].checked = source.checked;
+            }
+        }
+    }
+    </script>
+    <style>
+        .list table {
+            padding-top: 2em
+        }
+        .list th, td {
+            padding: 0.8em;
+        }
+
+        .address-mine {
+            font-size: 0.9em;
+            color: green;
+            font-family: monospace
+        }
+        .address-other {
+            font-size: 0.9em;
+            font-family: monospace
+        }
+    </style>
+{% endblock %}
+
+{% block admin_css %}
+    {% if board['current_chan'].allow_css %}
+    <style>
+        {% if board['current_chan'].address in command_options and
+              "css" in command_options[board['current_chan'].address] -%}
+        {{command_options[board['current_chan'].address]["css"]}}
+        {%- endif %}
+    </style>
+    {% endif %}
+{% endblock %}
+
+{% block title %}
+{{chans_list_info[board['current_chan'].address]["label"]|safe}} -
+{% if is_private %}
+Private
+{% else %}
+Public
+{% endif %}
+List
+ - {% endblock %}
+
+{% block body %}
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    <center>
+        <span class="themed" style="font-size: 1.5em">
+        {% if is_private %}
+            Private
+        {% else %}
+            Public
+        {% endif %}
+            List
+        </span>
+    </center>
+    <br/>
+
+    <div>
+        <center>
+            <a class="title themed bold" style="text-decoration: none;" href="/list/{{board['current_chan'].address}}">/{{chans_list_info[board['current_chan'].address]["label"]|safe}}/ - {{chans_list_info[board['current_chan'].address]["description"]|safe}}</a>
+        </center>
+    </div>
+    <br/>
+
+    <center>
+        <span class="themed" style="font-size: 1.5em">Bulk Add to List</span>
+    </center>
+
+    <center>
+        <a class="themed" href="/list/{{board['current_chan'].address}}">Back to List</a>
+    </center>
+
+    {% if primary_access or secondary_access or tertiary_access or not is_private %}
+    <div class="themed" style="padding-top: 1em">
+        <center>
+            <form action="/list_bulk_add/{{board['current_chan'].address}}" method="post">
+                <table>
+                    <tr>
+                        <td>
+                            From
+                        </td>
+                        <td>
+                            <select name="from_address">
+        {% if board['current_chan'].address not in from_list %}
+                                <option value=""></option>
+        {% endif %}
+        {% for each_address in from_list %}
+                                <option value="{{each_address}}"
+                                {%- if board['current_chan'].default_from_address == each_address %}
+                                    {{' selected'}}
+                                {%- endif -%}>{{from_list[each_address]}}</option>
+        {% endfor %}
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td colspan="2">
+                            <input class="button" type="submit" name="add_bulk" id="add_bulk" value="Add Selected to List"/>
+                        </td>
+                    </tr>
+                </table>
+
+        {% if form_list_add %}
+
+                <table class="list themed" style="max-width: 1050px">
+                    <tr>
+                        <td><input type="checkbox" onClick="toggle(this)"/></td>
+                        <td></td>
+                        <td>Address</td>
+                        <td>Type</td>
+                        <td>Label</td>
+                        <td>Description</td>
+                    </tr>
+
+            {% for each_item in form_list_add if table_chan.query.filter(table_chan.address == each_item[0]).count() %}
+                {% set address = each_item[0] %}
+                {% set chan = table_chan.query.filter(table_chan.address == address).first() %}
+                {% set access = get_access(address) %}
+                {% set errors, list_entry_info = process_passphrase(chan.passphrase) %}
+                {% set rules = list_entry_info["rules"] %}
+
+                {% if not access %}
+                    {% set access = {
+                        "primary_addresses": list_entry_info["primary_addresses"],
+                        "secondary_addresses": list_entry_info["secondary_addresses"],
+                        "tertiary_addresses": list_entry_info["tertiary_addresses"],
+                        "restricted_addresses": list_entry_info["restricted_addresses"],
+                    } %}
+                {% endif %}
+
+                    <tr>
+                        <td style="border-top: 1px solid black;">
+                        {% if address in chans_board_info or address in chans_list_info %}
+                            <input type="checkbox" id="add_bulk_{{address}}" name="add_bulk_{{address}}" value="y">
+                        {% endif %}
+                        </td>
+                        <td style="border-top: 1px solid black;">
+                            <img style="width: 25px; height: 25px" src="/icon/{{address}}">
+                        </td>
+                        <td style="border-top: 1px solid black;">
+                        {% if address in chans_board_info %}
+                            <a class="link" style="font-family: monospace" href="/board/{{address}}/1">{{address}}</a>
+                        {% elif address in chans_list_info %}
+                            <a class="link" style="font-family: monospace" href="/list/{{address}}">{{address}}</a>
+                        {% else %}
+                            <span style="font-family: monospace">{{address}}</span>
+                        {% endif %}
+                        </td>
+                        <td style="border-top: 1px solid black;">
+                        {% if list_entry_info["access"] == "public" %}
+                            Public
+                        {% elif list_entry_info["access"] == "private" %}
+                            Private
+                        {% endif %}
+                        {% if list_entry_info["type"] == "board" %}
+                            Board
+                        {% elif list_entry_info["type"] == "list" %}
+                            List
+                        {% endif %}
+                        </td>
+                        <td style="border-top: 1px solid black;">{{list_entry_info["label"]|safe}}</td>
+                        <td style="border-top: 1px solid black;">{{list_entry_info["description"]|safe}}</td>
+                    </tr>
+
+                {% endfor %}
+
+                </table>
+
+        {% else %}
+                No Boards/Lists available to add to this list.
+        {% endif %}
+            </form>
+        </center>
+    </div>
+    {% endif %}
+
+    <hr/>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/footer_links.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

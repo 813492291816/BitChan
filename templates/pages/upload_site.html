@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}Upload Site{% endblock %}
+{% block title %}Upload Site - {% endblock %}
 
 {% block body %}
     {% include '/elements/banner.html' %}
@@ -214,7 +214,7 @@
                 <form method="post" enctype="multipart/form-data" autocomplete="off">
                 <input name="stage" value="join" type="hidden">
                 <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
-                    Confirm deleting the upload site: {{current_upload_site.domain}}
+                    Confirm deleting the upload site: {{current_upload_site.form_name}}
                 </div>
                 <div style="padding-top: 1em; text-align: center;">
                     <input type="submit" name="delete" value="Confirm"/>

@@ -19,6 +19,9 @@
             text-align: left;
             padding: 0.3em;
         }
+        tr:nth-child(odd) {
+            background-color: {{themes[get_theme()].posthighlight}};
+        }
 
         .wrap {
             text-align: center;
@@ -78,26 +81,26 @@
         <tr>
             <td>
                 <form method="post">
-                    <input type="submit" name="del_popup_html" value="Delete Popup HTML"/>
-                </form>
-            </td>
-            <td>Message popups that display posts have their HTML generated once upon their first load, then this saved HTML is used every subsequent query. If new code is created to generate the popup HTML, the saved popup HTML needs to be deleted for the new code to generate popups that were created prior to the new code being implemented.</td>
-        </tr>
-        <tr>
-            <td>
-                <form method="post">
-                    <input type="submit" name="del_cards" value="Delete Card HTML"/>
-                </form>
-            </td>
-            <td>Card HTML is generated and saved the frist time a card is called for. If new code is created to generate the card HTML, the saved card HTML needs to be deleted for the new code to generate cards that were created prior to the new code being implemented.</td>
-        </tr>
-        <tr>
-            <td>
-                <form method="post">
                     <input type="submit" name="del_mod_log" value="Delete Mod Log"/>
                 </form>
             </td>
             <td>Delete all Mod Log Entries.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="del_orphaned_identities" value="Delete Orphaned Identities"/>
+                </form>
+            </td>
+            <td>Identities: In BC, not BM: {{orphaned_identities_bc}}; in BM, not BC: {{orphaned_identities_bm}}. Delete all Identities not found in Bitmessage (orphaned). Consider backing up from the Configuration page before deleting orphaned Identities.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="add_orphaned_identities" value="Recreate Orphaned Identities"/>
+                </form>
+            </td>
+            <td>Identities: In BC, not BM: {{orphaned_identities_bc}}; in BM, not BC: {{orphaned_identities_bm}}. If an Identity exists in BitChan but not Bitmessage, instruct Bitmessage to generate the Identities.</td>
         </tr>
         <tr>
             <td>
@@ -122,6 +125,86 @@
                 </form>
             </td>
             <td>Scan threads and generates the short truncated hash from the full hash. Useful if the short hash wasn't generated properly.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="reset_downloads" value="Reset Downloads"/>
+                </form>
+            </td>
+            <td>Reset all downloads. Fixes issues with downloads, e.g. when a server restart during a download.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="regenerate_reply_post_ids" value="Regenerate Reply Post IDs"/>
+                </form>
+            </td>
+            <td>Regenerate Post ID lists for posts replied to and posts being replied from.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="regenerate_all_post_numbers" value="Regenerate Post Numbers"/>
+                </form>
+            </td>
+            <td>Recalculate post numbers for all boards.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="regenerate_all_html" value="Regenerate All HTML"/>
+                </form>
+            </td>
+            <td>Regenerate post, popup, and card HTML.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="regenerate_popup_html" value="Regenerate Popup HTML"/>
+                </form>
+            </td>
+            <td>Message popups that display posts have their HTML generated once upon their first load, then this saved HTML is used every subsequent query. If new code is created to generate the popup HTML, the saved popup HTML needs to be deleted for the new code to generate popups that were created prior to the new code being implemented.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="regenerate_cards" value="Regenerate Card HTML"/>
+                </form>
+            </td>
+            <td>Card HTML is generated and saved the frist time a card is called for. If new code is created to generate the card HTML, the saved card HTML needs to be deleted for the new code to generate cards that were created prior to the new code being implemented.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="regenerate_all_post_html" value="Regenerate Post HTML"/>
+                </form>
+            </td>
+            <td>Regenerate all cached post HTML.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="regenerate_upload_sites" value="Regenerate Upload Sites"/>
+                </form>
+            </td>
+            <td>Regenerate all post attachment upload sites. Warning: This will delete all upload sites before recreating them. Save any information you want to preserve before running.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="del_game_table" value="Delete Game Data"/>
+                </form>
+            </td>
+            <td>Database Entries: {{game_entry_count}}. Delete all columns in the Game database table.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="del_captcha_table" value="Delete Captcha Data"/>
+                </form>
+            </td>
+            <td>Database Entries: {{captcha_entry_count}}. Delete all columns in the Captcha database table.</td>
         </tr>
         <tr>
             <td>

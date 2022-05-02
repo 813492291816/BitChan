@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import subprocess
 import time
 from io import BytesIO
@@ -18,9 +19,23 @@ logger = logging.getLogger("bitchan.upload")
 
 
 class UploadCurl:
+    proxy_types = {
+        "tor": {
+            "host": '172.28.1.2',
+            "port": 9060,
+            "type": pycurl.PROXYTYPE_SOCKS5_HOSTNAME
+        },
+        "i2p": {
+            "host": '172.28.1.6',
+            "port": 4444,
+            "type": pycurl.PROXYTYPE_HTTP
+        }
+    }
+
     def __init__(self, upload_id):
         self.update_timestamp = time.time()
         self.upload_id = upload_id
+        self.file_size = None
 
     def progress(self, download_t, download_d, upload_t, upload_d):
         now = time.time()
@@ -31,34 +46,52 @@ class UploadCurl:
                 upl = new_session.query(UploadProgress).filter(
                     UploadProgress.upload_id == self.upload_id).first()
                 if upl and upload_d > upl.progress_size_bytes:
-                    upl.progress_size_bytes = upload_d
-                    upl.progress_percent = upload_d / upload_t * 100
-                    new_session.commit()
-                    logger.info("Upload {}: {}/{} ({:.1f} %) uploaded".format(
-                        upl.upload_id,
-                        upl.progress_size_bytes,
-                        upl.total_size_bytes,
-                        upl.progress_percent))
+                    try:
+                        if not upload_t:
+                            if upl.total_size_bytes:
+                                upload_t = upl.total_size_bytes
+                            elif self.file_size:
+                                upload_t = self.file_size
+                        upl.progress_size_bytes = upload_d
+                        upl.progress_percent = upload_d / upload_t * 100
+                        new_session.commit()
+                        logger.info("Upload {}: {}/{} ({:.1f} %) uploaded".format(
+                            upl.upload_id,
+                            upl.progress_size_bytes,
+                            upload_t,
+                            upl.progress_percent))
+                    except Exception as err:
+                        logger.error("Exception monitoring upload progress: {}/{} uploaded, {}".format(
+                            upload_d, upload_t, err))
 
-    def upload_curl(self,
-            post_id, domain, uri, file_path,
-            download_prefix=None,
-            upload_word="files[]",
-            response=None):
-        upload_url = None
+    def upload_curl(self, post_id, file_path, options):
+        download_url = None
+        self.file_size = os.path.getsize(file_path)
         buffer = BytesIO()
 
         c = pycurl.Curl()
+        c.setopt(c.URL, options["uri"])
+        c.setopt(c.WRITEDATA, buffer)
         c.setopt(c.NOPROGRESS, False)
         c.setopt(c.XFERINFOFUNCTION, self.progress)
-        c.setopt(c.URL, uri)
-        c.setopt(c.HTTPPOST, [(upload_word, (c.FORM_FILE, file_path))])
-        c.setopt(c.CAINFO, certifi.where())
-        c.setopt(c.WRITEDATA, buffer)
 
-        c.setopt(pycurl.PROXY, '172.28.1.2')
-        c.setopt(pycurl.PROXYPORT, 9060)
-        c.setopt(pycurl.PROXYTYPE, pycurl.PROXYTYPE_SOCKS5_HOSTNAME)
+        if options["http_headers"]:
+            c.setopt(pycurl.HTTPHEADER, json.loads(options["http_headers"]))
+
+        if options["subtype"] == "simple_upload":
+            c.setopt(c.UPLOAD, 1)
+            c.setopt(pycurl.READFUNCTION, open(file_path, 'rb').read)
+        else:
+            c.setopt(c.HTTPPOST, [(options["upload_word"], (c.FORM_FILE, file_path))])
+            c.setopt(c.CAINFO, certifi.where())
+
+        proxy_type = options["proxy_type"]
+        if not proxy_type or proxy_type not in self.proxy_types:
+            proxy_type = "tor"
+
+        c.setopt(pycurl.PROXY, self.proxy_types[proxy_type]["host"])
+        c.setopt(pycurl.PROXYPORT, self.proxy_types[proxy_type]["port"])
+        c.setopt(pycurl.PROXYTYPE, self.proxy_types[proxy_type]["type"])
 
         c.perform()
         c.close()
@@ -66,7 +99,7 @@ class UploadCurl:
         body = buffer.getvalue()
         logger.info("pycurl returned: {}".format(body.decode("UTF-8")))
 
-        if response == "JSON":
+        if options["response"] == "JSON":
             try:
                 response_json = json.loads(body)
             except:
@@ -74,27 +107,34 @@ class UploadCurl:
                 response_json = None
 
             if response_json:
+                if options["json_key"] and options["json_key"] in response_json:
+                    download_url = response_json[options["json_key"]]
+
                 # v2.femto.pw
-                if "data" in response_json and "short" in response_json["data"]:
-                    upload_url = "{}/{}".format(
-                        download_prefix, response_json["data"]["short"])
+                elif "data" in response_json and "short" in response_json["data"]:
+                    download_url = "{}/{}".format(
+                        options["download_prefix"], response_json["data"]["short"])
 
                 # pomf/uguu
-                if "success" in response_json and response_json["success"]:
+                elif "success" in response_json and response_json["success"]:
                     try:
-                        if download_prefix:
-                            upload_url = "{}/{}".format(
-                                download_prefix, response_json["files"][0]["url"])
+                        if options["download_prefix"]:
+                            download_url = "{}/{}".format(
+                                options["download_prefix"], response_json["files"][0]["url"])
                         elif response_json["files"][0]["url"].startswith("http"):
-                            upload_url = response_json["files"][0]["url"]
+                            download_url = response_json["files"][0]["url"]
                     except:
                         pass
-        elif response == "str_url":
-            if domain in body.decode():
-                upload_url = body.decode()
+        elif options["response"] == "str_url":
+            if body.decode().startswith("http"):
+                download_url = body.decode()
 
-        if upload_url:
-            return True, upload_url
+        if download_url:
+            if options["replace_download_domain"]:  # For download URLs that need the domain replaced
+                dom_replace = json.loads(options["replace_download_domain"])
+                download_url = download_url.replace(dom_replace[0], dom_replace[1])
+                logger.info("Domain replaced: {}".format(download_url))
+            return True, download_url
         return False, None
 
 

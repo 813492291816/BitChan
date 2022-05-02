@@ -7,7 +7,13 @@ class Credentials:
     def __init__(self, ):
         self.users = []
 
-    def add_user(self, id_, password, single_session, global_admin, can_post, board_list_admin, admin_boards):
+    def add_user(self, id_, password,
+                 single_session=False,
+                 global_admin=False,
+                 can_post=False,
+                 janitor=False,
+                 board_list_admin=False,
+                 admin_boards=False):
         for each_user in self.users:
             if password == each_user["password"]:
                 logger.error("Password must be unique")
@@ -21,6 +27,7 @@ class Credentials:
             "single_session": single_session,
             "global_admin": global_admin,
             "can_post": can_post,
+            "janitor": janitor,
             "board_list_admin": board_list_admin,
             "admin_boards": admin_boards
         })

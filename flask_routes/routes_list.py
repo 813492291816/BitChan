@@ -14,7 +14,9 @@ from sqlalchemy import and_
 import config
 from bitchan_client import DaemonCom
 from database.models import Chan
-from database.models import GlobalSettings
+from flask_routes.utils import count_views
+from flask_routes.utils import is_verified
+from flask_routes.utils import rate_limit
 from forms import forms_board
 from utils.general import process_passphrase
 from utils.general import set_clear_time_to_future
@@ -39,32 +41,58 @@ def global_var():
 
 @blueprint.before_request
 def before_view():
-    if (GlobalSettings.query.first().enable_verification and
-            ("verified" not in session or not session["verified"])):
-        session["verified_msg"] = "You are not verified"
-        return redirect(url_for('routes_verify.verify_wait'))
-    session["verified_msg"] = "You are verified"
+    if not is_verified():
+        full_path_b64 = "0"
+        if request.method == "GET":
+            if request.url:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.url.encode()).decode()
+            elif request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        elif request.method == "POST":
+            if request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        return redirect(url_for('routes_verify.verify_wait',
+                                full_path_b64=full_path_b64))
 
 
-@blueprint.route('/list/<list_address>', methods=('GET', 'POST'))
-def list_chans(list_address):
-    allowed, allow_msg = allowed_access(check_can_view=True)
+@blueprint.route('/lists')
+@count_views
+@rate_limit
+def lists():
+    allowed, allow_msg = allowed_access("can_view")
+    if not allowed:
+        return allow_msg
+
+    status_msg = {"status_message": []}
+
+    return render_template("pages/lists.html",
+                           status_msg=status_msg)
+
+
+@blueprint.route('/list/<current_chan>', methods=('GET', 'POST'))
+@count_views
+@rate_limit
+def list_chans(current_chan):
+    allowed, allow_msg = allowed_access("can_view")
     if not allowed:
         return allow_msg
 
     form_list = forms_board.List()
     form_set = forms_board.SetChan()
 
-    chan = Chan.query.filter(Chan.address == list_address).first()
+    chan = Chan.query.filter(Chan.address == current_chan).first()
     if not chan:
         return render_template("pages/404-board.html",
-                               board_address=list_address)
+                               board_address=current_chan)
 
     try:
-        from_list = daemon_com.get_from_list(list_address)
+        from_list = daemon_com.get_from_list(current_chan)
     except:
         return render_template("pages/404-board.html",
-                               board_address=list_address)
+                               board_address=current_chan)
 
     board = {"current_chan": chan}
     status_msg = {"status_message": []}
@@ -78,7 +106,8 @@ def list_chans(list_address):
         this_chan_list = {}
 
     chans = Chan.query.filter(and_(
-        Chan.address != list_address,
+        Chan.unlisted.is_(False),
+        Chan.address != current_chan,
         Chan.address.notin_(this_chan_list))).order_by(
             Chan.type.asc(),
             Chan.label.asc()).all()
@@ -102,8 +131,7 @@ def list_chans(list_address):
             session.pop('status_msg')
 
     elif request.method == 'POST':
-        global_admin, allow_msg = allowed_access(
-            check_is_global_admin=True)
+        global_admin, allow_msg = allowed_access("is_global_admin")
         if not global_admin:
             return allow_msg
 
@@ -129,8 +157,7 @@ def list_chans(list_address):
                     join_bulk_list.append(each_input.split("_")[1])
 
         if form_set.set_pgp_passphrase_msg.data:
-            global_admin, allow_msg = allowed_access(
-                check_is_global_admin=True)
+            global_admin, allow_msg = allowed_access("is_global_admin")
             if not global_admin:
                 return allow_msg
 
@@ -147,13 +174,12 @@ def list_chans(list_address):
 
         # set default/preferred address to update list
         elif form_list.save_from.data:
-            global_admin, allow_msg = allowed_access(
-                check_is_global_admin=True)
+            global_admin, allow_msg = allowed_access("is_global_admin")
             if not global_admin:
                 return allow_msg
 
             chan = Chan.query.filter(
-                Chan.address == list_address).first()
+                Chan.address == current_chan).first()
             if chan:
                 if form_list.from_address.data:
                     chan.default_from_address = form_list.from_address.data
@@ -163,10 +189,8 @@ def list_chans(list_address):
 
         # Add/delete a board or list to/from a list
         elif form_list.add.data or delete:
-            global_admin, allow_msg = allowed_access(
-                check_is_global_admin=True)
-            board_list_admin, allow_msg = allowed_access(
-                check_is_board_list_admin=True, check_admin_board=list_address)
+            global_admin, allow_msg = allowed_access("is_global_admin")
+            board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=current_chan)
             if not global_admin and not board_list_admin:
                 return allow_msg
 
@@ -182,12 +206,12 @@ def list_chans(list_address):
             else:
                 mod_list = Chan.query.filter(and_(
                     Chan.type == "list",
-                    Chan.address == list_address)).first()
+                    Chan.address == current_chan)).first()
 
                 try:
                     dict_list_addresses = json.loads(mod_list.list)
                 except:
-                    dict_list_addresses = {}
+                    dict_current_chanes = {}
 
                 try:
                     rules = json.loads(mod_list.rules)
@@ -200,7 +224,7 @@ def list_chans(list_address):
                 if form_list.delete.data and address not in dict_list_addresses:
                     status_msg["status_message"].append("Can't delete address that's not on the list")
 
-                if address == list_address:
+                if address == current_chan:
                     status_msg["status_message"].append("Cannot modify an address that's the same address as the list")
 
                 def sender_has_access(address, address_type):
@@ -213,12 +237,12 @@ def list_chans(list_address):
                             return True
 
                 if mod_list.access == "private":
-                    if (sender_has_access(list_address, "primary_addresses") or
-                            sender_has_access(list_address, "secondary_addresses")):
+                    if (sender_has_access(current_chan, "primary_addresses") or
+                            sender_has_access(current_chan, "secondary_addresses")):
                         # Primary and secondary access can add or delete from lists
                         modify_access = True
                     elif (form_list.add.data and
-                            sender_has_access(list_address, "tertiary_addresses")):
+                            sender_has_access(current_chan, "tertiary_addresses")):
                         # Only allow tertiary access to add to private lists
                         modify_access = True
                     else:
@@ -280,7 +304,7 @@ def list_chans(list_address):
                             "Locally Added to List: {}".format(address),
                             message_id=None,
                             user_from=None,
-                            board_address=list_address,
+                            board_address=current_chan,
                             thread_hash=None)
 
                     elif form_list.delete.data:
@@ -292,7 +316,7 @@ def list_chans(list_address):
                             "Locally Deleted from List: {}".format(address),
                             message_id=None,
                             user_from=None,
-                            board_address=list_address,
+                            board_address=current_chan,
                             thread_hash=None)
 
                     # Set the time the list changed
@@ -309,19 +333,17 @@ def list_chans(list_address):
 
         elif join:
             # Join from list
-            global_admin, allow_msg = allowed_access(
-                check_is_global_admin=True)
+            global_admin, allow_msg = allowed_access("is_global_admin")
             if not global_admin:
                 return allow_msg
 
             return redirect(url_for("routes_list.join_from_list",
-                                    list_address=list_address,
+                                    list_address=current_chan,
                                     join_address=join))
 
         elif join_bulk:
             # Bulk join from list
-            global_admin, allow_msg = allowed_access(
-                check_is_global_admin=True)
+            global_admin, allow_msg = allowed_access("is_global_admin")
             if not global_admin:
                 return allow_msg
 
@@ -329,7 +351,7 @@ def list_chans(list_address):
                 status_msg['status_title'] = "Error"
                 status_msg["status_message"].append("You must check at least one list entry to join")
             else:
-                daemon_com.bulk_join(list_address, join_bulk_list)
+                daemon_com.bulk_join(current_chan, join_bulk_list)
 
             status_msg['status_title'] = "Success"
             status_msg["status_message"].append(
@@ -356,7 +378,7 @@ def list_chans(list_address):
         else:
             chan_lists[each_chan.address]["label_short"] = each_chan.label
 
-    chan = Chan.query.filter(Chan.address == list_address).first()
+    chan = Chan.query.filter(Chan.address == current_chan).first()
     dict_join = {
         "passphrase": chan.passphrase
     }
@@ -382,9 +404,9 @@ def list_chans(list_address):
 
 
 @blueprint.route('/list/join/<list_address>/<join_address>', methods=('GET', 'POST'))
+@count_views
 def join_from_list(list_address, join_address):
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 
@@ -416,6 +438,9 @@ def join_from_list(list_address, join_address):
 
         if Chan.query.filter(Chan.passphrase == passphrase).count():
             status_msg['status_message'].append("Chan already in database")
+
+        if "%" in passphrase:  # TODO: Remove check when Bitmessage fixes this issue
+            status_msg['status_message'].append('Chan passphrase cannot contain: "%"')
 
         errors, dict_chan_info = process_passphrase(passphrase)
         if not dict_chan_info:
@@ -509,11 +534,10 @@ def join_from_list(list_address, join_address):
 
 
 @blueprint.route('/list_bulk_add/<list_address>', methods=('GET', 'POST'))
+@count_views
 def list_bulk_add(list_address):
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
-    board_list_admin, allow_msg = allowed_access(
-        check_is_board_list_admin=True, check_admin_board=list_address)
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=list_address)
     if not global_admin and not board_list_admin:
         return allow_msg
 

@@ -34,70 +34,49 @@ Features
 ========
 
 - Security
-
-  - All essential features work with JavaScript completely disabled
-  - All internet traffic (Bitmessage/uploads/downloads) through tor with fake UserAgent
-  - All messages PGP-encrypted with user-selectable cipher and key length
-  - Encryption, fragmentation, and hashing to secure and verify authenticity of received post attachment files
-  - Bitmessage Identities for private addresses that only you control
-
-- Boards for posting messages and Lists for sharing other boards and lists
-
-  - Permissions for board/list ownership and administration
-  - Public access where anyone can post on a board or add to a list
-  - Private access where only select addresses can post or modify a list
-  - Several user permissions (Owners, Admins, Users, and Restricted)
-  - Rules to allow board/list Owners to determine if certain features are enabled
-  - Owner options to set long description, banner and spoiler images, word replacements, custom CSS
-  - Address Book to saved addresses and labels will appear next to those addresses
-  - Post popup previews
-  - Overboard, catalogs and recent pages
-  - Mod log to track moderation and other changes
-  - Sticky/pin/anchor functions for threads
+  - All essential functionality without JavaScript
+  - All internet traffic (Bitmessage/uploads/downloads) routed through tor
+  - All messages PGP-encrypted with user-selectable ciphers, key lengths, and passphrases
 
 - Board Features
-
-  - Post with any Bitmessage address you can send from
   - Threaded posting with text enhancements
-  - Embed images/videos in posts
-  - Images and videos in posts expand to full-width on click
-  - Search
+  - Attach any file up to 4 files per post
+  - Full-width expansion of Images and videos in posts
+  - Overboard, Catalog, Recent, and Search pages
+  - Files attached to post via Bitmessage (most secure, <= ~250 KB) or external upload site
+  - Support for post text replacements: dice (#3D20), cards (#C5), flip (#flip), 8ball (#8ball), tarot card (#t5), Crowley tarot (#ct5), random book quote (#stich)
+  - Support for post text styles: @@bold@@, \~\~italic\~\~, \_\_underline\_\_, ++strikethrough++, ==big==, \*\*spoiler\*\*, ^s shadow ^s, [meme]meme[/meme], [autism]autism[/autism], [flash]flash[/flash], [aa]ascii art[/aa], and more
+  - Rules to allow board/list Owners to enable certain board/list-specific features
+  - Address Book to set labels for addresses that will appear on posts
+  - Post popup previews for reply links
+  - Live updating of new posts in a thread without page refresh
+  - Sticky/pin/anchor functions for threads
+  - Post with any Bitmessage address that you know the secret key of
 
-  - File Attachments
-
-    - Can have any file type attached
-    - Send through Bitmessage (if file small enough, <= ~250 KB)
-    - Support for external upload site (Anonfiles, Bayfiles, Forumfiles, Uplovd)
-    - Support for post text replacements: dice (#3D20), cards (#C5), flip (#flip), 8ball (#8ball), tarot card (#t5), Crowley tarot (#ct5), random book quote (#stich)
-    - Support for post text styles: @@bold@@, \~\~italic\~\~, \_\_underline\_\_, ++strikethrough++, ==big==, \*\*spoiler\*\*, ^s shadow ^s, [meme]meme[/meme], [autism]autism[/autism], [flash]flash[/flash], [aa]ascii art[/aa], and more
-
-- Owner/Admin Commands
-
-  - Owners can set a custom CSS, word replacements, and banner image
+- Board and List Ownership and Administration
+  - Boards and Lists can have Owners, Admins, White- and Black-listed Users
+  - Owners can set a long description, banner and spoiler images, word replacements, and custom CSS
   - Board Owners/Admins can delete threads and posts (affects all users of a board)
   - Board Owners/Admins can ban users from posting (affects all users of a board)
   - Users can block address from posting to one or all boards (only local effects)
 
-- Mailbox system for messaging other Bitmessage addresses
-
-  - Read, delete, reply, and forward messages
-  - Message composition page to send messages
-  - Send a message directly from a board to a post's address
-
 - Kiosk mode
   - Allows you to publicly host you BitChan instance in a secure manner
-  - Host a .onion hidden service to access BitChan instance from the web
+  - One-click hosting of an .onion hidden service to access your BitChan instance from tor
   - Options to keep your kiosk completely private for only your use or allow the public to view or post
-  - Permission and/or login system to secure and control access to your BitChan Instance
+  - Permissions and login system to secure and control access to your BitChan Instance
 
-- Database
-  - Upgrade system to automatically upgrade BitChan database to new schemas
-  - Export and import your database
+- Misc
+  - Public access where anyone can post on a board or add to a list
+  - Private access where only select addresses can post or modify a list
+  - Mod log to track moderation and other changes
+  - Export and import your database (all settings and data)
+  - Mailbox system for messaging Bitmessage addresses
 
 Setup
 =====
 
-BitChan is distributed with a stable version of Bitmessage and runs inside several docker containers that's orchestrated by docker-compose. This allows cross-platform compatibility and isolation of your install from your operating system. For a consistent install environment, installing BitChan within a virtual machine running Xubuntu 20.04 is described below, however you can install BitChan in any operating system of your choice.
+BitChan is distributed with a stable version of Bitmessage and runs among several docker containers orchestrated by docker-compose. This allows cross-platform compatibility and isolation of your install from your operating system. For a consistent install environment, installing BitChan within a virtual machine running Xubuntu 20.04 is described below, however you can install BitChan in any operating system of your choice that's supported by docker and docker-compose.
 
 Install BitChan
 ---------------
@@ -110,6 +89,14 @@ To install BitChan, first install `docker <https://docs.docker.com/get-docker/>`
 
 
 If you get a timeout error while downloading any of the docker image files, just run the command again until it successfully finishes all downloads.
+
+Install Configuration
+~~~~~~~~~~~~~~~~~~~~~
+
+docker-compose.yml in the docker directory can be configured to suit your particular system. Make sure to run "make daemon" for the changes to take effect.
+
+- The nginx container can have the ports option "8000:8000" changed to modify the port used to access the web interface. To change to port 9000, merely change to "9000:8000".
+- The option cpuset for each container can be modified based on the number of CPU cores available. To allocate more than one to a container, separate them with commas (e.g. cpuset: '0,1,2'). It is wise to allocate one or more cores just to the bitmessage container and no others. Similarly, it's wise to allocate one or more cores only to tor, nginx, and bitchan_flask. This is done to prevent bottlenecks when bitmessage is creating a 100% CPU load doing proof of work, since it is segregated to only using specific CPUs, while other containers can still process on other CPUs.
 
 Install on Debian-Based Operating Systems
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -243,7 +230,7 @@ Start BitChan Frontend
 
 ```bash
 cd /home/user/BitChan
-/home/user/venv3/gunicorn --workers 1 --threads 4 --timeout 1800 --bind unix:/usr/local/bitchan/bitchan.sock bitchan_flask:app
+/home/user/venv3/gunicorn --workers 1 --threads 4 --timeout 1800 --bind unix:/var/run/bitchan.sock bitchan_flask:app
 ```
 
 Open http://127.0.0.1:8000 in your browser.
@@ -521,18 +508,7 @@ Login securely to VPS, then copy relevant files to new version and rebuild. Note
 Troubleshooting
 ===============
 
-If your system spontaneously shuts down, you may find upon restarting, nginx producing the following error:
-
-nginx: [emerg] bind() to unix:/usr/local/nginx/nginx.sock failed (98: Address already in use)
-
-If this occurs, stop the docker containers, delete the nginx volume, then build:
-
-.. code::
-
-    cd BitChan/docker
-    docker-compose down
-    docker volume rm docker_nginx
-    make daemon
+TODO
 
 
 Donate

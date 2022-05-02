@@ -21,6 +21,8 @@ from database.models import DeletedMessages
 from database.models import GlobalSettings
 from database.models import ModLog
 from flask_routes import flask_session_login
+from flask_routes.utils import count_views
+from flask_routes.utils import is_verified
 from forms import forms_board
 from forms import forms_settings
 from utils.files import LF
@@ -50,11 +52,21 @@ def global_var():
 
 @blueprint.before_request
 def before_view():
-    if (GlobalSettings.query.first().enable_verification and
-            ("verified" not in session or not session["verified"])):
-        session["verified_msg"] = "You are not verified"
-        return redirect(url_for('routes_verify.verify_wait'))
-    session["verified_msg"] = "You are verified"
+    if not is_verified():
+        full_path_b64 = "0"
+        if request.method == "GET":
+            if request.url:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.url.encode()).decode()
+            elif request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        elif request.method == "POST":
+            if request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        return redirect(url_for('routes_verify.verify_wait',
+                                full_path_b64=full_path_b64))
 
 
 def login_fail():
@@ -91,6 +103,7 @@ def is_login_banned():
 
 
 @blueprint.route('/login', methods=('GET', 'POST'))
+@count_views
 def login():
     form_login = forms_settings.Login()
 
@@ -154,6 +167,7 @@ def login():
 
 
 @blueprint.route('/logout', methods=('GET', 'POST'))
+@count_views
 def logout():
     status_msg = {"status_message": []}
     board = {"current_chan": None}
@@ -174,9 +188,11 @@ def logout():
 
 
 @blueprint.route('/login_info', methods=('GET', 'POST'))
+@count_views
 def login_info():
-    allowed, allow_msg = allowed_access()
-    if not allowed:
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    janitor, allow_msg = allowed_access("is_janitor")
+    if not global_admin and not janitor:
         return allow_msg
 
     status_msg = {"status_message": []}
@@ -199,9 +215,9 @@ def login_info():
 
 
 @blueprint.route('/join', methods=('GET', 'POST'))
+@count_views
 def join():
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 
@@ -280,7 +296,12 @@ def join():
                         status_msg['status_message'].append(
                             "bitchan is a restricted word for labels")
 
+            if "%" in passphrase:  # TODO: Remove check when Bitmessage fixes this issue
+                status_msg['status_message'].append('Chan passphrase cannot contain: "%"')
+
             if not status_msg['status_message']:
+                log_description = None
+
                 result = daemon_com.join_chan(passphrase, clear_inventory=form_join.resync.data)
 
                 if dict_chan_info["rules"]:
@@ -301,7 +322,8 @@ def join():
                 new_chan.pgp_passphrase_attach = form_join.pgp_passphrase_attach.data
                 new_chan.pgp_passphrase_steg = form_join.pgp_passphrase_steg.data
 
-                log_description = None
+                if form_join.unlisted.data:
+                    new_chan.unlisted = True
 
                 if result.startswith("BM-"):
                     new_chan.address = result
@@ -381,16 +403,17 @@ def join():
                 add_list_failed = []
                 add_list_passed = []
                 try:
-                    list_additional = form_list.split(",")
-                    for each_ident in list_additional:
-                        ident_strip = each_ident.replace(" ", "")
-                        if (ident_strip and (
-                                not ident_strip.startswith("BM-") or
-                                len(ident_strip) > 38 or
-                                len(ident_strip) < 34)):
-                            add_list_failed.append(ident_strip)
-                        elif ident_strip.startswith("BM-"):
-                            add_list_passed.append(ident_strip)
+                    if form_list:
+                        list_additional = form_list.split(",")
+                        for each_ident in list_additional:
+                            ident_strip = each_ident.replace(" ", "")
+                            if (ident_strip and (
+                                    not ident_strip.startswith("BM-") or
+                                    len(ident_strip) > 38 or
+                                    len(ident_strip) < 34)):
+                                add_list_failed.append(ident_strip)
+                            elif ident_strip.startswith("BM-"):
+                                add_list_passed.append(ident_strip)
                 except:
                     logger.exception(1)
                     status_msg['status_message'].append(
@@ -428,7 +451,7 @@ def join():
 
             status_msg, add_list_sec_fail, add_list_sec_pass = process_additional_addresses(
                 form_join.secondary_additional.data, status_msg)
-            if add_list_prim_fail:
+            if add_list_sec_fail:
                 status_msg['status_message'].append(
                     "Error parsing secondary additional identities. "
                     "Must only be comma-separated addresses without spaces.")
@@ -456,7 +479,7 @@ def join():
 
             status_msg, add_list_ter_fail, add_list_ter_pass = process_additional_addresses(
                 form_join.tertiary_additional.data, status_msg)
-            if add_list_prim_fail:
+            if add_list_ter_fail:
                 status_msg['status_message'].append(
                     "Error parsing tertiary additional identities. "
                     "Must only be comma-separated addresses without spaces.")
@@ -557,7 +580,12 @@ def join():
                     for error in errors:
                         status_msg['status_message'].append(error)
 
+                if "%" in passphrase:  # TODO: Remove check when Bitmessage fixes this issue
+                    status_msg['status_message'].append('Chan passphrase cannot contain: "%"')
+
             if not status_msg['status_message']:
+                log_description = None
+
                 result = daemon_com.join_chan(passphrase, clear_inventory=form_join.resync.data)
 
                 if rules:
@@ -578,7 +606,8 @@ def join():
                 new_chan.pgp_passphrase_attach = form_join.pgp_passphrase_attach.data
                 new_chan.pgp_passphrase_steg = form_join.pgp_passphrase_steg.data
 
-                log_description = None
+                if form_join.unlisted.data:
+                    new_chan.unlisted = True
 
                 if result.startswith("BM-"):
                     if stage == "public_board":
@@ -628,9 +657,9 @@ def join():
 
 
 @blueprint.route('/join_base64/<passphrase_base64>', methods=('GET', 'POST'))
+@count_views
 def join_base64(passphrase_base64):
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 
@@ -676,7 +705,12 @@ def join_base64(passphrase_base64):
                         status_msg['status_message'].append(
                             "bitchan is a restricted word for labels")
 
+                if "%" in passphrase_json:  # TODO: Remove check when Bitmessage fixes this issue
+                    status_msg['status_message'].append('Chan passphrase cannot contain: "%"')
+
             if not status_msg['status_message']:
+                log_description = None
+
                 result = daemon_com.join_chan(passphrase_json, clear_inventory=form_join.resync.data)
 
                 if dict_chan_info["rules"]:
@@ -705,7 +739,10 @@ def join_base64(passphrase_base64):
                 new_chan.restricted_addresses = json.dumps(dict_chan_info["restricted_addresses"])
                 new_chan.rules = json.dumps(dict_chan_info["rules"])
 
-                log_description = None
+
+
+                if form_join.unlisted.data:
+                    new_chan.unlisted = True
 
                 if result.startswith("BM-"):
                     new_chan.address = result
@@ -756,9 +793,9 @@ def join_base64(passphrase_base64):
 
 
 @blueprint.route('/leave/<address>', methods=('GET', 'POST'))
+@count_views
 def leave(address):
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 

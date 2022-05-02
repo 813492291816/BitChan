@@ -10,31 +10,36 @@ from PIL import Image
 from flask import redirect
 from flask import render_template
 from flask import request
-from flask import session
 from flask import url_for
 from flask.blueprints import Blueprint
 from sqlalchemy import and_
+from sqlalchemy import or_
 
 import config
 from bitchan_client import DaemonCom
 from database.models import Chan
 from database.models import Command
-from database.models import GlobalSettings
 from database.models import Messages
 from database.models import Threads
+from flask_routes.utils import count_views
+from flask_routes.utils import is_verified
 from forms import forms_board
 from utils.files import LF
 from utils.files import human_readable_size
 from utils.gateway import api
 from utils.gateway import delete_and_replace_comment
 from utils.general import check_bm_address_csv_to_list
+from utils.message_post import send_post_delete_request
 from utils.posts import delete_post
 from utils.posts import delete_thread
+from utils.posts import restore_post
+from utils.posts import restore_thread
 from utils.routes import allowed_access
+from utils.routes import get_logged_in_user_name
 from utils.routes import page_dict
 from utils.shared import add_mod_log_entry
 from utils.shared import get_access
-from utils.shared import regenerate_thread_card_and_popup
+from utils.shared import regenerate_card_popup_post_html
 
 logger = logging.getLogger('bitchan.routes_admin')
 daemon_com = DaemonCom()
@@ -52,32 +57,41 @@ def global_var():
 
 @blueprint.before_request
 def before_view():
-    if (GlobalSettings.query.first().enable_verification and
-            ("verified" not in session or not session["verified"])):
-        session["verified_msg"] = "You are not verified"
-        return redirect(url_for('routes_verify.verify_wait'))
-    session["verified_msg"] = "You are verified"
+    if not is_verified():
+        full_path_b64 = "0"
+        if request.method == "GET":
+            if request.url:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.url.encode()).decode()
+            elif request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        elif request.method == "POST":
+            if request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        return redirect(url_for('routes_verify.verify_wait',
+                                full_path_b64=full_path_b64))
 
 
-@blueprint.route('/mod_thread/<current_chan>/<thread_id>/<mod_type>', methods=('GET', 'POST'))
-def mod_thread(current_chan, thread_id, mod_type):
+@blueprint.route('/mod_thread/<address>/<thread_id>/<mod_type>', methods=('GET', 'POST'))
+@count_views
+def mod_thread(address, thread_id, mod_type):
     """
     Locally/remotely modify a thread or post
     """
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
-    board_list_admin, allow_msg = allowed_access(
-        check_is_board_list_admin=True, check_admin_board=current_chan)
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=address)
     if not global_admin and not board_list_admin:
         return allow_msg
 
     form_confirm = forms_board.Confirm()
 
     message_id = None
-    chan = Chan.query.filter(Chan.address == current_chan).first()
+    chan = Chan.query.filter(Chan.address == address).first()
     thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
 
-    from_list = daemon_com.get_from_list(current_chan, only_owner_admin=True)
+    from_list = daemon_com.get_from_list(address, only_owner_admin=True)
 
     if not thread:
         return "Thread doesn't exist"
@@ -86,7 +100,7 @@ def mod_thread(current_chan, thread_id, mod_type):
         return render_template("pages/confirm.html",
                                action=mod_type,
                                chan=chan,
-                               current_chan=current_chan,
+                               current_chan=address,
                                from_list=from_list,
                                thread=thread,
                                thread_id=thread_id,
@@ -97,7 +111,7 @@ def mod_thread(current_chan, thread_id, mod_type):
         "current_thread": thread_id
     }
     status_msg = {"status_message": []}
-    url = "/thread/{}/{}".format(current_chan, thread.thread_hash_short)
+    url = "/thread/{}/{}".format(address, thread.thread_hash_short)
     url_text = "Thread: {}".format(thread.subject)
 
     lf = LF()
@@ -119,7 +133,7 @@ def mod_thread(current_chan, thread_id, mod_type):
                 thread.stickied_local = bool(mod_type == "thread_sticky_local")
                 thread.save()
 
-                regenerate_thread_card_and_popup(thread.thread_hash)
+                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
 
                 if mod_type == "thread_sticky_local":
                     log_description = "Locally stickied thread"
@@ -138,7 +152,7 @@ def mod_thread(current_chan, thread_id, mod_type):
                 thread.locked_local_ts = time.time()
                 thread.save()
 
-                regenerate_thread_card_and_popup(thread.thread_hash)
+                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
 
                 if mod_type == "thread_lock_local":
                     log_description = "Locally locked thread"
@@ -157,7 +171,7 @@ def mod_thread(current_chan, thread_id, mod_type):
                 thread.anchored_local_ts = time.time()
                 thread.save()
 
-                regenerate_thread_card_and_popup(thread.thread_hash)
+                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
 
                 if mod_type == "thread_anchor_local":
                     log_description = "Locally anchored thread"
@@ -224,7 +238,7 @@ def mod_thread(current_chan, thread_id, mod_type):
                             status_msg['status_title'] = "Remotely unanchored thread"
 
                     pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-                    chan = Chan.query.filter(Chan.address == current_chan).first()
+                    chan = Chan.query.filter(Chan.address == address).first()
                     if chan and chan.pgp_passphrase_msg:
                         pgp_passphrase_msg = chan.pgp_passphrase_msg
 
@@ -252,7 +266,7 @@ def mod_thread(current_chan, thread_id, mod_type):
                         if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                             try:
                                 return_str = api.sendMessage(
-                                    current_chan,
+                                    address,
                                     form_confirm.address.data,
                                     "",
                                     message_send,
@@ -260,7 +274,7 @@ def mod_thread(current_chan, thread_id, mod_type):
                                     config.BM_TTL)
                                 if return_str:
                                     logger.info("{}: Message to globally {} sent from {} to {}".format(
-                                        thread_id[0:6], mod_type, form_confirm.address.data, current_chan))
+                                        thread_id[0:6], mod_type, form_confirm.address.data, address))
                             finally:
                                 time.sleep(config.API_PAUSE)
                                 lf.lock_release(config.LOCKFILE_API)
@@ -277,7 +291,7 @@ def mod_thread(current_chan, thread_id, mod_type):
                     log_description,
                     message_id=message_id,
                     user_from=from_user,
-                    board_address=current_chan,
+                    board_address=address,
                     thread_hash=thread_id)
 
         except Exception as err:
@@ -292,17 +306,16 @@ def mod_thread(current_chan, thread_id, mod_type):
                            url_text=url_text)
 
 
-@blueprint.route('/bulk_delete_thread/<current_chan>', methods=('GET', 'POST'))
-def bulk_delete_thread(current_chan):
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
-    board_list_admin, allow_msg = allowed_access(
-        check_is_board_list_admin=True, check_admin_board=current_chan)
+@blueprint.route('/bulk_delete_thread/<address>', methods=('GET', 'POST'))
+@count_views
+def bulk_delete_thread(address):
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=address)
     if not global_admin and not board_list_admin:
         return allow_msg
 
-    if current_chan != "0":
-        board = Chan.query.filter(Chan.address == current_chan).first()
+    if address != "0":
+        board = Chan.query.filter(Chan.address == address).first()
         threads = board.threads
     else:
         board = "0"
@@ -357,8 +370,205 @@ def bulk_delete_thread(current_chan):
                            url_text=url_text)
 
 
-@blueprint.route('/delete_thread_post/<current_chan>/<message_id>/<thread_id>/<delete_type>', methods=('GET', 'POST'))
-def delete(current_chan, message_id, thread_id, delete_type):
+@blueprint.route('/restore_thread_post/<address>/<message_id>/<thread_id>/<restore_type>', methods=('GET', 'POST'))
+@count_views
+def restore(address, message_id, thread_id, restore_type):
+    """
+    Owners and Admins can restore remotely deleted posts/threads
+
+    restore_type can be:
+    restore_post: restore post
+    restore_thread: restore thread
+    """
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=address)
+    if not global_admin and not board_list_admin:
+        return allow_msg
+
+    form_confirm = forms_board.Confirm()
+
+    chan = Chan.query.filter(Chan.address == address).first()
+    thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
+    message = Messages.query.filter(Messages.message_id == message_id).first()
+
+    if request.method != 'POST' or not form_confirm.confirm.data:
+        return render_template("pages/confirm.html",
+                               action=restore_type,
+                               chan=chan,
+                               current_chan=address,
+                               message=message,
+                               message_id=message_id,
+                               thread=thread,
+                               thread_id=thread_id)
+
+    board = {
+        "current_chan": chan,
+        "current_thread": thread_id
+    }
+    status_msg = {"status_message": []}
+    url = "/thread/{}/{}".format(address, thread_id)
+    url_text = "{}".format(thread.subject)
+
+    if message_id == "0":
+        message_id = None
+
+    lf = LF()
+    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
+        try:
+            if restore_type in ["restore_post", "restore_thread"]:
+                if restore_type == "restore_thread" and thread:
+                    restore_thread(thread_id)
+                elif restore_type == "restore_post" and message:
+                    restore_post(message_id)
+
+                log_description = ""
+                if restore_type == "restore_post":
+                    status_msg['status_message'].append('Locally restore post from "{}"'.format(thread.subject))
+                    status_msg['status_title'] = "Success"
+                    log_description = 'Locally restore post from thread "{}"'.format(thread.subject)
+                elif restore_type == "restore_thread":
+                    status_msg['status_message'].append('Locally restore thread "{}"'.format(thread.subject))
+                    status_msg['status_title'] = "Success"
+                    log_description = 'Locally restore thread "{}"'.format(thread.subject)
+
+                # Find if any admin commands exist for deleting this post or thread
+                # If so, add override to indicate local action has been taken to restore or delete
+                admin_cmd = Command.query.filter(and_(
+                    Command.chan_address == address,
+                    Command.action == "delete",
+                    or_(Command.action_type == "delete_post",
+                        Command.action_type == "delete_thread"))).all()
+                for each_cmd in admin_cmd:
+                    try:
+                        options = json.loads(each_cmd.options)
+                    except:
+                        options = {}
+                    if (
+                            ("delete_thread" in options and
+                             "thread_id" in options["delete_thread"] and
+                             options["delete_thread"]["thread_id"] == thread_id)
+                            or
+                            ("delete_post" in options and
+                             "message_id" in options["delete_post"] and
+                             options["delete_thread"]["message_id"] == message_id)
+                            ):
+                        admin_cmd.locally_restored = True
+                        admin_cmd.save()
+                        break
+
+                user_from_tmp = get_logged_in_user_name()
+                user_from = user_from_tmp if user_from_tmp else None
+
+                add_mod_log_entry(
+                    log_description,
+                    message_id=message_id,
+                    user_from=user_from,
+                    board_address=address,
+                    thread_hash=thread_id)
+
+                # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
+                time.sleep(1)
+
+        except Exception as err:
+            logger.error("Exception while restoring post/thread: {}".format(err))
+        finally:
+            lf.lock_release(config.LOCKFILE_MSG_PROC)
+
+    if 'status_title' not in status_msg and status_msg['status_message']:
+        status_msg['status_title'] = "Error"
+
+    return render_template("pages/alert.html",
+                           board=board,
+                           status_msg=status_msg,
+                           url=url,
+                           url_text=url_text)
+
+
+@blueprint.route('/delete_post_with_password/<address>/<message_id>/<thread_id>', methods=('GET', 'POST'))
+@count_views
+def delete_post_with_password(address, message_id, thread_id):
+    """Delete a post with a password"""
+    can_post, allow_msg = allowed_access("can_post")
+    can_view, allow_msg = allowed_access("can_view")
+    if not can_post and not can_view:
+        return allow_msg
+
+    form_confirm = forms_board.Confirm()
+
+    chan = Chan.query.filter(Chan.address == address).first()
+    thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
+    message = Messages.query.filter(Messages.message_id == message_id).first()
+
+    from_list = daemon_com.get_from_list(address, all_addresses=True)
+
+    if request.method != 'POST' or not form_confirm.confirm.data:
+        return render_template("pages/confirm.html",
+                               action="delete_post_with_password",
+                               chan=chan,
+                               current_chan=address,
+                               from_list=from_list,
+                               message=message,
+                               message_id=message_id,
+                               thread=thread,
+                               thread_id=thread_id)
+
+    board = {
+        "current_chan": chan,
+        "current_thread": thread_id
+    }
+    status_msg = {"status_message": []}
+
+    if message_id == "0":
+        message_id = None
+
+    url = "/thread/{}/{}".format(address, thread_id)
+    url_text = "{}".format(thread.subject)
+
+    lf = LF()
+    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
+        try:
+            if not form_confirm.address.data:
+                status_msg['status_message'].append("From address required")
+
+            if not form_confirm.text.data:
+                status_msg['status_message'].append("Password required")
+
+            message = Messages.query.filter(Messages.message_id == message_id).first()
+            if not message:
+                status_msg['status_message'].append("Message not found")
+
+            if message and not message.thread:
+                status_msg['status_message'].append("Thread not found")
+
+            if not status_msg['status_message']:
+                send_post_delete_request(
+                    form_confirm.address.data,
+                    address,
+                    message_id,
+                    message.thread.thread_hash,
+                    form_confirm.text.data)
+                status_msg['status_message'].append(
+                    "Remotely send request to delete post with password in thread '{}'".format(thread.subject))
+                status_msg['status_title'] = "Success"
+
+        except Exception as err:
+            logger.error("Exception while deleting message(s): {}".format(err))
+        finally:
+            lf.lock_release(config.LOCKFILE_MSG_PROC)
+
+    if 'status_title' not in status_msg and status_msg['status_message']:
+        status_msg['status_title'] = "Error"
+
+    return render_template("pages/alert.html",
+                           board=board,
+                           status_msg=status_msg,
+                           url=url,
+                           url_text=url_text)
+
+
+@blueprint.route('/delete_thread_post/<address>/<message_id>/<thread_id>/<delete_type>', methods=('GET', 'POST'))
+@count_views
+def delete(address, message_id, thread_id, delete_type):
     """
     Owners and Admins can delete messages and threads
 
@@ -368,26 +578,27 @@ def delete(current_chan, message_id, thread_id, delete_type):
     thread: delete thread from local instance
     thread_all: delete thread for all users (must be owner or admin)
     """
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
-    board_list_admin, allow_msg = allowed_access(
-        check_is_board_list_admin=True, check_admin_board=current_chan)
-    if not global_admin and not board_list_admin:
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=address)
+    janitor, allow_msg = allowed_access("is_janitor")
+    if not global_admin and not board_list_admin and not janitor:
         return allow_msg
 
     form_confirm = forms_board.Confirm()
 
-    chan = Chan.query.filter(Chan.address == current_chan).first()
+    chan = Chan.query.filter(Chan.address == address).first()
     thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
+    message = Messages.query.filter(Messages.message_id == message_id).first()
 
-    from_list = daemon_com.get_from_list(current_chan, only_owner_admin=True)
+    from_list = daemon_com.get_from_list(address, only_owner_admin=True)
 
     if request.method != 'POST' or not form_confirm.confirm.data:
         return render_template("pages/confirm.html",
                                action=delete_type,
                                chan=chan,
-                               current_chan=current_chan,
+                               current_chan=address,
                                from_list=from_list,
+                               message=message,
                                message_id=message_id,
                                thread=thread,
                                thread_id=thread_id)
@@ -404,13 +615,17 @@ def delete(current_chan, message_id, thread_id, delete_type):
         message_id = None
 
     if delete_type in ["delete_post", "delete_post_all"]:
-        url = "/thread/{}/{}".format(current_chan, thread_id)
+        url = "/thread/{}/{}".format(address, thread_id)
         url_text = "{}".format(thread.subject)
 
     lf = LF()
     if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
         try:
             if delete_type in ["delete_post", "delete_thread"]:
+                only_hide = False
+                if janitor:
+                    only_hide = True
+
                 list_delete_message_ids = []
                 if delete_type == "delete_thread" and thread:
                     board["current_thread"] = None
@@ -421,30 +636,62 @@ def delete(current_chan, message_id, thread_id, delete_type):
 
                 log_description = ""
                 if delete_type == "delete_post":
-                    status_msg['status_message'].append("Locally deleted post from thread: '{}'".format(thread.subject))
-                    status_msg['status_title'] = "Success"
-                    log_description = "Locally deleted post"
+                    if janitor:
+                        log_description = 'Janitor: Locally delete (locally hide) post from thread "{}"'.format(thread.subject)
+                    else:
+                        log_description = 'Locally delete post from thread "{}"'.format(thread.subject)
                 elif delete_type == "delete_thread":
-                    status_msg['status_message'].append("Locally deleted thread: {}".format(thread.subject))
-                    status_msg['status_title'] = "Success"
-                    log_description = 'Locally deleted thread "{}"'.format(thread.subject)
+                    if janitor:
+                        log_description = 'Janitor: Locally delete (locally hide) thread "{}"'.format(thread.subject)
+                    else:
+                        log_description = 'Locally delete thread "{}"'.format(thread.subject)
+
+                status_msg['status_message'].append(log_description)
+                status_msg['status_title'] = "Success"
 
                 # If local, first delete messages
                 if list_delete_message_ids:
                     for each_id in list_delete_message_ids:
-                        delete_post(each_id)
+                        delete_post(each_id, only_hide=only_hide)
                     daemon_com.signal_generate_post_numbers()
 
                 # If local, next delete thread
-                if delete_type in ["delete_thread"]:
-                    if thread:
-                        delete_thread(thread_id)
+                if delete_type == "delete_thread" and thread:
+                    delete_thread(thread_id, only_hide=only_hide)
+
+                # Find if any admin commands exist for deleting this post or thread
+                # If so, add override to indicate local action has been taken to restore or delete
+                admin_cmd = Command.query.filter(and_(
+                    Command.chan_address == address,
+                    Command.action == "delete",
+                    or_(Command.action_type == "delete_post",
+                        Command.action_type == "delete_thread"))).all()
+                for each_cmd in admin_cmd:
+                    try:
+                        options = json.loads(each_cmd.options)
+                    except:
+                        options = {}
+                    if (
+                            ("delete_thread" in options and
+                             "thread_id" in options["delete_thread"] and
+                             options["delete_thread"]["thread_id"] == thread_id)
+                            or
+                            ("delete_post" in options and
+                             "message_id" in options["delete_post"] and
+                             options["delete_thread"]["message_id"] == message_id)
+                            ):
+                        admin_cmd.locally_deleted = True
+                        admin_cmd.save()
+                        break
+
+                user_from_tmp = get_logged_in_user_name()
+                user_from = user_from_tmp if user_from_tmp else None
 
                 add_mod_log_entry(
                     log_description,
                     message_id=message_id,
-                    user_from=form_confirm.address.data,
-                    board_address=current_chan,
+                    user_from=user_from,
+                    board_address=address,
                     thread_hash=thread_id)
 
                 # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
@@ -452,6 +699,9 @@ def delete(current_chan, message_id, thread_id, delete_type):
 
             # Send message to remotely delete post/thread
             elif delete_type in ["delete_post_all", "delete_thread_all"]:
+                if not global_admin and not board_list_admin:
+                    return allow_msg
+
                 if not form_confirm.address.data and delete_type in ["delete_thread_all", "delete_post_all"]:
                     status_msg['status_message'].append("From address required")
 
@@ -485,7 +735,7 @@ def delete(current_chan, message_id, thread_id, delete_type):
                         }
 
                     pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-                    chan = Chan.query.filter(Chan.address == current_chan).first()
+                    chan = Chan.query.filter(Chan.address == address).first()
                     if chan and chan.pgp_passphrase_msg:
                         pgp_passphrase_msg = chan.pgp_passphrase_msg
 
@@ -513,7 +763,7 @@ def delete(current_chan, message_id, thread_id, delete_type):
                         if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                             try:
                                 return_str = api.sendMessage(
-                                    current_chan,
+                                    address,
                                     form_confirm.address.data,
                                     "",
                                     message_send,
@@ -521,7 +771,7 @@ def delete(current_chan, message_id, thread_id, delete_type):
                                     config.BM_TTL)
                                 if return_str:
                                     logger.info("{}: Message to globally delete {} sent from {} to {}".format(
-                                        thread_id[0:6], delete_type, form_confirm.address.data, current_chan))
+                                        thread_id[0:6], delete_type, form_confirm.address.data, address))
                             finally:
                                 time.sleep(config.API_PAUSE)
                                 lf.lock_release(config.LOCKFILE_API)
@@ -541,18 +791,20 @@ def delete(current_chan, message_id, thread_id, delete_type):
                            url_text=url_text)
 
 
-@blueprint.route('/delete_with_comment_local/<current_chan>/<message_id>/<thread_id>', methods=('GET', 'POST'))
-def delete_with_comment_local(current_chan, message_id, thread_id):
+@blueprint.route('/delete_with_comment_local/<address>/<message_id>/<thread_id>', methods=('GET', 'POST'))
+@count_views
+def delete_with_comment_local(address, message_id, thread_id):
     """Locally delete post with comment"""
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
-    board_list_admin, allow_msg = allowed_access(
-        check_is_board_list_admin=True, check_admin_board=current_chan)
-    if not global_admin and not board_list_admin:
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=address)
+    janitor, allow_msg = allowed_access("is_janitor")
+    if not global_admin and not board_list_admin and not janitor:
         return allow_msg
 
     form_del_com = forms_board.DeleteComment()
-    chan = Chan.query.filter(Chan.address == current_chan).first()
+    chan = Chan.query.filter(Chan.address == address).first()
+
+    from_list = daemon_com.get_from_list(address, all_addresses=True)
 
     board = {
         "current_chan": chan,
@@ -573,46 +825,83 @@ def delete_with_comment_local(current_chan, message_id, thread_id):
                 logger.error("{}: Can't locally delete post with comment: Unknown board".format(
                     message_id[-config.ID_LENGTH:].upper()))
             else:
-                delete_and_replace_comment(
-                    message_id, form_del_com.delete_comment.data, local_delete=True)
+                user_from = None
+                if janitor:
+                    only_hide = True
+                    user_from = get_logged_in_user_name()
+                else:
+                    only_hide = False
+                    if not form_del_com.address.data:
+                        status_msg['status_message'].append("A from address is required.")
+                    else:
+                        user_from = form_del_com.address.data
 
-                status_msg['status_message'].append(
-                    "Message locally deleted from post and replaced with comment: '{}'".format(
-                        form_del_com.delete_comment.data))
-                status_msg['status_title'] = "Deleted Message with Comment"
+                if not status_msg['status_message']:
+                    # Find if any admin commands exist for deleting this post or thread
+                    # If so, add override to indicate local action has been taken to restore or delete
+                    admin_cmd = Command.query.filter(and_(
+                        Command.chan_address == address,
+                        Command.action == "delete_comment",
+                        Command.action_type == "post")).all()
+                    for each_cmd in admin_cmd:
+                        try:
+                            options = json.loads(each_cmd.options)
+                        except:
+                            options = {}
+                        if ("delete_comment" in options and
+                                "message_id" in options["delete_comment"] and
+                                "comment" in options["delete_comment"] and
+                                options["delete_comment"]["message_id"] == message_id):
+                            admin_cmd.locally_deleted = True
+                            admin_cmd.save()
+                            break
 
-                url = "/thread/{}/{}".format(current_chan, thread_id)
-                url_text = "Return to Thread"
+                    delete_and_replace_comment(
+                        message_id,
+                        form_del_com.delete_comment.data,
+                        local_delete=True,
+                        from_address=user_from,
+                        only_hide=only_hide)
 
-                return render_template("pages/alert.html",
-                                       board=board,
-                                       status_msg=status_msg,
-                                       url=url,
-                                       url_text=url_text)
+                    status_msg['status_message'].append(
+                        "Message locally deleted from post and replaced with comment: '{}'".format(
+                            form_del_com.delete_comment.data))
+                    status_msg['status_title'] = "Deleted Message with Comment"
+
+                    url = "/thread/{}/{}".format(address, thread_id)
+                    url_text = "Return to Thread"
+
+                    return render_template("pages/alert.html",
+                                           board=board,
+                                           status_msg=status_msg,
+                                           url=url,
+                                           url_text=url_text)
 
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
 
     return render_template("pages/delete_comment.html",
                            board=board,
+                           from_list=from_list,
                            local_delete=True,
                            status_msg=status_msg,
                            url=url,
                            url_text=url_text)
 
 
-@blueprint.route('/delete_with_comment/<current_chan>/<message_id>/<thread_id>', methods=('GET', 'POST'))
-def delete_with_comment(current_chan, message_id, thread_id):
+@blueprint.route('/delete_with_comment/<address>/<message_id>/<thread_id>', methods=('GET', 'POST'))
+@count_views
+def delete_with_comment(address, message_id, thread_id):
     """Globally delete post with comment"""
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
-    board_list_admin, allow_msg = allowed_access(
-        check_is_board_list_admin=True, check_admin_board=current_chan)
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=address)
     if not global_admin and not board_list_admin:
         return allow_msg
 
     form_del_com = forms_board.DeleteComment()
-    chan = Chan.query.filter(Chan.address == current_chan).first()
+    chan = Chan.query.filter(Chan.address == address).first()
+
+    from_list = daemon_com.get_from_list(address, only_owner_admin=True)
 
     board = {
         "current_chan": chan,
@@ -650,7 +939,7 @@ def delete_with_comment(current_chan, message_id, thread_id):
                     }
 
                     pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-                    chan = Chan.query.filter(Chan.address == current_chan).first()
+                    chan = Chan.query.filter(Chan.address == address).first()
                     if chan and chan.pgp_passphrase_msg:
                         pgp_passphrase_msg = chan.pgp_passphrase_msg
 
@@ -678,7 +967,7 @@ def delete_with_comment(current_chan, message_id, thread_id):
                         if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                             try:
                                 return_str = api.sendMessage(
-                                    current_chan,
+                                    address,
                                     form_del_com.address.data,
                                     "",
                                     message_send,
@@ -688,14 +977,14 @@ def delete_with_comment(current_chan, message_id, thread_id):
                                     logger.info("{}: Message to globally delete with comment sent from {} to {}. "
                                                 "The message will need to propagate through the network before "
                                                 "the changes are reflected on the board.".format(
-                                                    thread_id[0:6], form_del_com.address.data, current_chan))
+                                                    thread_id[0:6], form_del_com.address.data, address))
 
                                 status_msg['status_message'].append(
                                     "Message deleted from post and replaced with comment: '{}'".format(
                                         form_del_com.delete_comment.data))
                                 status_msg['status_title'] = "Deleted Message with Comment"
 
-                                url = "/thread/{}/{}".format(current_chan, thread_id)
+                                url = "/thread/{}/{}".format(address, thread_id)
                                 url_text = "Return to Thread"
 
                                 return render_template("pages/alert.html",
@@ -716,8 +1005,6 @@ def delete_with_comment(current_chan, message_id, thread_id):
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
 
-    from_list = daemon_com.get_from_list(current_chan, only_owner_admin=True)
-
     return render_template("pages/delete_comment.html",
                            board=board,
                            from_list=from_list,
@@ -728,12 +1015,11 @@ def delete_with_comment(current_chan, message_id, thread_id):
 
 
 @blueprint.route('/admin_board_ban_address/<chan_address>/<ban_address>/<ban_type>', methods=('GET', 'POST'))
+@count_views
 def admin_board_ban_address(chan_address, ban_address, ban_type):
     """Owners and Admins can ban addresses"""
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
-    board_list_admin, allow_msg = allowed_access(
-        check_is_board_list_admin=True, check_admin_board=chan_address)
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=chan_address)
     if not global_admin and not board_list_admin:
         return allow_msg
 
@@ -858,10 +1144,10 @@ def admin_board_ban_address(chan_address, ban_address, ban_type):
 
 
 @blueprint.route('/set_owner_options/<chan_address>', methods=('GET', 'POST'))
+@count_views
 def set_owner_options(chan_address):
     """Set options only Owner can change"""
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 
@@ -1177,12 +1463,11 @@ def set_owner_options(chan_address):
 
 
 @blueprint.route('/set_info_options/<chan_address>', methods=('GET', 'POST'))
+@count_views
 def set_info_options(chan_address):
     """Set options users can change"""
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
-    board_list_admin, allow_msg = allowed_access(
-        check_is_board_list_admin=True, check_admin_board=chan_address)
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=chan_address)
     if not global_admin and not board_list_admin:
         return allow_msg
 

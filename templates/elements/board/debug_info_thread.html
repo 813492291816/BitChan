@@ -1,0 +1,15 @@
+<section>
+    <details>
+    <summary>Thread Debug Details</summary>
+    <table class="themed">
+        <tbody>
+        {% for i in range(debug_thread_columns|length) %}
+            <tr>
+                <td class="themed">{{debug_thread_columns[i]}}</td>
+                <td class="themed">{{debug_thread_data[i]}}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </details>
+</section>

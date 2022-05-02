@@ -1,5 +1,7 @@
 {% extends "layout.html" %}
 
+{% set thread = board["current_thread"] %}
+
 {% set is_private = board['current_chan'].access == "private" %}
 
 {% set rules = chans_board_info[board['current_chan'].address]["rules"] %}
@@ -55,40 +57,100 @@ Board
             form.submit_post.value = "Please wait...";
         }
 
-        $(window).scroll(function() {
-            var height = $(window).scrollTop();
-            if (height > 100) {
-                $('#back2Top').fadeIn();
-                $('#back2Bottom').fadeOut();
-            } else {
-                $('#back2Bottom').fadeIn();
-                $('#back2Top').fadeOut();
-            }
-        });
-
         $(document).ready(function() {
-            $("#back2Top").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: 0}, "slow");
-                return false;
-            });
-            $("#back2Bottom").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: $(document).height()}, "slow");
-                return false;
-            });
-
             var volume_set = document.getElementsByClassName("volume-75");
             if (volume_set.length) {
                 for(var i = 0; i <= volume_set.length; i++) {
                     volume_set[i].volume = 0.75;
                 }
             }
-
-            document.getElementById('back2Top').style.display  = 'block';
-            document.getElementById('back2Bottom').style.display  = 'block';
         });
+
+        function randomString(id_field) {
+            var characters = "ABCDEFGHIJKLMNOPQRSTUVWXTZabcdefghiklmnopqrstuvwxyz0123456789";
+            var lenString = 32;
+            var randomstring = '';
+
+            for (var i=0; i<lenString; i++) {
+                var rnum = Math.floor(Math.random() * characters.length);
+                randomstring += characters.substring(rnum, rnum+1);
+            }
+
+            document.getElementById(id_field).value = randomstring;
+            CopyToClipboard(randomstring);
+        }
+
+        function reply_link_to_comment(text_reply) {
+            let myField = document.getElementById('body_reply_popup');
+            if (myField.selectionStart || myField.selectionStart == '0') {
+                var startPos = myField.selectionStart;
+                var endPos = myField.selectionEnd;
+                let str_value = myField.value.substring(0, startPos);
+                str_value += '>>' + text_reply + '\n';
+                if (window.getSelection().toString()) {
+                    let list_value = window.getSelection().toString().split(/\r?\n/)
+                    for (let i=0; i<list_value.length; i++) {
+                        str_value += '>' + list_value[i] + '\n';
+                    }
+                }
+                str_value += myField.value.substring(endPos, myField.value.length);
+                myField.value = str_value;
+            }
+        }
+
+    {% if settings.enable_kiosk_mode and settings.kiosk_post_rate_limit %}
+        {% include '/elements/js_post_countdown.html' %}
+    {% endif %}
     </script>
+
+    <style>
+        .overlay {
+          position: fixed;
+          display: none;
+          top: 20px;
+          right: 20px;
+          width: auto;
+          height: auto;
+          max-width: 50%;
+        }
+
+        @media screen and (max-width: 800px) {
+          .overlay {
+            position: fixed;
+            display: none;
+            top: 20px;
+            right: 20px;
+            width: auto;
+            height: auto;
+            max-width: 100%;
+          }
+        }
+
+        .overlay:target {
+          display: inline;
+        }
+
+        .popup_reply {
+          margin: 0px auto;
+          padding: 2px;
+          border-radius: 5px;
+          border: 2px solid #000000;
+          width: 100%;
+          position: -webkit-sticky;
+          position: sticky;
+        }
+
+        .popup_reply .close {
+          position: absolute;
+          top: 0px;
+          right: 5px;
+          font-size: 30px;
+          font-weight: bold;
+          text-decoration: none;
+          user-select: none;
+          font-size: 1em;
+        }
+    </style>
 {% endblock %}
 
 {% block admin_css %}
@@ -103,8 +165,21 @@ Board
 {% endblock %}
 
 {% block body %}
-    <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
-    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
+    {% if thread and not is_private or (is_private and on_any_access_list) %}
+    <div id="popup_reply" class="overlay" style="z-index: 2;">
+        <div id="popup_content" class="themed popup_reply_bg popup_reply">
+            <span class="themed">Replying to {{thread.subject|safe}}</span>
+
+        {% if settings.enable_kiosk_mode and settings.kiosk_post_rate_limit %}
+            (<span id="post-timer" class="themed" title="Time To Post: the number of seconds until you can post (updated every 20 seconds)">TTP: ... s</span>)
+        {% endif %}
+
+            <a class="close themed" href="#close">X</a>
+            {% include '/elements/board/post_form_reply_popup.html' %}
+        </div>
+    </div>
+    {% endif %}
+
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
@@ -147,23 +222,28 @@ Board
 
     <div style="padding-top: 1em">
         <center>
-            <h1 class="themed bold">Steganography Thread</h1> <a class="link" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}">View Non-Steg</a>
+            <span style="text-decoration: none; font-size: 18px;" class="themed">[</span><a class="link" style="text-decoration: none; font-size: 18px;" href="#popup_reply">Reply</a><span style="text-decoration: none; font-size: 18px;" class="themed">]</span>
         </center>
     </div>
 
-    {% set thread = board["current_thread"] %}
+    <div style="padding-top: 1em">
+        <center class="themed">
+            <h1 class="themed bold">Steganography Thread</h1>
+            Back to Non-Steg: <a class="link" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}">Thread</a> / <a class="link" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}?last=100">Last 100</a>
+        </center>
+    </div>
+
     {% set thread_options = get_thread_options(thread.thread_hash) %}
 
-    <hr/>
-    <center>
     {% if ((not is_private or (is_private and on_any_access_list)) and (not thread_options['lock_remote'] and not thread_options['lock_local'])) or primary_access %}
-        {% set is_reply = True %}
-        {% include '/elements/board/post_form_steg.html' %}
     {% else %}
+    <center>
         <span class="themed">Insufficient permissions to post</span>
-    {% endif %}
     </center>
+    {% endif %}
+
     <hr/>
+
     {% set message_op = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
@@ -199,16 +279,21 @@ Board
     {% for each_message in message_replies_steg %}
         {% set post = each_message %}
         {% set text = format_message_steg(each_message.message_id) %}
-        {% include '/elements/board/post_reply.html' %}
-        <br/>
+        <div class="post plaque" id="{{post.post_id}}">
+            {% include '/elements/board/post_reply.html' %}
+        </div>
     {% endfor %}
     </div>
 
-    <div class="themed" style="clear: both; text-align: right; padding-right: 1.5em;"><a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a> / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a></div>
-
+    <div class="themed" style="clear: both; text-align: left; padding-left: 1.5em;">
+        <div class="themed">
+            <a class="link" href="#popup_reply">Reply</a>
+            / <a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a>
+            / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a>
+        </div>
+    </div>
     <hr/>
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
 {% endblock %}

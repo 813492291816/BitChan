@@ -1,19 +1,23 @@
+import base64
 import html
 import json
 import logging
 import socket
 import sqlite3
 import time
-import xmlrpc.client
 from binascii import unhexlify
+
+import jsonrpclib
 
 import config
 from database.models import Chan
 from database.models import Messages
 from database.utils import session_scope
+from utils.files import LF
 from utils.files import delete_message_files
 from utils.shared import add_mod_log_entry
-from utils.shared import regenerate_thread_card_and_popup
+from utils.shared import regenerate_card_popup_post_html
+from utils.shared import regenerate_ref_to_from_post
 
 DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 
@@ -26,7 +30,27 @@ bm_endpoint = "http://{user}:{pw}@{host}:{port}/".format(
     port=config.BM_PORT)
 
 socket.setdefaulttimeout(config.API_TIMEOUT)
-api = xmlrpc.client.ServerProxy(bm_endpoint)
+api = jsonrpclib.Server(bm_endpoint)
+
+
+def generate_identity(passphrase, short_address):
+    lf = LF()
+    if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+        try:
+            b64_passphrase = base64.b64encode(passphrase.encode())
+
+            if short_address:
+                logger.info("Generating shorter Identity address")
+                socket.setdefaulttimeout(600)
+            return_str = api.createDeterministicAddresses(
+                b64_passphrase.decode(), 1, 0, 0, short_address, 0, 0)
+            if short_address:
+                socket.setdefaulttimeout(config.API_TIMEOUT)
+
+            return return_str
+        finally:
+            time.sleep(config.API_PAUSE)
+            lf.lock_release(config.LOCKFILE_API, log_info=True)
 
 
 def get_msg_address_from(msg_id: str):
@@ -67,47 +91,53 @@ def chan_auto_clears_and_message_too_old(address, timestamp_sent):
                 return
 
 
-def delete_and_replace_comment(message_id, new_comment, from_address=None, local_delete=False):
+def delete_and_replace_comment(message_id, new_comment, from_address=None, local_delete=False, only_hide=False):
     with session_scope(DB_PATH) as new_session:
         message = new_session.query(Messages).filter(
             Messages.message_id == message_id).first()
         if message:
             if from_address:
-                message.message = '<span class="god-text">ORIGINAL COMMENT DELETED BY {}. REASON: {}</span>'.format(
+                message.delete_comment = '<span class="god-text">ORIGINAL COMMENT DELETED BY {}. REASON: {}</span>'.format(
                     html.escape(from_address), html.escape(new_comment))
                 user_from = html.escape(from_address)
             else:
-                message.message = '<span class="god-text">ORIGINAL COMMENT LOCALLY DELETED. REASON: {}</span>'.format(
+                message.delete_comment = '<span class="god-text">ORIGINAL COMMENT LOCALLY DELETED. REASON: {}</span>'.format(
                     html.escape(new_comment))
                 user_from = None
-            message.file_url = None
-            message.file_decoded = None
-            message.file_download_successful = None
-            message.message_steg = "{}"
-            message.file_amount = 0
-            message.file_size = None
-            message.media_width = None
-            message.media_width = None
-            message.file_filename = None
-            message.file_extension = None
-            message.file_currently_downloading = None
-            message.file_sha256_hash = None
-            message.file_sha256_hashes_match = None
-            message.file_do_not_download = None
-            message.file_download_successful = None
+
+            if only_hide:
+                message.hide = True
+            else:
+                message.file_url = None
+                message.file_decoded = None
+                message.file_download_successful = None
+                message.message_steg = "{}"
+                message.file_amount = 0
+                message.file_size = None
+                message.media_width = None
+                message.media_width = None
+                message.file_filename = None
+                message.file_extension = None
+                message.file_currently_downloading = None
+                message.file_sha256_hash = None
+                message.file_sha256_hashes_match = None
+                message.file_do_not_download = None
+                message.file_download_successful = None
             new_session.commit()
 
-            regenerate_thread_card_and_popup(message.thread.thread_hash)
+            regenerate_card_popup_post_html(message_id=message_id)
+            regenerate_ref_to_from_post(message_id)
 
-            # Delete all files associated with message
-            delete_message_files(message_id)
+            if not only_hide:
+                # Delete all files associated with message
+                delete_message_files(message_id)
 
             # Add mod log entry
             if local_delete:
-                log_description = "Post locally deleted with comment: {}".format(
+                log_description = 'Locally delete post with comment: "{}"'.format(
                     html.escape(new_comment))
             else:
-                log_description = "Post remotely deleted with comment: {}".format(
+                log_description = 'Remotely delete post with comment (locally hidden): "{}"'.format(
                     html.escape(new_comment))
 
             add_mod_log_entry(
@@ -115,7 +145,8 @@ def delete_and_replace_comment(message_id, new_comment, from_address=None, local
                 message_id=message_id,
                 user_from=user_from,
                 board_address=message.thread.chan.address,
-                thread_hash=message.thread.thread_hash)
+                thread_hash=message.thread.thread_hash,
+                hidden=True)
 
 
 def log_age_and_expiration(message_id, time_now, time_sent, time_expires):

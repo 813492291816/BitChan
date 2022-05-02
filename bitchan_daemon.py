@@ -1,5 +1,7 @@
 import base64
 import datetime
+import fileinput
+import hashlib
 import html
 import json
 import logging
@@ -15,6 +17,7 @@ from binascii import hexlify
 from collections import OrderedDict
 from threading import Thread
 
+import bleach
 import gnupg
 import ntplib
 from Pyro5.api import expose
@@ -29,13 +32,17 @@ from stem.control import Controller
 import config
 from database.models import AddressBook
 from database.models import AdminMessageStore
+from database.models import Captcha
 from database.models import Chan
 from database.models import Command
 from database.models import DeletedMessages
+from database.models import Games
+from database.models import EndpointCount
 from database.models import GlobalSettings
 from database.models import Identity
 from database.models import Messages
 from database.models import PostCards
+from database.models import PostDeletePasswordHashes
 from database.models import SessionInfo
 from database.models import Threads
 from database.models import UploadProgress
@@ -45,6 +52,7 @@ from utils.download import allow_download
 from utils.encryption import decrypt_safe_size
 from utils.files import LF
 from utils.files import delete_file
+from utils.game import initialize_game
 from utils.gateway import api
 from utils.gateway import chan_auto_clears_and_message_too_old
 from utils.gateway import get_msg_address_from
@@ -64,6 +72,7 @@ from utils.shared import add_mod_log_entry
 from utils.shared import diff_list_added_removed
 from utils.shared import get_access
 from utils.shared import get_msg_expires_time
+from utils.shared import get_post_id
 from utils.tor import enable_custom_address
 from utils.tor import enable_random_address
 
@@ -75,6 +84,9 @@ class BitChan:
         self.logger = logging.getLogger('bitchan.daemon')
         self.logger.setLevel(log_level)
         self.logger.info("Starting BitChan v{}".format(config.VERSION_BITCHAN))
+
+        self.view_counter = {}
+        self.reset_view_counter()
 
         self._non_bitchan_message_ids = []
         self._all_chans = {}
@@ -111,7 +123,6 @@ class BitChan:
         now = time.time()
         self.timer_check_bm_alive = now
         self.timer_time_server = now
-        self.timer_sync = now
         self.timer_board_info = now
         self.timer_check_downloads = now
         self.timer_bm_update = now
@@ -123,16 +134,24 @@ class BitChan:
         self.timer_safe_send = now
         self.timer_update_post_numbers = now
         self.timer_new_tor_identity = now + random.randint(10800, 28800)
+        self.timer_check_onion_address = now
 
-        self.timer_clear_session_info = now + (60 * 180)   # 3 hours
+        self.timer_delete_and_vacuum = now + (60 * 60)     # 1 hour
         self.timer_check_locked_threads = now + (60 * 20)  # 20 minutes
         self.timer_delete_msgs = now + (60 * 10)           # 10 minutes
-        self.timer_delete_and_vacuum = now + (60 * 10)     # 10 minutes
+        self.timer_delete_captchas = now + (60 * 10)       # 10 minutes
         self.timer_get_msg_expires_time = now + (60 * 10)  # 10 minutes
         self.timer_remove_deleted_msgs = now + (60 * 10)   # 10 minutes
         self.timer_send_lists = now + (60 * 5)             # 5 minutes
         self.timer_send_commands = now + (60 * 5)          # 5 minutes
+        self.timer_clear_session_info = now + (60 * 5)     # 5 minutes
         self.timer_sync = now + (60 * 2)                   # 2 minutes
+        self.timer_game = now + (60 * 1)                   # 1 minutes
+
+        # Start timer at next top of the hour
+        t = datetime.datetime.now()
+        epoch_next_hour = t.replace(second=0, microsecond=0, minute=0, hour=t.hour) + datetime.timedelta(hours=1)
+        self.timer_top_of_hour = int(epoch_next_hour.strftime('%s'))
 
         # Net disable settings
         self.allow_net_file_size_check = False
@@ -159,36 +178,6 @@ class BitChan:
 
         # Process messages that were already processed and stored in the database
         self.process_stored_messages()
-
-        # run once, then delete
-        # with session_scope(DB_PATH) as new_session:
-        #     admin_cmds = new_session.query(Command).all()
-        #     for each_cmd in admin_cmds:
-        #         try:
-        #             options = json.loads(each_cmd.options)
-        #             options.pop("sticky", None)
-        #             options.pop("sticky_timestamp_utc", None)
-        #             options.pop("lock", None)
-        #             options.pop("lock_ts", None)
-        #             options.pop("lock_timestamp_utc", None)
-        #             options.pop("anchor", None)
-        #             options.pop("anchor_ts", None)
-        #             options.pop("anchor_timestamp_utc", None)
-        #             each_cmd.options = json.dumps(options)
-        #             new_session.commit()
-        #         except:
-        #             continue
-
-        # print onion address of tor
-        try:
-            if os.path.exists("/usr/local/tor/rand/"):
-                with open('/usr/local/tor/rand/hostname', 'r') as f:
-                    self.logger.info("Rand onion address: {}".format(f.read()))
-            if os.path.exists("/usr/local/tor/cus/"):
-                with open('/usr/local/tor/cus/hostname', 'r') as f:
-                    self.logger.info("Cus onion address: {}".format(f.read()))
-        except:
-            pass
 
         while True:
             lf = LF()
@@ -221,6 +210,17 @@ class BitChan:
                 ntp.start()
 
         #
+        # Check Bitmessage onion address
+        #
+        if self.timer_check_onion_address < now:
+            try:
+                self.logger.debug("Run check_onion_address()")
+                self.check_onion_address()
+            except:
+                self.logger.exception("Could not complete check_onion_address()")
+            self.timer_check_onion_address = time.time() + 60 * 60 * 12  # 12 hours
+
+        #
         # Update Chans Board Info
         #
         if self.timer_board_info < now or self.update_ntp:
@@ -243,12 +243,19 @@ class BitChan:
             self.timer_check_downloads = time.time() + config.REFRESH_CHECK_DOWNLOAD
 
         #
-        # Check if sync complete
+        # Check if BM sync is complete
         #
         if self.timer_sync < now or self.update_ntp:
             try:
                 self.logger.debug("Run check_sync()")
-                self.check_sync()
+                lf = LF()
+                if lf.lock_acquire("/var/lock/bm_sync_check.lock", to=60):
+                    try:
+                        self.check_sync_locked()
+                    except Exception as err:
+                        self.logger.error("Error check_sync(): {}".format(err))
+                    finally:
+                        lf.lock_release("/var/lock/bm_sync_check.lock")
             except:
                 self.logger.exception("Could not complete check_sync()")
             self.timer_sync = time.time() + config.REFRESH_CHECK_SYNC
@@ -350,17 +357,21 @@ class BitChan:
             with session_scope(DB_PATH) as new_session:
                 settings = new_session.query(GlobalSettings).first()
                 if settings and settings.clear_inventory:
-                    self.logger.debug("Run clear_bm_inventory()")
-                    self.is_pow_sending()
-                    if self.timer_safe_send < now:  # Ensure BM isn't restarted while sending
-                        settings.clear_inventory = False
-                        new_session.commit()
-                        try:
-                            self.clear_bm_inventory()
-                            self.bm_sync_complete = False
-                            self.update_post_numbers = True
-                        except:
-                            self.logger.exception("Could not complete clear_bm_inventory()")
+                    if not self.message_threads and self.bm_sync_complete:
+                        # Only clear inventory if no messages are being processed and sync is complete
+                        self.logger.debug("Run clear_bm_inventory()")
+                        self.is_pow_sending()
+                        if self.timer_safe_send < now:  # Ensure BM isn't restarted while sending
+                            settings.clear_inventory = False
+                            new_session.commit()
+                            try:
+                                self.clear_bm_inventory()
+                                self.bm_sync_complete = False
+                                self.update_post_numbers = True
+                            except:
+                                self.logger.exception("Could not complete clear_bm_inventory()")
+                    else:
+                        self.timer_clear_inventory += 60  # Wait additional 60 seconds if messages are being processed
 
         #
         # Get message expires time if not currently set
@@ -470,12 +481,40 @@ class BitChan:
         # Delete and Vacuum
         #
         if self.timer_delete_and_vacuum < now:
+            # Check for expire times before deleting and vacuuming
+            self.logger.debug("Run get_message_expires_times()")
+            try:
+                self.get_message_expires_times()
+            except:
+                self.logger.exception("Could not complete get_message_expires_times()")
+            self.timer_get_msg_expires_time = time.time() + config.REFRESH_EXPIRES_TIME
+
             self.logger.debug("Run delete_and_vacuum()")
             try:
                 self.delete_and_vacuum()
             except:
                 self.logger.exception("Could not complete delete_and_vacuum()")
-            self.timer_delete_and_vacuum = time.time() + (60 * 60)
+            self.timer_delete_and_vacuum = time.time() + (60 * 60 * 6)
+
+            # Set any expire times still None to 0
+            self.logger.debug("Setting message expire times to 0")
+            try:
+                with session_scope(DB_PATH) as new_session:
+                    msg_inbox = new_session.query(Messages).filter(
+                        Messages.expires_time.is_(None)).all()
+                    for each_msg in msg_inbox:
+                        self.logger.info("{}: Setting message expire time to 0".format(
+                            each_msg.message_id[-config.ID_LENGTH:].upper()))
+                        each_msg.expires_time = 0
+                    msg_deleted = new_session.query(DeletedMessages).filter(
+                        DeletedMessages.expires_time.is_(None)).all()
+                    for each_msg in msg_deleted:
+                        self.logger.info("{}: Setting message expire time to 0".format(
+                            each_msg.message_id[-config.ID_LENGTH:].upper()))
+                        each_msg.expires_time = 0
+                    new_session.commit()
+            except:
+                self.logger.exception("Could not set message expire times to 0")
 
         #
         # Clear flask session info
@@ -486,7 +525,7 @@ class BitChan:
                 self.clear_session_info()
             except:
                 self.logger.exception("Could not complete clear_session_info()")
-            self.timer_clear_session_info = time.time() + (60 * 180)
+            self.timer_clear_session_info = time.time() + (60 * 60 * 12)  # 12 hours
 
         #
         # Check that no posts exist past lock on locked threads
@@ -504,7 +543,251 @@ class BitChan:
                 else:
                     self.timer_check_locked_threads = time.time() + 60
 
+        #
+        # Periodically delete stale captchas
+        #
+        if self.timer_delete_captchas < now:
+            self.logger.debug("Run delete_old_captchas()")
+            try:
+                self.delete_old_captchas()
+            except:
+                self.logger.exception("Could not complete delete_old_captchas()")
+            self.timer_delete_captchas = time.time() + (60 * 60 * 3)
+
+        #
+        # Periodically check games
+        #
+        if self.timer_game < now:
+            self.logger.debug("Run check_games()")
+            try:
+                self.check_games()
+            except:
+                self.logger.exception("Could not complete check_games()")
+            self.timer_game = time.time() + 20
+
+        #
+        # Periodically check every hour (at the top of the hour)
+        #
+        if self.timer_top_of_hour < now:
+            self.logger.debug("Run hourly_run()")
+            try:
+                self.hourly_run(self.timer_top_of_hour)
+            except:
+                self.logger.exception("Could not complete hourly_run()")
+            while self.timer_top_of_hour < now:
+                self.timer_top_of_hour += 3600  # 1 hour
+
         self.first_run = False
+
+    def hourly_run(self, timestamp_hour):
+        try:
+            thread_hashes = {}
+            new_posts = {}
+            chan_addresses = {}
+            with session_scope(DB_PATH) as new_session:
+                for category, each_data in self.view_counter.items():
+                    for endpoint in each_data:
+                        if endpoint in ["index", "verify_wait", "verify_test"]:
+                            count = EndpointCount()
+                            count.timestamp_epoch = timestamp_hour
+                            count.category = category
+                            count.endpoint = endpoint
+                            count.requests = self.view_counter[category][endpoint]
+                            new_session.add(count)
+                        if category in ["boards", "lists"] and endpoint:
+                            if endpoint not in chan_addresses:
+                                chan_addresses[endpoint] = 0
+                            chan_addresses[endpoint] += self.view_counter[category][endpoint]
+                        if category == "threads" and endpoint:
+                            if endpoint not in thread_hashes:
+                                thread_hashes[endpoint] = 0
+                            thread_hashes[endpoint] += self.view_counter[category][endpoint]
+                        if category == "new_posts" and endpoint:
+                            if endpoint not in new_posts:
+                                new_posts[endpoint] = 0
+                            new_posts[endpoint] += self.view_counter[category][endpoint]
+
+                for each_address, views in chan_addresses.items():
+                    count = EndpointCount()
+                    count.timestamp_epoch = timestamp_hour
+                    count.chan_address = each_address
+                    count.category = "requests"
+                    count.requests = views
+                    new_session.add(count)
+
+                for thread_hash, views in thread_hashes.items():
+                    count = EndpointCount()
+                    count.timestamp_epoch = timestamp_hour
+                    count.thread_hash = thread_hash
+                    count.category = "requests"
+                    count.requests = views
+                    new_session.add(count)
+
+                for thread_hash, views in new_posts.items():
+                    test_count = new_session.query(EndpointCount).filter(and_(
+                        EndpointCount.timestamp_epoch == timestamp_hour,
+                        EndpointCount.thread_hash == thread_hash,
+                        EndpointCount.category == "requests")).first()
+                    if test_count:
+                        test_count.new_posts = views
+                    else:
+                        count = EndpointCount()
+                        count.timestamp_epoch = timestamp_hour
+                        count.thread_hash = thread_hash
+                        count.category = "requests"
+                        count.requests = views
+                        new_session.add(count)
+
+                new_session.commit()
+            self.reset_view_counter()
+        except:
+            self.logger.error("Could not import view_counter")
+
+    def reset_view_counter(self):
+        lf = LF()
+        if lf.lock_acquire(config.LOCKFILE_ENDPOINT_COUNTER, to=10):
+            try:
+                self.view_counter = OrderedDict({
+                    "time": {
+                        "epoch": int(time.time()),
+                        "timestamp": datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+                    }
+                })
+            except Exception as err:
+                self.logger.error("Error reset_view_counter(): {}".format(err))
+            finally:
+                lf.lock_release(config.LOCKFILE_ENDPOINT_COUNTER)
+
+    def check_games(self):
+        with session_scope(DB_PATH) as new_session:
+            games = new_session.query(Games).filter(or_(
+                Games.game_initiated == "uninitiated",
+                Games.game_initiated == "player_a_chosen",
+                Games.game_initiated == "player_b_chosen")).all()
+            for each_game in games:
+                self.logger.info("Initiating game {}".format(each_game.game_type))
+                try:
+                    initialize_game(each_game.id)
+                except:
+                    self.logger.exception("Could not initiate game: {}".format(each_game.game_type))
+
+    def enable_onion_services_only(self, enable):
+        # stop BM, edit keys.dat, start bitmessage
+        try:
+            timer_waiting = time.time()
+            while self.is_restarting_bitmessage and time.time() - timer_waiting < 360:
+                self.logger.info("Already restarting bitmessage. Please wait.")
+                time.sleep(2)
+
+            self.is_restarting_bitmessage = True
+            self.bitmessage_stop()
+            time.sleep(15)
+            line_found = False
+            for line in fileinput.input('/usr/local/bitmessage/keys.dat', inplace=1):
+                if line.startswith("onionservicesonly"):
+                    line_found = True
+                    val_set = "true" if enable else "false"
+                    self.logger.info("'onionservicesonly' found, setting to {}".format(val_set))
+                    line = "onionservicesonly = {}\n".format(val_set)
+                sys.stdout.write(line)
+            if not line_found:
+                self.logger.info("'onionservicesonly' not found. Check keys.dat configuration.")
+            self.bitmessage_start()
+            time.sleep(15)
+        finally:
+            self.is_restarting_bitmessage = False
+
+    def regenerate_bitmessage_onion_address(self):
+        paths_remove = [
+            "/usr/local/tor/bm/hostname",
+            "/usr/local/tor/bm/hs_ed25519_public_key",
+            "/usr/local/tor/bm/hs_ed25519_secret_key"
+        ]
+        for each_path in paths_remove:
+            if os.path.exists(each_path):
+                try:
+                    os.remove(each_path)
+                except:
+                    self.logger.error("Could not remove {}".format(each_path))
+
+        self.tor_restart()
+        self.timer_check_onion_address = time.time() + 60
+
+    def check_onion_address(self):
+        # Log tor hidden onion service addresses
+        bm_onion_address = None
+        try:
+            if os.path.exists("/usr/local/tor/bm/"):
+                with open('/usr/local/tor/bm/hostname', 'r') as f:
+                    bm_onion_address = f.read().rstrip()
+                    self.logger.info("Bitmessage onion address: {}".format(bm_onion_address.rstrip()))
+            if os.path.exists("/usr/local/tor/rand/"):
+                with open('/usr/local/tor/rand/hostname', 'r') as f:
+                    self.logger.info("BitChan onion address (random): {}".format(f.read().rstrip()))
+            if os.path.exists("/usr/local/tor/cus/"):
+                with open('/usr/local/tor/cus/hostname', 'r') as f:
+                    self.logger.info("BitChan onion address (custom): {}".format(f.read().rstrip()))
+        except:
+            pass
+
+        try:
+            if bm_onion_address:
+                self.logger.info("tor onion address found for Bitmessage. "
+                                 "Checking if 'onionhostname' set in keys.dat...")
+                set_onionhostname = False
+                with open('/usr/local/bitmessage/keys.dat', 'r') as f:
+                    for each_line in f.readlines():
+                        if each_line.startswith("onionhostname"):
+                            self.logger.info("Found line: '{}'".format(each_line.rstrip()))
+                            try:
+                                check_address = each_line.split(" = ")[1].rstrip()
+                            except:
+                                check_address = ""
+                            self.logger.info("keys.dat: '{}'".format(check_address))
+                            self.logger.info("tor: '{}'".format(bm_onion_address))
+                            if check_address != bm_onion_address:
+                                self.logger.info("Invalid keys.dat onion address. Updating and restarting Bitmessage")
+                                set_onionhostname = True
+
+                if set_onionhostname:
+                    # stop BM, edit keys.dat, start bitmessage
+                    try:
+                        timer_waiting = time.time()
+                        while self.is_restarting_bitmessage and time.time() - timer_waiting < 360:
+                            self.logger.info("Already restarting bitmessage. Please wait.")
+                            time.sleep(2)
+
+                        self.is_restarting_bitmessage = True
+                        self.bitmessage_stop()
+                        time.sleep(15)
+                        line_found = False
+                        for line in fileinput.input('/usr/local/bitmessage/keys.dat', inplace=1):
+                            if line.startswith("onionhostname"):
+                                line_found = True
+                                self.logger.info("'onionhostname' found, setting to onion address.")
+                                line = "onionhostname = {}\n".format(bm_onion_address)
+                            sys.stdout.write(line)
+                        if not line_found:
+                            self.logger.info("'onionhostname' not found. Check keys.dat configuration.")
+                        self.bitmessage_start()
+                        time.sleep(15)
+                    finally:
+                        self.is_restarting_bitmessage = False
+                else:
+                    self.logger.info("Bitmessage onion address correctly set in keys.dat.")
+            else:
+                self.logger.info("tor onion address not found for Bitmessage. Check torrc configuration.")
+        except:
+            pass
+
+    @staticmethod
+    def delete_old_captchas():
+        with session_scope(DB_PATH) as new_session:
+            captchas = new_session.query(Captcha).filter(
+                Captcha.timestamp_utc < (time.time() - (60 * 60 * 24 * 4))).all()
+            for each_captcha in captchas:
+                new_session.delete(each_captcha)
+                new_session.commit()
 
     def scan_locked_threads(self):
         with session_scope(DB_PATH) as new_session:
@@ -585,28 +868,36 @@ class BitChan:
     def clear_session_info():
         with session_scope(DB_PATH) as new_session:
             session_infos = new_session.query(SessionInfo).all()
-            for session_info in session_infos:
-                if time.time() - session_info.request_rate_ts > (60 * 60 * 24 * 7):
-                    # Session last visit older than 7 days, Delete
-                    new_session.delete(session_info)
+            for session in session_infos:
+                now = time.time()
+                if (session.request_rate_ts > 0 and
+                        now - session.request_rate_ts > 60 * 60 * 24 * config.SESSION_TIMEOUT_DAYS):
+                    logger.info("Deleting session: verified: {}, ID: {}, now: {}, last: {}, stale_sec: {}".format(
+                        session.verified,
+                        session.session_id,
+                        now,
+                        session.request_rate_ts,
+                        now - session.request_rate_ts))
+                    # Delete if last request is older than 7 days
+                    new_session.delete(session)
                     new_session.commit()
 
     def signal_generate_post_numbers(self):
         self.timer_update_post_numbers = time.time() + (60 * 5)
         self.update_post_numbers = True
 
-    def generate_post_numbers(self):
+    def generate_post_numbers(self, all_boards=False):
         try:
-            from database.models import Chan
-            from database.models import Threads
-            from database.models import Messages
-
             with session_scope(DB_PATH) as session:
                 # First, reset all board counts to 0
-                boards = session.query(Chan).filter(
-                    and_(
-                        Chan.type == "board",
-                        Chan.regenerate_numbers.is_(True))).all()
+                if all_boards:
+                    boards = session.query(Chan).filter(
+                        Chan.type == "board").all()
+                else:
+                    boards = session.query(Chan).filter(
+                        and_(
+                            Chan.type == "board",
+                            Chan.regenerate_numbers.is_(True))).all()
                 for each_board in boards:
                     each_board.last_post_number = 0
                 session.commit()
@@ -635,7 +926,10 @@ class BitChan:
                         continue
 
                     board.last_post_number = board.last_post_number + 1
+                    if each_msg.post_number != board.last_post_number:
+                        each_msg.regenerate_post_html = True
                     each_msg.post_number = board.last_post_number
+
                     self.logger.info("Board {}: Post {}: Post number {}".format(
                         board.address,
                         each_msg.post_id,
@@ -643,17 +937,6 @@ class BitChan:
                     session.commit()
         except Exception:
             self.logger.exception("Updating post numbers")
-
-    def check_sync(self):
-        """Determine if a Bitmessage sync has completed"""
-        lf = LF()
-        if lf.lock_acquire("/var/lock/bm_sync_check.lock", to=60):
-            try:
-                self.check_sync_locked()
-            except Exception as err:
-                self.logger.error("Error check_sync(): {}".format(err))
-            finally:
-                lf.lock_release("/var/lock/bm_sync_check.lock")
 
     def check_sync_locked(self):
         """Determine if a Bitmessage sync has completed"""
@@ -673,7 +956,7 @@ class BitChan:
             if bm_status["networkStatus"] != "notConnected":
                 if not self.bm_connected_timer:
                     # upon becoming connected, wait 90 sec until checking if synced
-                    self.bm_connected_timer = time.time() + 90
+                    self.bm_connected_timer = time.time() + 60
                 self.bm_connected = True
             else:
                 self.bm_connected = False
@@ -1221,7 +1504,7 @@ class BitChan:
             for each_board in board_chans:
                 if not each_board.is_setup:
                     self.logger.info("Found board chan in database that needs to be joined. Joining.")
-                    address = self.join_chan(each_board.passphrase, clear_inventory=False)
+                    address = self.join_chan(each_board.passphrase, clear_inventory=True)
                     time.sleep(1)
 
                     if address and "Chan address is already present" in address:
@@ -1307,11 +1590,10 @@ class BitChan:
                     self.trash_message(message.message_id)
                     continue
 
-                if message.thread and message.thread.chan:
-                    self.logger.info("{}: Adding to {} ({})".format(
-                        message.message_id[-config.ID_LENGTH:].upper(),
-                        message.thread.chan.address,
-                        message.thread.chan.label))
+                if not message.thread or not message.thread.chan:
+                    self.logger.info("{}: Message missing thread or chan. Deleting.".format(
+                        message.message_id[-config.ID_LENGTH:].upper()))
+                    self.trash_message(message.message_id)
                     continue
 
         if found_empty_post_number:
@@ -1334,6 +1616,7 @@ class BitChan:
                     # messages to continue to be processed while
                     # downloading.
                     message.file_progress = "Download starting"
+                    message.regenerate_post_html = True
                     message.file_currently_downloading = True
                     new_session.commit()
                     thread_download = Thread(
@@ -1714,7 +1997,7 @@ class BitChan:
                 chans_list_dict[each_chan.address]["label_short"] = replace_lt_gt(each_chan.label)
         return chans_list_dict
 
-    def get_from_list(self, address, only_owner_admin=False):
+    def get_from_list(self, address, only_owner_admin=False, all_addresses=False):
         """Generate a list of addresses available for the From address to send with"""
         from_addresses = {}
         anon_post = False
@@ -1741,10 +2024,13 @@ class BitChan:
         require_identity_to_post = ("require_identity_to_post" in rules and
                                     rules["require_identity_to_post"])
 
-        if (not only_owner_admin and
-                chan.access == "public" and
-                not require_identity_to_post and
-                address not in restricted_addresses):
+        if (all_addresses or
+                (
+                    not only_owner_admin and
+                    chan.access == "public" and
+                    not require_identity_to_post and
+                    address not in restricted_addresses
+                )):
             anon_post = address
             from_addresses[address] = "Anonymous (this {})".format(chan.type)
 
@@ -1757,15 +2043,17 @@ class BitChan:
 
             if (identities[each_address]['enabled'] and
                     (
-                        (chan.access == "private" and
-                         (each_address in primary_addresses or
-                          each_address in secondary_addresses or
-                          each_address in tertiary_addresses)
-                        ) or
-                        (chan.access == "public" and
-                         each_address not in restricted_addresses)
+                        all_addresses or
+                        (
+                            (chan.access == "private" and
+                             (each_address in primary_addresses or
+                              each_address in secondary_addresses or
+                              each_address in tertiary_addresses)
+                            ) or
+                            (chan.access == "public" and
+                             each_address not in restricted_addresses)
+                        )
                     )):
-
                 if each_address in primary_addresses:
                     from_addresses[each_address] = "[Owner] "
                 elif each_address in secondary_addresses:
@@ -1788,16 +2076,20 @@ class BitChan:
             if only_owner_admin and each_address not in primary_addresses + secondary_addresses:
                 continue
 
-            if all_chans[each_address]['enabled'] and (
-                    (chan.access == "private" and
-                     (each_address in primary_addresses or
-                      each_address in secondary_addresses or
-                      each_address in tertiary_addresses)
-                    ) or
-                    (chan.access == "public" and
-                     each_address != address and
-                     each_address not in restricted_addresses)):
-
+            if all_chans[each_address]['enabled'] and \
+                    (
+                        all_addresses or
+                        (
+                            (chan.access == "private" and
+                             (each_address in primary_addresses or
+                              each_address in secondary_addresses or
+                              each_address in tertiary_addresses)
+                            ) or
+                            (chan.access == "public" and
+                             each_address != address and
+                             each_address not in restricted_addresses)
+                        )
+                    ):
                 if each_address in primary_addresses:
                     from_addresses[each_address] = "[Owner] "
                 elif each_address in secondary_addresses:
@@ -1810,6 +2102,9 @@ class BitChan:
                 if get_db_table_daemon(Chan).filter(
                         Chan.address == each_address).first():
                     if get_db_table_daemon(Chan).filter(
+                            Chan.address == each_address).first().unlisted:
+                        continue  # Do not list unlisted addresses in the From List
+                    elif get_db_table_daemon(Chan).filter(
                             Chan.address == each_address).first().type == "board":
                         from_addresses[each_address] += "Board: "
                     elif get_db_table_daemon(Chan).filter(
@@ -1890,147 +2185,263 @@ class BitChan:
         return combined_dict
 
     def process_message(self, msg_dict):
-        """Parse a message to determine if it is valid and add it to bitchan"""
-        if len(msg_dict) == 0:
-            return
-
-        admin_store = get_db_table_daemon(AdminMessageStore).filter(
-            AdminMessageStore.message_id == msg_dict["msgid"]).first()
-        if admin_store and not self.bm_sync_complete:
-            self.logger.info(
-                "{}: Stored message ID detected. "
-                "Skipping processing of admin command until synced".format(
+        """Parse a message to determine if it is valid"""
+        try:
+            if len(msg_dict) == 0:
+                self.logger.error("{}: message is empty".format(
                     msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-            return
+                return
 
-        message_post = get_db_table_daemon(Messages).filter(
-            Messages.message_id == msg_dict["msgid"]).first()
-        if message_post and message_post.thread and message_post.thread.chan:
-            self.logger.info("{}: Adding message from database to chan {}".format(
-                msg_dict["msgid"][-config.ID_LENGTH:].upper(),
-                message_post.thread.chan.address))
-            return
-
-        # Decode message
-        message = base64.b64decode(msg_dict['message']).decode()
-
-        # Check if message is an encrypted PGP message
-        if not message.startswith("-----BEGIN PGP MESSAGE-----"):
-            self.logger.info("{}: Message doesn't appear to be PGP message. "
-                        "Deleting.".format(
-                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-            self.trash_message(msg_dict["msgid"])
-            return
-
-        pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-        with session_scope(DB_PATH) as new_session:
-            chan = new_session.query(Chan).filter(
-                Chan.address == msg_dict['toAddress']).first()
-            if chan and chan.pgp_passphrase_msg:
-                pgp_passphrase_msg = chan.pgp_passphrase_msg
-
-        # Decrypt the message
-        # Protect against explosive PGP message size exploit
-        msg_decrypted = decrypt_safe_size(message, pgp_passphrase_msg, 400000)
-
-        if msg_decrypted is not None:
-            self.logger.info("{}: Message decrypted".format(
-                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-            try:
-                msg_decrypted_dict = json.loads(msg_decrypted)
-            except:
+            admin_store = get_db_table_daemon(AdminMessageStore).filter(
+                AdminMessageStore.message_id == msg_dict["msgid"]).first()
+            if admin_store and not self.bm_sync_complete:
                 self.logger.info(
-                    "{}: Malformed JSON payload. Deleting.".format(
+                    "{}: Stored message ID detected. "
+                    "Skipping processing of admin command until synced".format(
+                        msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                return
+
+            message_post = get_db_table_daemon(Messages).filter(
+                Messages.message_id == msg_dict["msgid"]).first()
+            if message_post and message_post.thread and message_post.thread.chan:
+                self.logger.info("{}: Adding message from database to chan {}".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper(),
+                    message_post.thread.chan.address))
+                return
+
+            # Decode message
+            message = base64.b64decode(msg_dict['message']).decode()
+
+            # Check if message is an encrypted PGP message
+            if not message.startswith("-----BEGIN PGP MESSAGE-----"):
+                self.logger.info("{}: Message doesn't appear to be PGP message. Deleting.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                self.trash_message(msg_dict["msgid"])
+                return
+
+            pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
+            with session_scope(DB_PATH) as new_session:
+                chan = new_session.query(Chan).filter(
+                    Chan.address == msg_dict['toAddress']).first()
+                if chan and chan.pgp_passphrase_msg:
+                    pgp_passphrase_msg = chan.pgp_passphrase_msg
+
+            # Decrypt the message
+            # Protect against explosive PGP message size exploit
+            msg_decrypted = decrypt_safe_size(message, pgp_passphrase_msg, 400000)
+
+            if msg_decrypted is not None:
+                self.logger.info("{}: Message decrypted".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                try:
+                    msg_decrypted_dict = json.loads(msg_decrypted)
+                except:
+                    self.logger.info(
+                        "{}: Malformed JSON payload. Deleting.".format(
+                            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                    self.trash_message(msg_dict["msgid"])
+                    return
+            else:
+                self.logger.info(
+                    "{}: Could not decrypt message. Deleting.".format(
                         msg_dict["msgid"][-config.ID_LENGTH:].upper()))
                 self.trash_message(msg_dict["msgid"])
                 return
-        else:
-            self.logger.info(
-                "{}: Could not decrypt message. Deleting.".format(
+
+            if "version" not in msg_decrypted_dict:
+                self.logger.error("{}: 'version' not found in message. Deleting.")
+                self.trash_message(msg_dict["msgid"])
+                return
+            elif version_checker(config.VERSION_MSG, msg_decrypted_dict["version"])[1] == "less":
+                self.logger.info("{}: Message version greater than BitChan version. Deleting.".format(
                     msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-            self.trash_message(msg_dict["msgid"])
-            return
-
-        if "version" not in msg_decrypted_dict:
-            self.logger.error("{}: 'version' not found in message. Deleting.")
-            self.trash_message(msg_dict["msgid"])
-            return
-        elif version_checker(config.VERSION_MSG, msg_decrypted_dict["version"])[1] == "less":
-            self.logger.info("{}: Message version greater than BitChan version. "
-                        "Deleting.".format(
-                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-            self.trash_message(msg_dict["msgid"])
-            with session_scope(DB_PATH) as new_session:
-                settings = new_session.query(GlobalSettings).first()
-                settings.messages_newer += 1
-                new_session.commit()
-            return
-        elif version_checker(msg_decrypted_dict["version"], config.VERSION_MIN_MSG)[1] == "less":
-            self.logger.info("{}: Message version too old. Deleting.".format(
-                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-            self.trash_message(msg_dict["msgid"])
-            with session_scope(DB_PATH) as new_session:
-                settings = new_session.query(GlobalSettings).first()
-                settings.messages_older += 1
-                new_session.commit()
-            return
-        else:
-            with session_scope(DB_PATH) as new_session:
-                settings = new_session.query(GlobalSettings).first()
-                settings.messages_current += 1
-                new_session.commit()
-
-        #
-        # Determine the message type
-        #
-        if "message_type" not in msg_decrypted_dict:
-            self.logger.info(
-                "{}: 'message_type' missing from message. "
-                "Deleting.".format(
+                self.trash_message(msg_dict["msgid"])
+                with session_scope(DB_PATH) as new_session:
+                    settings = new_session.query(GlobalSettings).first()
+                    settings.messages_newer += 1
+                    new_session.commit()
+                return
+            elif version_checker(msg_decrypted_dict["version"], config.VERSION_MIN_MSG)[1] == "less":
+                self.logger.info("{}: Message version too old. Deleting.".format(
                     msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-            self.trash_message(msg_dict["msgid"])
-        elif msg_decrypted_dict["message_type"] == "admin":
-            if self.bm_sync_complete:
-                # check before processing if sync has really completed
-                self.check_sync()
+                self.trash_message(msg_dict["msgid"])
+                with session_scope(DB_PATH) as new_session:
+                    settings = new_session.query(GlobalSettings).first()
+                    settings.messages_older += 1
+                    new_session.commit()
+                return
+            else:
+                with session_scope(DB_PATH) as new_session:
+                    settings = new_session.query(GlobalSettings).first()
+                    settings.messages_current += 1
+                    new_session.commit()
 
-            with session_scope(DB_PATH) as new_session:
-                admin_store = new_session.query(AdminMessageStore).filter(
-                    AdminMessageStore.message_id == msg_dict["msgid"]).first()
-                if not self.bm_sync_complete:
-                    # Add to admin message store DB to indicate to skip processing if not synced
-                    if not admin_store:
-                        new_store = AdminMessageStore()
-                        new_store.message_id = msg_dict["msgid"]
-                        new_store.time_added = datetime.datetime.now()
-                        new_session.add(new_store)
-                        new_session.commit()
-                    self.logger.info("{}: Skipping processing of admin command until synced".format(
+            # Check if a previous request to delete a post with a password has been made, compare hashes
+            delete_post_hash_check = new_session.query(PostDeletePasswordHashes).filter(
+                PostDeletePasswordHashes.message_id == msg_dict["msgid"]).first()
+            if (delete_post_hash_check and
+                    "thread_hash" in msg_decrypted_dict and msg_decrypted_dict["thread_hash"] and
+                    "delete_password_hash" in msg_decrypted_dict and msg_decrypted_dict["delete_password_hash"] and
+                    delete_post_hash_check.password_hash == msg_decrypted_dict["delete_password_hash"]):
+                self.logger.info("{}: Message received that matches password hash to delete post. Deleting.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                self.trash_message(msg_dict["msgid"])
+                add_mod_log_entry(
+                    "Post deleted with password",
+                    message_id=msg_dict["msgid"],
+                    user_from=msg_dict["fromAddress"],
+                    board_address=msg_dict["toAddress"],
+                    thread_hash=msg_decrypted_dict["thread_hash"])
+                return
+
+            #
+            # Determine the message type
+            #
+            if "message_type" not in msg_decrypted_dict:
+                self.logger.info(
+                    "{}: 'message_type' missing from message. "
+                    "Deleting.".format(
                         msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-                else:
-                    # delete stored admin message ID and process admin command
-                    if admin_store:
-                        new_session.delete(admin_store)
-                    process_admin(msg_dict, msg_decrypted_dict)
-        elif msg_decrypted_dict["message_type"] == "post":
-            self.process_post(msg_dict, msg_decrypted_dict)
-        elif msg_decrypted_dict["message_type"] == "list":
-            self.process_list(msg_dict, msg_decrypted_dict)
-        else:
-            self.logger.error("{}: Unknown message type: {}".format(
-                msg_dict["msgid"][-config.ID_LENGTH:].upper(),
-                msg_decrypted_dict["message_type"]))
+                self.trash_message(msg_dict["msgid"])
+            elif msg_decrypted_dict["message_type"] == "admin":
+                with session_scope(DB_PATH) as new_session:
+                    admin_store = new_session.query(AdminMessageStore).filter(
+                        AdminMessageStore.message_id == msg_dict["msgid"]).first()
+                    if not self.bm_sync_complete:
+                        # Add to admin message store DB to indicate to skip processing if not synced
+                        if not admin_store:
+                            new_store = AdminMessageStore()
+                            new_store.message_id = msg_dict["msgid"]
+                            new_store.time_added = datetime.datetime.now()
+                            new_session.add(new_store)
+                            new_session.commit()
+                        self.logger.info("{}: Skipping processing of admin command until synced".format(
+                            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                    else:
+                        # delete stored admin message ID and process admin command
+                        if admin_store:
+                            new_session.delete(admin_store)
+                        process_admin(msg_dict, msg_decrypted_dict)
+            elif msg_decrypted_dict["message_type"] == "post_delete_password":
+                self.process_post_delete_password(msg_dict, msg_decrypted_dict)
+            elif msg_decrypted_dict["message_type"] == "post":
+                self.process_post(msg_dict, msg_decrypted_dict)
+            elif msg_decrypted_dict["message_type"] == "game":
+                self.process_game(msg_dict, msg_decrypted_dict)
+            elif msg_decrypted_dict["message_type"] == "list":
+                self.process_list(msg_dict, msg_decrypted_dict)
+            else:
+                self.logger.error("{}: Unknown message type: {}".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper(),
+                    msg_decrypted_dict["message_type"]))
+        except Exception as e:
+            self.logger.exception("{}: process_message() error: {}".format(
+                msg_dict["msgid"][-config.ID_LENGTH:].upper(), e))
 
-    def process_post(self, msg_dict, msg_decrypted_dict):
-        """Process message as a post to a board"""
-        self.logger.info("{}: Message is a post".format(
+    def process_post_delete_password(self, msg_dict, msg_decrypted_dict):
+        """Process message as a request to delete post"""
+        self.logger.info("{}: Message is a request to delete a post".format(
             msg_dict["msgid"][-config.ID_LENGTH:].upper()))
 
+        if "message_id" not in msg_decrypted_dict or not msg_decrypted_dict["message_id"]:
+            self.logger.error(
+                "{}: No message ID. Deleting.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        if "thread_hash" not in msg_decrypted_dict or not msg_decrypted_dict["thread_hash"]:
+            self.logger.error(
+                "{}: No thread hash. Deleting.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        if "delete_password" not in msg_decrypted_dict or not msg_decrypted_dict["delete_password"]:
+            self.logger.error(
+                "{}: No password. Deleting.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        if "timestamp_utc" not in msg_decrypted_dict or not msg_decrypted_dict["timestamp_utc"]:
+            self.logger.error(
+                "{}: No timestamp. Deleting.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        if "timestamp_utc" in msg_decrypted_dict and msg_decrypted_dict["timestamp_utc"]:
+            if msg_decrypted_dict["timestamp_utc"] > time.time() + (60 * 60 * 24):
+                self.logger.error(
+                    "{}: Timestamp too far in the future. Deleting.".format(
+                        msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                self.trash_message(msg_dict["msgid"])
+                return
+            elif msg_decrypted_dict["timestamp_utc"] < time.time() - (60 * 60 * 24 * 30):
+                self.logger.error(
+                    "{}: Timestamp too far in the past. Deleting.".format(
+                        msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                self.trash_message(msg_dict["msgid"])
+                return
+
+        try:
+            hashed_password = hashlib.sha512(msg_decrypted_dict["delete_password"].encode('utf-8')).hexdigest()
+
+            with session_scope(DB_PATH) as new_session:
+                create_hash_entry = True
+                message = new_session.query(Messages).filter(
+                    Messages.message_id == msg_decrypted_dict["message_id"]).first()
+                if message:
+                    if hashed_password == message.delete_password_hash:
+                        self.logger.info(
+                            "{}: Hashes match. Deleting post.".format(
+                                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                        add_mod_log_entry(
+                            "Post deleted with password",
+                            message_id=msg_decrypted_dict["message_id"],
+                            user_from=msg_dict["fromAddress"],
+                            board_address=msg_dict["toAddress"],
+                            thread_hash=msg_decrypted_dict["thread_hash"])
+                        delete_post(msg_decrypted_dict["message_id"])
+                    else:
+                        create_hash_entry = False
+                        self.logger.error(
+                            "{}: Hashes don't match. Not deleting post.".format(
+                                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                        add_mod_log_entry(
+                            "Invalid password to delete post with password",
+                            message_id=msg_decrypted_dict["message_id"],
+                            user_from=msg_dict["fromAddress"],
+                            board_address=msg_dict["toAddress"],
+                            thread_hash=msg_decrypted_dict["thread_hash"],
+                            success=False)
+
+                if create_hash_entry:
+                    hash_entry = new_session.query(PostDeletePasswordHashes).filter(
+                        PostDeletePasswordHashes.message_id == msg_decrypted_dict["message_id"]).first()
+                    if not hash_entry:
+                        new_hash = PostDeletePasswordHashes()
+                        new_hash.message_id = msg_decrypted_dict["message_id"]
+                        new_hash.password_hash = hashed_password
+                        new_hash.address_from = msg_dict["fromAddress"]
+                        new_hash.address_to = msg_dict["toAddress"]
+                        new_hash.timestamp_utc = msg_decrypted_dict["timestamp_utc"]
+                        new_session.add(new_hash)
+                        new_session.commit()
+        except Exception as err:
+            self.logger.error("{}: Could not process post delete with password: {}".format(
+                msg_dict["msgid"][-config.ID_LENGTH:].upper(), err))
+
+        self.trash_message(msg_dict["msgid"])
+
+    # TODO: Move to shared functions file
+    def is_public_board_require_identity(self, msg_id, to_address, from_address):
         # Determine if board is public and requires an Identity to post
         chan = get_db_table_daemon(Chan).filter(and_(
             Chan.access == "public",
             Chan.type == "board",
-            Chan.address == msg_dict['toAddress'])).first()
+            Chan.address == to_address)).first()
         if chan:
             try:
                 rules = json.loads(chan.rules)
@@ -2038,41 +2449,43 @@ class BitChan:
                 rules = {}
             if ("require_identity_to_post" in rules and
                     rules["require_identity_to_post"] and
-                    msg_dict['toAddress'] == msg_dict['fromAddress']):
+                    to_address == from_address):
                 # From address is not different from board address
                 self.logger.info(
                     "{}: Message is from its own board's address {} but "
                     "requires a non-board address to post. "
                     "Deleting.".format(
-                        msg_dict["msgid"][-config.ID_LENGTH:].upper(),
-                        msg_dict['fromAddress']))
-                self.trash_message(msg_dict["msgid"])
-                return
+                        msg_id[-config.ID_LENGTH:].upper(),
+                        from_address))
+                self.trash_message(msg_id)
+                return True
 
+    def is_ban_in_place(self, msg_id, to_address, from_address):
         # Determine if there is a current ban in place for an address
         # If so, delete message and don't process it
-            admin_bans = get_db_table_daemon(Command).filter(and_(
-                or_(Command.action == "board_ban_silent", Command.action == "board_ban_public"),
-                Command.action_type == "ban_address",
-                Command.chan_address == msg_dict['toAddress'])).all()
-            for each_ban in admin_bans:
-                try:
-                    options = json.loads(each_ban.options)
-                except:
-                    options = {}
-                if ("ban_address" in options and
-                        options["ban_address"] == msg_dict['fromAddress'] and
-                        msg_dict['fromAddress'] not in self.get_identities()):
-                    # If there is a ban and the banned user isn't yourself, delete post
-                    self.logger.info(
-                        "{}: Message is from address {} that's banned from "
-                        "board {}. Deleting.".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper(),
-                            msg_dict['fromAddress'],
-                            msg_dict['toAddress']))
-                    self.trash_message(msg_dict["msgid"])
-                    return
+        admin_bans = get_db_table_daemon(Command).filter(and_(
+            or_(Command.action == "board_ban_silent", Command.action == "board_ban_public"),
+            Command.action_type == "ban_address",
+            Command.chan_address == to_address)).all()
+        for each_ban in admin_bans:
+            try:
+                options = json.loads(each_ban.options)
+            except:
+                options = {}
+            if ("ban_address" in options and
+                    options["ban_address"] == from_address and
+                    from_address not in self.get_identities()):
+                # If there is a ban and the banned user isn't yourself, delete post
+                self.logger.info(
+                    "{}: Message is from address {} that's banned from "
+                    "board {}. Deleting.".format(
+                        msg_id[-config.ID_LENGTH:].upper(),
+                        from_address,
+                        to_address))
+                self.trash_message(msg_id)
+                return True
 
+    def is_block_in_place(self, msg_id, to_address, from_address):
         # Determine if there is a current block in place for an address
         # If so, delete message and don't process it
         # Note: only affects your local system, not other users
@@ -2081,7 +2494,7 @@ class BitChan:
                 Command.action == "block",
                 Command.do_not_send.is_(True),
                 Command.action_type == "block_address",
-                or_(Command.chan_address == msg_dict['toAddress'],
+                or_(Command.chan_address == to_address,
                     Command.chan_address == "all"))).all()
             for each_block in blocks:
                 try:
@@ -2089,64 +2502,101 @@ class BitChan:
                 except:
                     options = {}
                 if ("block_address" in options and
-                        options["block_address"] == msg_dict['fromAddress'] and
-                        each_block.chan_address in [msg_dict['toAddress'], "all"] and
-                        msg_dict['fromAddress'] not in self.get_identities()):
+                        options["block_address"] == from_address and
+                        each_block.chan_address in [to_address, "all"] and
+                        from_address not in self.get_identities()):
                     # If there is a block and the blocked user isn't yourself, delete post
                     self.logger.info(
                         "{}: Message is from address {} that's blocked from "
                         "board {}. Deleting.".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper(),
-                            msg_dict['fromAddress'],
-                            msg_dict['toAddress']))
-                    self.trash_message(msg_dict["msgid"])
-                    return
+                            msg_id[-config.ID_LENGTH:].upper(),
+                            from_address,
+                            to_address))
+                    self.trash_message(msg_id)
+                    return True
 
+    def is_sender_restricted(self, msg_id, to_address, from_address):
         # Determine if board is public and the sender is restricted from posting
         with session_scope(DB_PATH) as new_session:
             chan = new_session.query(Chan).filter(and_(
                 Chan.access == "public",
                 Chan.type == "board",
-                Chan.address == msg_dict['toAddress'])).first()
+                Chan.address == to_address)).first()
             if chan:
                 # Check if sender in restricted list
-                access = get_access(msg_dict['toAddress'])
-                if msg_dict['fromAddress'] in access["restricted_addresses"]:
+                access = get_access(to_address)
+                if from_address in access["restricted_addresses"]:
                     self.logger.info(
                         "{}: Post from restricted sender: {}. Deleting.".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper(),
-                            msg_dict['fromAddress']))
-                    self.trash_message(msg_dict["msgid"])
-                    return
+                            msg_id[-config.ID_LENGTH:].upper(),
+                            from_address))
+                    self.trash_message(msg_id)
+                    return True
                 else:
                     self.logger.info("{}: Post from unrestricted sender: {}".format(
-                        msg_dict["msgid"][-config.ID_LENGTH:].upper(),
-                        msg_dict['fromAddress']))
+                        msg_id[-config.ID_LENGTH:].upper(),
+                        from_address))
 
+    def is_sender_not_allowed_to_send(self, msg_id, to_address, from_address):
         # Determine if board is private and the sender is allowed to send to the board
         with session_scope(DB_PATH) as new_session:
             chan = new_session.query(Chan).filter(and_(
                 Chan.access == "private",
                 Chan.type == "board",
-                Chan.address == msg_dict['toAddress'])).first()
+                Chan.address == to_address)).first()
             if chan:
                 errors, dict_info = process_passphrase(chan.passphrase)
                 # Sender must be in at least one address list
-                access = get_access(msg_dict['toAddress'])
-                if (msg_dict['fromAddress'] not in
+                access = get_access(to_address)
+                if (from_address not in
                         access["primary_addresses"] +
                         access["secondary_addresses"] +
                         access["tertiary_addresses"]):
                     self.logger.info(
                         "{}: Post from unauthorized sender: {}. Deleting.".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper(),
-                            msg_dict['fromAddress']))
-                    self.trash_message(msg_dict["msgid"])
-                    return
+                            msg_id[-config.ID_LENGTH:].upper(),
+                            from_address))
+                    self.trash_message(msg_id)
+                    return True
                 else:
                     self.logger.info("{}: Post from authorized sender: {}".format(
-                        msg_dict["msgid"][-config.ID_LENGTH:].upper(),
-                        msg_dict['fromAddress']))
+                        msg_id[-config.ID_LENGTH:].upper(),
+                        from_address))
+
+    def process_post(self, msg_dict, msg_decrypted_dict):
+        """Process message as a post to a board"""
+        self.logger.info("{}: Message is a post".format(
+            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+
+        not_allow_post = self.is_public_board_require_identity(
+            msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'])
+        if not_allow_post:
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        not_allow_post = self.is_ban_in_place(
+            msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'])
+        if not_allow_post:
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        not_allow_post = self.is_block_in_place(
+            msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'])
+        if not_allow_post:
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        not_allow_post = self.is_sender_restricted(
+            msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'])
+        if not_allow_post:
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        not_allow_post = self.is_sender_not_allowed_to_send(
+            msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'])
+        if not_allow_post:
+            self.trash_message(msg_dict["msgid"])
+            return
 
         # Pre-processing checks passed. Continue processing message.
         with session_scope(DB_PATH) as new_session:
@@ -2201,6 +2651,7 @@ class BitChan:
             if not message:
                 self.logger.error("{}: Message not created. Don't create post object.".format(
                     msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                self.trash_message(msg_dict["msgid"])
                 return
             elif not message.thread or not message.thread.chan:
                 # Chan or thread doesn't exist, delete thread and message
@@ -2211,9 +2662,230 @@ class BitChan:
                 new_session.commit()
                 self.logger.error("{}: Thread or board doesn't exist. Deleting DB entries.".format(
                     msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                self.trash_message(msg_dict["msgid"])
                 return
 
             self.logger.info("{}: Adding to {} ({})".format(
+                msg_dict["msgid"][-config.ID_LENGTH:].upper(),
+                message.thread.chan.address,
+                message.thread.chan.label))
+
+    def process_game(self, msg_dict, msg_decrypted_dict):
+        """Process message as a game to a thread"""
+        self.logger.info("{}: Message is a game".format(
+            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+
+        not_allow_post = self.is_public_board_require_identity(
+            msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'])
+        if not_allow_post:
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        not_allow_post = self.is_ban_in_place(
+            msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'])
+        if not_allow_post:
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        not_allow_post = self.is_block_in_place(
+            msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'])
+        if not_allow_post:
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        not_allow_post = self.is_sender_restricted(
+            msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'])
+        if not_allow_post:
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        not_allow_post = self.is_sender_not_allowed_to_send(
+            msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'])
+        if not_allow_post:
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        if ("game" not in msg_decrypted_dict or
+                "game_hash" not in msg_decrypted_dict or
+                "game_over" not in msg_decrypted_dict or
+                "game_moves" not in msg_decrypted_dict or
+                "game_termination_pw_hash" not in msg_decrypted_dict or
+                "thread_hash" not in msg_decrypted_dict or
+                "message" not in msg_decrypted_dict or
+                "message_extra" not in msg_decrypted_dict):
+            logger.error("Malformed game post. Deleting")
+            self.trash_message(msg_dict["msgid"])
+            return
+
+        # Pre-processing checks passed. Continue processing message.
+        with session_scope(DB_PATH) as new_session:
+            if msg_decrypted_dict["message"]:
+                # Remove any potentially malicious HTML in received message text
+                # before saving it to the database or presenting it to the user
+                msg_decrypted_dict["message"] = '<span class="god-text">{}</span>'.format(
+                    html.escape(msg_decrypted_dict["message"]))
+                msg_decrypted_dict["message"] = msg_decrypted_dict["message"].replace("\n", "<br/>")
+
+            if "message_extra" in msg_decrypted_dict and msg_decrypted_dict["message_extra"]:
+                # Remove any potentially malicious HTML in received message text
+                # before saving it to the database or presenting it to the user
+                msg_decrypted_dict["message_extra"] = '<span style="font-size: 1.1em; font-family: \'Lucida Console\', Monaco, monospace;">{}</span>'.format(
+                    html.escape(msg_decrypted_dict["message_extra"]))
+                msg_decrypted_dict["message_extra"] = msg_decrypted_dict["message_extra"].replace("\n", "<br/>")
+
+            #
+            # Save message to database
+            #
+            message = new_session.query(Messages).filter(
+                Messages.message_id == msg_dict["msgid"]).first()
+            if not message:
+                lf = LF()
+                if lf.lock_acquire(config.LOCKFILE_STORE_POST, to=20):
+                    try:
+                        # Create game entry if it doesn't exist
+                        test_game = new_session.query(Games).filter(
+                            Games.game_hash == msg_decrypted_dict["game_hash"]).first()
+                        if (not test_game and
+                                ("thread_hash" in msg_decrypted_dict and msg_decrypted_dict["thread_hash"]) and
+                                ("game_hash" in msg_decrypted_dict and msg_decrypted_dict["game_hash"])):
+                            logger.info("Game not found. I'm not hosting. Creating game.")
+                            new_game = Games()
+                            new_game.game_hash = msg_decrypted_dict["game_hash"]
+                            new_game.thread_hash = msg_decrypted_dict["thread_hash"]
+                            if "game_over" in msg_decrypted_dict:
+                                new_game.game_over = msg_decrypted_dict["game_over"]
+                            new_game.is_host = False
+                            new_game.game_type = msg_decrypted_dict["game"]
+                            if msg_decrypted_dict["game_termination_pw_hash"]:
+                                new_game.game_termination_pw_hash = msg_decrypted_dict["game_termination_pw_hash"]
+                            new_session.add(new_game)
+                        if (test_game and
+                                ("thread_hash" in msg_decrypted_dict and msg_decrypted_dict["thread_hash"]) and
+                                ("game_hash" in msg_decrypted_dict and msg_decrypted_dict["game_hash"]) and
+                                ("game_over" in msg_decrypted_dict)):
+                            logger.info("Game found. Updating game_over status to {}.".format(
+                                msg_decrypted_dict["game_over"]))
+                            test_game.game_over = msg_decrypted_dict["game_over"]
+                            new_session.commit()
+
+                        test_game = new_session.query(Games).filter(
+                            Games.game_hash == msg_decrypted_dict["game_hash"]).first()
+                        if test_game:
+                            logger.info("Game found. Make game post.")
+                        else:
+                            logger.info("Game not found. Not making game post.")
+                            self.trash_message(msg_dict["msgid"])
+                            return
+
+                        if "thread_hash" in msg_decrypted_dict and msg_decrypted_dict["thread_hash"]:
+                            thread = new_session.query(Threads).filter(
+                                Threads.thread_hash == msg_decrypted_dict["thread_hash"]).first()
+                            if not thread:
+                                logger.info("Thread not found. Not making game post.")
+                                self.trash_message(msg_dict["msgid"])
+                                return
+                        else:
+                            logger.info("thread_hash not found. Not making game post.")
+                            self.trash_message(msg_dict["msgid"])
+                            return
+
+                        if not thread.chan:
+                            logger.info("Chan not found. Not making game post.")
+                            self.trash_message(msg_dict["msgid"])
+                            return
+
+                        if ("timestamp_utc" in msg_decrypted_dict and msg_decrypted_dict["timestamp_utc"] and
+                                (isinstance(msg_decrypted_dict["timestamp_utc"], int) or
+                                 isinstance(msg_decrypted_dict["timestamp_utc"], float))):
+                            timestamp_sent = int(msg_decrypted_dict["timestamp_utc"])
+                        else:
+                            timestamp_sent = int(msg_dict['receivedTime'])
+
+                        # Create message
+                        new_msg = Messages()
+                        new_msg.version = msg_decrypted_dict["version"]
+                        new_msg.message_id = msg_dict["msgid"]
+                        new_msg.post_id = get_post_id(msg_dict["msgid"])
+                        new_msg.post_number = thread.chan.last_post_number
+                        new_msg.message_sha256_hash = hashlib.sha256(json.dumps(msg_dict['message']).encode('utf-8')).hexdigest()
+                        new_msg.thread_id = thread.id
+                        new_msg.address_from = bleach.clean(msg_dict['fromAddress'])
+                        new_msg.is_op = False
+                        new_msg.message = msg_decrypted_dict["message"]
+                        new_msg.timestamp_sent = timestamp_sent
+                        new_msg.timestamp_received = int(msg_dict['receivedTime'])
+                        new_msg.message_original = msg_dict["message"]
+                        new_msg.game_message_extra = msg_decrypted_dict["message_extra"]
+
+                        if ("game_moves" in msg_decrypted_dict and
+                                msg_decrypted_dict["game_moves"] is not None and
+                                msg_decrypted_dict["game"] == "chess"):
+                            # Generate SVG board
+                            import chess
+                            import chess.svg
+                            board = chess.Board()
+                            for move in msg_decrypted_dict["game_moves"]:
+                                board.push_san(move)
+                            new_msg.game_image_file = chess.svg.board(board, size=500)
+                            new_msg.game_image_name = "chess_board.svg"
+                            new_msg.game_image_extension = "svg"
+
+                        new_session.add(new_msg)
+
+                        if int(msg_dict['receivedTime']) > thread.chan.timestamp_received:
+                            thread.chan.timestamp_received = int(msg_dict['receivedTime'])
+
+                        # regenerate card
+                        card_test = new_session.query(PostCards).filter(
+                            PostCards.thread_id == thread.id).first()
+                        if card_test and not card_test.regenerate:
+                            card_test.regenerate = True
+
+                        new_session.commit()
+
+                        # Delete message from Bitmessage after parsing and adding to BitChan database
+                        lf = LF()
+                        if lf.lock_acquire(config.LOCKFILE_API, to=120):
+                            try:
+                                return_val = api.trashMessage(msg_dict["msgid"])
+                            except Exception as err:
+                                logger.error("{}: Exception during message delete: {}".format(
+                                    msg_dict["msgid"][-config.ID_LENGTH:].upper(), err))
+                            finally:
+                                time.sleep(config.API_PAUSE)
+                                lf.lock_release(config.LOCKFILE_API)
+
+                    except Exception as err:
+                        logger.error(
+                            "{}: Could not write to database. Deleting. Error: {}".format(
+                                msg_dict["msgid"][-config.ID_LENGTH:].upper(), err))
+                        logger.exception("Saving message to DB")
+                        self.trash_message(msg_dict["msgid"])
+                    finally:
+                        time.sleep(config.API_PAUSE)
+                        lf.lock_release(config.LOCKFILE_STORE_POST)
+
+            # Check if message was created by parse_message()
+            message = new_session.query(Messages).filter(
+                Messages.message_id == msg_dict["msgid"]).first()
+            if not message:
+                self.logger.error("{}: Message not created. Don't create post object.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                self.trash_message(msg_dict["msgid"])
+                return
+            elif not message.thread or not message.thread.chan:
+                # Chan or thread doesn't exist, delete thread and message
+                if message.thread:
+                    new_session.delete(message.thread)
+                if message:
+                    new_session.delete(message)
+                new_session.commit()
+                self.logger.error("{}: Thread or board doesn't exist. Deleting DB entries.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                self.trash_message(msg_dict["msgid"])
+                return
+
+            self.logger.info("{}: Adding game post to {} ({})".format(
                 msg_dict["msgid"][-config.ID_LENGTH:].upper(),
                 message.thread.chan.address,
                 message.thread.chan.label))
@@ -2615,6 +3287,10 @@ class BitChan:
                         self.logger.error(error)
                     continue
 
+                if "%" in passphrase:  # TODO: Remove check when Bitmessage fixes this issue
+                    self.logger.error('Chan passphrase cannot contain: "%"')
+                    continue
+
             pgp_passphrase_msg = None
             pgp_passphrase_steg = None
             pgp_passphrase_attach = None
@@ -2753,6 +3429,7 @@ class BitChan:
 
     def bitmessage_monitor(self):
         """Monitor bitmessage and restart it if its API is unresponsive"""
+        pass
         while True:
             if self.timer_check_bm_alive < time.time():
                 if not self.is_restarting_bitmessage:
@@ -2808,7 +3485,7 @@ class BitChan:
         try:
             if config.DOCKER:
                 self.logger.info("Stopping bitmessage docker container. Please wait.")
-                subprocess.Popen('docker stop -t 15 bitmessage 2>&1', shell=True)
+                subprocess.Popen('docker stop -t 15 bitchan_bitmessage 2>&1', shell=True)
                 time.sleep(15)
         except Exception as err:
             self.logger.error("Exception stopping Bitmessage: {}".format(err))
@@ -2817,7 +3494,7 @@ class BitChan:
         try:
             if config.DOCKER:
                 self.logger.info("Starting bitmessage docker container. Please wait.")
-                subprocess.Popen('docker start bitmessage 2>&1', shell=True)
+                subprocess.Popen('docker start bitchan_bitmessage 2>&1', shell=True)
                 time.sleep(15)
         except Exception as err:
             self.logger.error("Exception starting Bitmessage: {}".format(err))
@@ -2935,11 +3612,16 @@ class BitChan:
     def get_timer_clear_inventory(self):
         return self.timer_clear_inventory
 
+    def get_view_counter(self):
+        return self.view_counter
+
     def refresh_address_book(self):
         self._refresh_address_book = True
+        self._refresh = True
 
     def refresh_identities(self):
         self._refresh_identities = True
+        self._refresh = True
 
     def remove_start_download(self, message_id):
         if message_id in self.list_start_download:
@@ -2953,17 +3635,31 @@ class BitChan:
             message_id[-config.ID_LENGTH:].upper()))
         self.list_start_download.append(message_id)
 
+    def set_view_counter(self, key, endpoint, value=None, increment=None):
+        lf = LF()
+        if lf.lock_acquire(config.LOCKFILE_ENDPOINT_COUNTER, to=10):
+            try:
+                if key not in self.view_counter:
+                    self.view_counter[key] = {}
+                if endpoint not in self.view_counter[key]:
+                    self.view_counter[key][endpoint] = 0
+
+                if increment:
+                    self.view_counter[key][endpoint] += 1
+                elif value:
+                    self.view_counter[key][endpoint] = value
+            except Exception as err:
+                self.logger.error("Error hourly_run(): {}".format(err))
+            finally:
+                lf.lock_release(config.LOCKFILE_ENDPOINT_COUNTER)
+
     @staticmethod
     def tor_enable_custom_address():
         logger.info("Enabling custom onion address")
-        time.sleep(20)
+        time.sleep(5)
         enable_custom_address(True)
         logger.info("Restarting tor container")
-        subprocess.Popen('docker stop -t 15 tor 2>&1 && sleep 10 && docker start tor 2>&1', shell=True)
-        time.sleep(25)
-        logger.info("Deleting current custom onion priv/pub files")
-        delete_file("/usr/local/tor/cus/hs_ed25519_public_key")
-        delete_file("/usr/local/tor/cus/hs_ed25519_secret_key")
+        subprocess.Popen('docker stop -t 15 bitchan_tor 2>&1 && sleep 10 && docker start bitchan_tor 2>&1', shell=True)
 
     @staticmethod
     def tor_disable_custom_address():
@@ -2993,7 +3689,7 @@ class BitChan:
     def tor_restart():
         logger.info("Restarting tor container")
         time.sleep(20)
-        subprocess.Popen('docker stop -t 15 tor 2>&1 && sleep 10 && docker start tor 2>&1', shell=True)
+        subprocess.Popen('docker stop -t 15 bitchan_tor 2>&1 && sleep 10 && docker start bitchan_tor 2>&1', shell=True)
 
     def update_timer_clear_inventory(self, seconds):
         self.timer_clear_inventory = time.time() + seconds
@@ -3018,14 +3714,17 @@ class Pyros(object):
     def bulk_join(self, list_address, join_bulk_list):
         return self.bitchan.bulk_join(list_address, join_bulk_list)
 
-    def check_sync(self):
-        return self.bitchan.check_sync()
-
     def clear_bm_inventory(self):
         return self.bitchan.clear_bm_inventory()
 
     def delete_and_vacuum(self):
         return self.bitchan.delete_and_vacuum()
+
+    def enable_onion_services_only(self, enable=False):
+        return self.bitchan.enable_onion_services_only(enable=enable)
+
+    def generate_post_numbers(self, all_boards=False):
+        return self.bitchan.generate_post_numbers(all_boards=all_boards)
 
     def get_address_book(self):
         return self.bitchan.get_address_book()
@@ -3048,9 +3747,9 @@ class Pyros(object):
     def get_chans_list_info(self):
         return self.bitchan.get_chans_list_info()
 
-    def get_from_list(self, chan_address, only_owner_admin=False):
+    def get_from_list(self, chan_address, only_owner_admin=False, all_addresses=False):
         return self.bitchan.get_from_list(
-            chan_address, only_owner_admin=only_owner_admin)
+            chan_address, only_owner_admin=only_owner_admin, all_addresses=all_addresses)
 
     def get_identities(self):
         return self.bitchan.get_identities()
@@ -3070,6 +3769,9 @@ class Pyros(object):
     def get_utc(self):
         return self.bitchan.get_utc()
 
+    def get_view_counter(self):
+        return self.bitchan.get_view_counter()
+
     def join_chan(self, passphrase, clear_inventory=False):
         return self.bitchan.join_chan(passphrase, clear_inventory=clear_inventory)
 
@@ -3085,6 +3787,9 @@ class Pyros(object):
     def refresh_settings(self):
         return self.bitchan.refresh_settings()
 
+    def regenerate_bitmessage_onion_address(self):
+        return self.bitchan.regenerate_bitmessage_onion_address()
+
     def remove_start_download(self, message_id):
         return self.bitchan.remove_start_download(message_id)
 
@@ -3098,6 +3803,9 @@ class Pyros(object):
 
     def set_start_download(self, message_id):
         return self.bitchan.set_start_download(message_id)
+
+    def set_view_counter(self, key, endpoint, value=None, increment=None):
+        return self.bitchan.set_view_counter(key, endpoint, value=value, increment=increment)
 
     def update_unread_mail_count(self, ident_address):
         return self.bitchan.update_unread_mail_count(ident_address)

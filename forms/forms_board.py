@@ -27,10 +27,15 @@ class Post(FlaskForm):
     from_address = StringField("From Address")
     default_from_address = BooleanField("Set default From")
     chan = StringField("Chan")
-    nation = SelectField("Nations")
+    nation = SelectField("Nations", choices=[])
     subject = StringField("Subject")
     body = StringField("Body")
     sage = BooleanField("Sage")
+    game = StringField("Host a Game")
+    game_termination_password = StringField("Game Termination Password")
+    game_password_a = StringField("Game Password A (previous)")
+    game_password_b = StringField("Game Password B (new)")
+    game_player_move = StringField("Game Player Move")
     ttl = IntegerField("TTL")
     file1 = MultipleFileField("Upload Images/Files")
     file2 = MultipleFileField("Upload Images/Files")
@@ -41,10 +46,17 @@ class Post(FlaskForm):
     image2_spoiler = BooleanField("Image 2 Spoiler")
     image3_spoiler = BooleanField("Image 3 Spoiler")
     image4_spoiler = BooleanField("Image 4 Spoiler")
-    upload = SelectField("Upload")
+    upload = SelectField("Upload", choices=[])
     upload_cipher_and_key = StringField("Upload Encryption Cipher")
     message_id = StringField("Message ID")
     page_id = StringField("Page ID")
+    game_hash = StringField("Game Hash")
+
+    # Additional options
+    image_steg_insert = IntegerField("Image to insert steg")
+    steg_message = StringField("Steg Message")
+    delete_password = StringField("Password to Delete")
+
     start_download = SubmitField("Download File")
     submit = SubmitField("Submit")
 
@@ -72,14 +84,9 @@ class SetOptions(FlaskForm):
     set_options = SubmitField("Set Options")
 
 
-class Steg(FlaskForm):
-    image_steg_insert = IntegerField("Image to insert steg")
-    steg_message = StringField("Steg Message")
-
-
 class Join(FlaskForm):
     stage = StringField("Stage")
-    join_type = SelectField("Join Type")
+    join_type = SelectField("Join Type", choices=[])
     require_identity_to_post = BooleanField("Require Identity to Post")
     automatic_wipe = BooleanField("Automatic Wipe")
     allow_list_pgp_metadata = BooleanField("Allow Lists to Store PGP Passphrases")
@@ -98,6 +105,7 @@ class Join(FlaskForm):
     pgp_passphrase_attach = StringField("Attachment PGP Passphrase")
     pgp_passphrase_steg = StringField("Steg PGP Passphrase")
     resync = BooleanField("Resync")
+    unlisted = BooleanField("Unlisted")
     next = SubmitField("Next")
     join = SubmitField("Join")
 
@@ -128,7 +136,22 @@ class Confirm(FlaskForm):
     confirm = SubmitField("Confirm")
 
 
+class ModLog(FlaskForm):
+    filter_failed_attempts = BooleanField("Failed Attempts")
+    filter_remote_moderate = BooleanField("Filter Remote Moderate")
+    filter = SubmitField("Filter")
+    bulk_delete_mod_log = SubmitField("Delete Selected Entries")
+    bulk_restore_post_mod_log = SubmitField("Restore Selected Posts")
+    bulk_restore_thread_mod_log = SubmitField("Restore Selected Threads")
+
+
 class Search(FlaskForm):
+    search_type = StringField("Search Type")
     search = StringField("Search String")
+    filter_hidden = BooleanField("Show Only Hidden")
+    filter_op = BooleanField("Show Only OP")
     page = IntegerField("Page")
+    bulk_restore_post = SubmitField("Bulk Restore Posts")
+    bulk_restore_thread = SubmitField("Bulk Restore Threads")
+    bulk_delete = SubmitField("Bulk Delete")
     submit = SubmitField("Search")

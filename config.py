@@ -1,10 +1,13 @@
+import json
 import logging
 import os
 from datetime import timedelta
 from logging import handlers
 
-VERSION_BITCHAN = "1.0.0"
-VERSION_ALEMBIC = '000000000033'
+logger = logging.getLogger('bitchan.config')
+
+VERSION_BITCHAN = "1.1.0"
+VERSION_ALEMBIC = '000000000063'
 VERSION_MSG = "1.0.0"
 VERSION_MIN_MSG = "1.0.0"
 
@@ -37,13 +40,23 @@ TOR_PROXIES = {
 }
 
 #
+# i2p
+#
+I2P_HOST = "172.28.1.6"
+I2P_SOCKS_PORT = 4444
+I2P_PROXIES = {
+    "http": "http://{host}:{port}".format(host=I2P_HOST, port=I2P_SOCKS_PORT),
+    "https": "http://{host}:{port}".format(host=I2P_HOST, port=I2P_SOCKS_PORT)
+}
+
+#
 # BitChan
 #
 INSTALL_DIR = "/usr/local/bitchan"
 REFRESH_BOARD_INFO = 20
 REFRESH_CHECK_DOWNLOAD = 5
 REFRESH_ADDRESS_MSG = 20
-REFRESH_CHECK_SYNC = 60
+REFRESH_CHECK_SYNC = 30
 REFRESH_THREAD_QUEUE = 5
 REFRESH_CHECK_LISTS = (60 * 60 * 6)  # 6 hours
 REFRESH_CHECK_CMDS = (60 * 60 * 6)  # 6 hours
@@ -52,6 +65,7 @@ REFRESH_EXPIRES_TIME = (60 * 10)  # 10 minutes
 REFRESH_DELETE_SENT = (60 * 10)  # 10 minutes
 REFRESH_REMOVE_DEL = (60 * 60 * 24)  # 1 day
 REFRESH_UNREAD_COUNT = 120
+SESSION_TIMEOUT_DAYS = 30
 MAX_PROC_THREADS = 5
 API_CHECK_FREQ = 15
 API_TIMEOUT = 15
@@ -60,7 +74,7 @@ API_LOCK_TIMEOUT = 120
 BM_WAIT_DELAY = 120
 BM_TTL = 60 * 60 * 24 * 28  # 28 days
 BM_PAYLOAD_MAX_SIZE = 2 ** 18 - 500  # 261,644
-CLEAR_INVENTORY_WAIT = 60 * 5  # 5 minutes
+CLEAR_INVENTORY_WAIT = 60 * 10  # 10 minutes
 LIST_ADD_WAIT_TO_SEND_SEC = 60 * 5  # 5 minutes
 ID_LENGTH = 9
 LABEL_LENGTH = 25
@@ -95,7 +109,7 @@ INDEX_CARDS_OP_TRUNCATE_CHARS = 110
 INDEX_CARDS_REPLY_TRUNCATE_CHARS = 75
 FILE_ATTACHMENTS_MAX = 4
 FILE_EXTENSIONS_AUDIO = ["m4a", "opus", "wav", "mp3", "ogg"]
-FILE_EXTENSIONS_IMAGE = ["jpg", "jpeg", "png", "gif", "webp"]
+FILE_EXTENSIONS_IMAGE = ["jpg", "jpeg", "png", "gif", "webp", "svg"]
 FILE_EXTENSIONS_VIDEO = ["mp4", "webm", "ogg"]
 RESTRICTED_WORDS = ['bitchan', 'bltchan']
 PGP_PASSPHRASE_MSG = """;!_:2H wCsA@aiuIk# YsJ_k3cG!..ch:>"3'&ca2h?*g PUN)AAI7P4.O%HP!9a$I@,Gn"""
@@ -113,7 +127,8 @@ LOG_FILE = os.path.join(LOG_DIRECTORY, "bitchan.log")
 LOCKFILE_ADMIN_CMD = "/var/lock/bc_admin_cmd.lock"
 LOCKFILE_API = "/var/lock/bm_api.lock"
 LOCKFILE_MSG_PROC = "/var/lock/bm_msg_proc.lock"
-LOCKFILE_STORE_POST = "/var/lock/card_generate.lock"
+LOCKFILE_STORE_POST = "/var/lock/store_post.lock"
+LOCKFILE_ENDPOINT_COUNTER = "/var/lock/endpoint_count.lock"
 
 ADMIN_OPTIONS = [
     "delete_comment",
@@ -131,46 +146,101 @@ ADMIN_OPTIONS = [
     "long_description",
 ]
 
+GAMES = {
+    "chess": "Chess",
+    "tic_tac_toe": "Tic Tac Toe"
+}
+
 DICT_UPLOAD_SERVERS = {
     "pomf.cat": {
         "type": "curl",
+        "subtype": None,
         "uri": "https://pomf.cat/upload.php",
         "download_prefix": "https://a.pomf.cat",
         "response": "JSON",
+        "json_key": None,
         "direct_dl_url": True,
         "extra_curl_options": None,
         "upload_word": "files[]",
+        "http_headers": None,
+        "proxy_type": "tor",
+        "replace_download_domain": None,
         "form_name": "pomf.cat (75 MB)"
     },
-    "youdieifyou.work": {
+    "lyrhscn2hfe6mjn7jo3titioitfzcy7x23hhkksydin6ildsgxiq.b32.i2p": {
         "type": "curl",
-        "uri": "https://youdieifyou.work/upload.php",
+        "subtype": "simple_upload",
+        "uri": 'http://lyrhscn2hfe6mjn7jo3titioitfzcy7x23hhkksydin6ildsgxiq.b32.i2p/upload',
         "download_prefix": None,
         "response": "JSON",
+        "json_key": 'direct_url',
         "direct_dl_url": True,
         "extra_curl_options": None,
-        "upload_word": "files[]",
-        "form_name": "youdieifyou.work (128 MB)"
+        "upload_word": None,
+        "http_headers": '["Accept: application/json"]',
+        "proxy_type": "i2p",
+        "replace_download_domain": None,
+        "form_name": "bunkerfiles.i2p (? MB, 12h expire)"
+    },
+    "apo53zid3xe7rewxjw7whdym2rmyowsj7jeoiwrl5zlmf7oqrxwq.b32.i2p": {
+        "type": "curl",
+        "subtype": "simple_upload",
+        "uri": 'http://apo53zid3xe7rewxjw7whdym2rmyowsj7jeoiwrl5zlmf7oqrxwq.b32.i2p',
+        "download_prefix": None,
+        "response": "str_url",
+        "json_key": 'direct_url',
+        "direct_dl_url": True,
+        "extra_curl_options": None,
+        "upload_word": None,
+        "http_headers": None,
+        "proxy_type": "i2p",
+        "replace_download_domain": '["0xff.i2p", "apo53zid3xe7rewxjw7whdym2rmyowsj7jeoiwrl5zlmf7oqrxwq.b32.i2p"]',
+        "form_name": "0xff.i2p (128 MB, 15d - 200d expire)"
     },
     "uguu.se": {
         "type": "curl",
+        "subtype": None,
         "uri": "https://uguu.se/upload.php",
         "download_prefix": None,
         "response": "JSON",
+        "json_key": None,
         "direct_dl_url": True,
         "extra_curl_options": None,
         "upload_word": "files[]",
+        "http_headers": None,
+        "proxy_type": "tor",
+        "replace_download_domain": None,
         "form_name": "uguu.se (100 MB, 24h expire)"
     },
     "femto.pw": {
         "type": "curl",
+        "subtype": None,
         "uri": "https://v2.femto.pw/upload",
         "download_prefix": "https://femto.pw",
         "response": "JSON",
+        "json_key": None,
         "direct_dl_url": True,
         "extra_curl_options": None,
         "upload_word": "upload",
+        "http_headers": None,
+        "proxy_type": "tor",
+        "replace_download_domain": None,
         "form_name": "v2.femto.pw (8 GB)"
+    },
+    "youdieifyou.work": {
+        "type": "curl",
+        "subtype": None,
+        "uri": "https://youdieifyou.work/upload.php",
+        "download_prefix": None,
+        "response": "JSON",
+        "json_key": None,
+        "direct_dl_url": True,
+        "extra_curl_options": None,
+        "upload_word": "files[]",
+        "http_headers": None,
+        "proxy_type": "tor",
+        "replace_download_domain": None,
+        "form_name": "youdieifyou.work (128 MB)"
     },
     # "catbox.moe": {  # Some tor IPs are blocked, don't use. Here for posterity.
     #     "type": "curl",
@@ -184,22 +254,32 @@ DICT_UPLOAD_SERVERS = {
     # },
     "anonfile": {
         "type": "anonfile",
+        "subtype": None,
         "uri": None,
         "download_prefix": None,
         "response": None,
+        "json_key": None,
         "direct_dl_url": False,
         "extra_curl_options": None,
         "upload_word": None,
+        "http_headers": None,
+        "proxy_type": "tor",
+        "replace_download_domain": None,
         "form_name": "anonfiles.com (100 GB)"
     },
     "bayfiles": {
         "type": "anonfile",
+        "subtype": None,
         "uri": None,
         "download_prefix": None,
         "response": None,
+        "json_key": None,
         "direct_dl_url": False,
         "extra_curl_options": None,
         "upload_word": None,
+        "http_headers": None,
+        "proxy_type": "tor",
+        "replace_download_domain": None,
         "form_name": "bayfiles.com (20 GB)"
     }
 }
@@ -287,7 +367,7 @@ DEFAULT_CHANS = [
     }
 ]
 
-THEMES_DARK = ["Dark"]
+THEMES_DARK = ["Dark", "Console"]
 THEMES_LIGHT = ["Classic", "Frosty"]
 
 #
@@ -336,15 +416,31 @@ logging.basicConfig(
 
 
 class ProdConfig(object):
-    SECRET_KEY = os.urandom(32)
+    key = None
+    try:
+        if os.path.exists('/usr/local/bitchan/flask_secret_key'):
+            with open('/usr/local/bitchan/flask_secret_key', 'r') as r:
+                contents = str(r.read())
+                if contents:
+                    key = contents
+        if not key:
+            key = str(os.urandom(32))
+            with open('/usr/local/bitchan/flask_secret_key', 'w') as w:
+                w.write(key)
+    except:
+        key = str(os.urandom(32))
+
+    SECRET_KEY = key
+    SESSION_TYPE = "filesystem"
+    SESSION_PERMANENT = False
+    PERMANENT_SESSION_LIFETIME = timedelta(days=30)
+
     CAPTCHA_ENABLE = True
     CAPTCHA_LENGTH = 5
     CAPTCHA_WIDTH = 160
     CAPTCHA_HEIGHT = 50
     CAPTCHA_FONTS = ['/home/bitchan/static/fonts/carbontype.ttf']
     DB_PATH = 'sqlite:///{}'.format(DATABASE_BITCHAN)
+
     SQLALCHEMY_DATABASE_URI = 'sqlite:///{}'.format(DATABASE_BITCHAN)
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SESSION_TYPE = "filesystem"
-    SESSION_PERMANENT = True
-    PERMANENT_SESSION_LIFETIME = timedelta(days=31)

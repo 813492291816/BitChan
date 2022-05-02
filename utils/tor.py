@@ -1,13 +1,26 @@
 import logging
 
+import requests
+
+from config import TOR_PROXIES
+
 logger = logging.getLogger('bitchan.tor')
 
 path_torrc = "/etc/tor/torrc"
-str_custom_enabled = "HiddenServiceDir /usr/local/tor/cus/\nHiddenServicePort 80 unix:/usr/local/nginx/nginx.sock"
-str_custom_disabled = "#HiddenServiceDir /usr/local/tor/cus/\n#HiddenServicePort 80 unix:/usr/local/nginx/nginx.sock"
 
-str_random_enabled = "HiddenServiceDir /usr/local/tor/rand/\nHiddenServicePort 80 unix:/usr/local/nginx/nginx.sock"
-str_random_disabled = "#HiddenServiceDir /usr/local/tor/rand/\n#HiddenServicePort 80 unix:/usr/local/nginx/nginx.sock"
+str_bm_enabled = "HiddenServiceDir /usr/local/tor/bm/\nHiddenServicePort 8444 172.28.1.3:8444"
+
+str_custom_enabled = "HiddenServiceDir /usr/local/tor/cus/\nHiddenServicePort 80 unix:/run/nginx.sock"
+str_custom_disabled = "#HiddenServiceDir /usr/local/tor/cus/\n#HiddenServicePort 80 unix:/run/nginx.sock"
+
+str_random_enabled = "HiddenServiceDir /usr/local/tor/rand/\nHiddenServicePort 80 unix:/run/nginx.sock"
+str_random_disabled = "#HiddenServiceDir /usr/local/tor/rand/\n#HiddenServicePort 80 unix:/run/nginx.sock"
+
+
+def get_tor_session():
+    session = requests.session()
+    session.proxies = TOR_PROXIES
+    return session
 
 
 def enable_custom_address(enable):

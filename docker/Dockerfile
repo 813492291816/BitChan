@@ -24,7 +24,6 @@ RUN chown bitchan /home/bitchan
 # Apt dependencies
 COPY ./install_packages.sh /home/bitchan/install_packages.sh
 RUN /bin/bash /home/bitchan/install_packages.sh
-RUN rm -f /home/bitchan/requirements-bitmessage.txt
 
 # Upgrade pips
 RUN pip2 install --upgrade pip

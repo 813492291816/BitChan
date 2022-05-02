@@ -1,4 +1,4 @@
-{% set theme = themes[settings.theme] %}
+{% set theme = themes[get_theme()] %}
 
 .crosslink {
   text-shadow: none;
@@ -48,7 +48,7 @@ a.reply-tooltip:hover div {
   background: {{theme.postbg}};
   max-width: 850px;
   margin: 5px 0 0 5px;
-  outline: 2px solid black;
+  outline: 2px solid {{theme.reply_outline}};
   color: black;
   position: fixed;
   top: 0%;
@@ -120,50 +120,6 @@ a.reply-tooltip:hover div {
     text-decoration: none;
 }
 
-#back2Top {
-    width: 40px;
-    line-height: 40px;
-    overflow: hidden;
-    z-index: 999;
-    cursor: pointer;
-    transform: rotate(270deg);
-    position: fixed;
-    bottom: 50px;
-    right: 0;
-    background-color: #DDD;
-    color: #555;
-    text-align: center;
-    font-size: 30px;
-    text-decoration: none;
-}
-
-#back2Top:hover {
-    background-color: #DDF;
-    color: #000;
-}
-
-#back2Bottom {
-    width: 40px;
-    line-height: 40px;
-    overflow: hidden;
-    z-index: 999;
-    cursor: pointer;
-    transform: rotate(90deg);
-    position: fixed;
-    bottom: 50px;
-    right: 0;
-    background-color: #DDD;
-    color: #555;
-    text-align: center;
-    font-size: 30px;
-    text-decoration: none;
-}
-
-#back2Bottom:hover {
-    background-color: #DDF;
-    color: #000;
-}
-
 .video-insert {
     width: 100% !important;
     height: auto !important;
@@ -222,6 +178,10 @@ a.reply-tooltip:hover div {
     padding-bottom: 0.5em;
 }
 
+.center {
+    text-align: center;
+}
+
 .head-center {
     text-align: center;
     width: 100%;
@@ -263,11 +223,12 @@ input:checked + label + .content {
 
 .block-reply {
     min-width: 3em;
+    word-break: break-word;
 }
 
 .replace-shadow {
     color: white;
-    text-shadow: 2px 2px 4px #000000;
+    text-shadow: 2px 2px 4px {{theme.shadow}};
 }
 
 .replace-big {
@@ -296,12 +257,13 @@ input:checked + label + .content {
 }
 
 .replace-spoiler {
-    color: black;
-    background-color: black;
+    color: {{theme.spoiler}};
+    background-color: {{theme.spoiler}};
 }
 
 .replace-spoiler:hover {
-    color: white;
+    color: {{theme.spoiler_hover_text}};
+    background-color: {{theme.spoiler_hover_bg}};
 }
 
 .language-ascii-art {
@@ -355,3 +317,120 @@ input:checked + label + .content {
     -webkit-text-stroke-width: 0.4px;
     -webkit-text-stroke-color: red;
 }
+
+/*beginning of popup*/
+.optionsoverlay {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.7);
+  transition: opacity 500ms;
+  visibility: hidden;
+  opacity: 0;
+  z-index: 999;
+}
+.optionsoverlay:target {
+  visibility: visible;
+  opacity: 1;
+}
+
+.optionspopup {
+  margin: 70px auto;
+  padding: 20px;
+  background: {{theme.bgcolor}};
+  border-radius: 5px;
+  max-width: 400px;
+  position: relative;
+  border-style: solid;
+  border-color: {{theme.options_border}};
+}
+
+.optionspopup h2 {
+  margin-top: 0;
+  color: {{theme.textcolor}};
+}
+
+.optionspopup .close {
+  position: absolute;
+  top: 20px;
+  right: 30px;
+  transition: all 200ms;
+  font-size: 30px;
+  font-weight: bold;
+  text-decoration: none;
+  color: {{theme.textcolor}};
+}
+
+.optionspopup .content {
+  max-height: 30%;
+  overflow: auto;
+}
+/* end of popup */
+
+/* beginning of popup content */
+/*
+ CSS for the main interaction
+*/
+.tabset > input[type="radio"] {
+  position: absolute;
+  left: -200vw;
+}
+
+.tabset .tab-panel {
+  display: none;
+}
+
+.tabset > input:first-child:checked ~ .tab-panels > .tab-panel:first-child,
+.tabset > input:nth-child(3):checked ~ .tab-panels > .tab-panel:nth-child(2),
+.tabset > input:nth-child(5):checked ~ .tab-panels > .tab-panel:nth-child(3),
+.tabset > input:nth-child(7):checked ~ .tab-panels > .tab-panel:nth-child(4),
+.tabset > input:nth-child(9):checked ~ .tab-panels > .tab-panel:nth-child(5),
+.tabset > input:nth-child(11):checked ~ .tab-panels > .tab-panel:nth-child(6) {
+  display: block;
+}
+
+.tabset > label {
+  position: relative;
+  display: inline-block;
+  padding: 3px 3px 3px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+}
+
+.tabset > label:hover,
+.tabset > input:focus + label {
+  color: {{theme.head_from}};
+}
+
+.tabset > label:hover::after,
+.tabset > input:focus + label::after,
+.tabset > input:checked + label::after {
+  background: {{theme.posthighlight}};
+}
+
+.tabset > input:checked + label {
+  border-color: {{theme.options_tab_border}};
+  border-bottom: 1px solid {{theme.divborder}};
+  margin-bottom: -1px;
+}
+
+.tab-panel {
+  padding-top: 15px;
+  border-top: 1px solid {{theme.options_tab_border}};
+}
+
+/*
+ Demo purposes only
+*/
+*,
+*:before,
+*:after {
+  box-sizing: border-box;
+}
+
+.tabset {
+  max-width: 65em;
+}
+/* end of popup content */

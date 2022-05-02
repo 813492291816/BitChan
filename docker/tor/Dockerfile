@@ -1,12 +1,14 @@
-FROM alpine:3.12
+FROM alpine:edge
 
 RUN apk update && apk add tor
 
 RUN mkdir -p /usr/local/tor
+RUN mkdir -p /usr/local/tor/bm
 RUN mkdir -p /usr/local/tor/cus
 RUN mkdir -p /usr/local/tor/rand
 RUN mkdir -p /usr/local/tor/authorized_clients/
 RUN chmod -R 700 /usr/local/tor
+RUN chown -R root /usr/local/tor
 
 RUN mkdir -p /root/.tor
 RUN chown -R root /root/.tor

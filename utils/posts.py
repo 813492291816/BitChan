@@ -1,18 +1,22 @@
 import json
 import logging
+import time
 
 import config
 from bitchan_client import DaemonCom
 from database.models import Chan
+from database.models import DeletedThreads
+from database.models import Games
 from database.models import Messages
 from database.models import PostCards
-from database.models import PostReplies
 from database.models import Threads
 from database.utils import session_scope
 from utils.files import delete_message_files
-from utils.message_summary import get_post_id
 from utils.replacements import is_board_post_reply
 from utils.replacements import is_post_id_reply
+from utils.shared import get_post_id
+from utils.shared import regenerate_card_popup_post_html
+from utils.shared import regenerate_ref_to_from_post
 
 daemon_com = DaemonCom()
 
@@ -24,19 +28,23 @@ logger = logging.getLogger('bitchan.posts')
 def delete_message_replies(message_id):
     post_id = get_post_id(message_id)
     with session_scope(DB_PATH) as new_session:
-        reply_entries = new_session.query(PostReplies).filter(
-            PostReplies.reply_ids.contains(post_id)).all()
-        for each_entry in reply_entries:
-            replies = json.loads(each_entry.reply_ids)
-            replies.remove(post_id)
-            each_entry.reply_ids = json.dumps(replies)
-        new_session.commit()
+        messages = new_session.query(Messages).filter(
+            Messages.post_ids_replying_to_msg.contains(post_id)).all()
+        for each_entry in messages:
+            try:
+                replies = json.loads(each_entry.post_ids_replying_to_msg)
+                replies.remove(post_id)
+                each_entry.post_ids_replying_to_msg = json.dumps(replies)
+            except:
+                pass
 
-        # delete reply entry
-        reply_entry = new_session.query(PostReplies).filter(
-            PostReplies.post_id == post_id).first()
-        if reply_entry:
-            new_session.delete(reply_entry)
+            message = new_session.query(Messages).filter(
+                Messages.post_id == each_entry.post_id).first()
+            if message:
+                message.regenerate_post_html = True
+                new_session.commit()
+
+        new_session.commit()
 
 
 def delete_chan(address):
@@ -48,13 +56,30 @@ def delete_chan(address):
             new_session.commit()
 
 
-def delete_post(message_id):
+def delete_post(message_id, only_hide=False):
     with session_scope(DB_PATH) as new_session:
         message = new_session.query(Messages).filter(
             Messages.message_id == message_id).first()
         thread_hash = message.thread.thread_hash
         chan_id = message.thread.chan.id
+        chan_address = message.thread.chan.address
         if message:
+            # Signal card needs to be rendered again
+            card = new_session.query(PostCards).filter(
+                PostCards.thread_id == thread_hash).first()
+            if card:
+                card.regenerate = True
+
+            if only_hide:
+                message.hide = True
+                message.hide_ts = time.time()
+                message.regenerate_popup_html = True
+                message.regenerate_post_html = True
+                new_session.commit()
+
+                regenerate_ref_to_from_post(message_id)
+                return
+
             # Delete all files associated with message
             delete_message_files(message.message_id)
 
@@ -64,46 +89,54 @@ def delete_post(message_id):
             # Add deleted message entry
             daemon_com.trash_message(message_id)
 
-            # Signal card needs to be rendered again
-            card = new_session.query(PostCards).filter(
-                PostCards.thread_id == thread_hash).first()
-            if card:
-                card.regenerate = True
-
             # Indicate which board needs to regenerate post numbers
             chan = new_session.query(Chan).filter(
                 Chan.id == chan_id).first()
             if chan:
                 chan.regenerate_numbers = True
 
-            # Delete message from database
-            new_session.delete(message)
+            regenerate_ref_to_from_post(message_id, delete_message=True)
+
+            # Update thread timestamp
+            update_thread_timestamp(thread_hash)
+
+            # Update board timestamp
+            update_board_timestamp(chan_address)
+
+
+def restore_post(message_id):
+    with session_scope(DB_PATH) as new_session:
+        message = new_session.query(Messages).filter(
+            Messages.message_id == message_id).first()
+        thread_hash = message.thread.thread_hash
+        if message:
+            # Signal card needs to be rendered again
+            card = new_session.query(PostCards).filter(
+                PostCards.thread_id == thread_hash).first()
+            if card:
+                card.regenerate = True
+
+            message.delete_comment = None
+            message.hide = False
+            message.hide_ts = time.time()
+            message.regenerate_popup_html = True
+            message.regenerate_post_html = True
             new_session.commit()
 
-            # Update thread timestamp to last current post timestamp
-            thread = new_session.query(Threads).filter(
-                Threads.thread_hash == thread_hash).first()
-            if thread:
-                message_latest = new_session.query(Messages).filter(
-                    Messages.thread_id == thread.id).order_by(
-                        Messages.timestamp_sent.desc()).first()
-                if message_latest:
-                    thread.timestamp_sent = message_latest.timestamp_sent
-                    new_session.commit()
-
-                # Update board timestamp to latest thread timestamp
-                board = new_session.query(Chan).filter(
-                    Chan.id == thread.chan_id).first()
-                if board:
-                    latest_thread = new_session.query(Threads).filter(
-                        Threads.chan_id == board.id).order_by(
-                            Threads.timestamp_sent.desc()).first()
-                    if latest_thread:
-                        board.timestamp_sent = latest_thread.timestamp_sent
-                        new_session.commit()
+            regenerate_ref_to_from_post(message_id)
 
 
-def delete_thread(thread_id):
+def restore_thread(thread_id):
+    with session_scope(DB_PATH) as new_session:
+        thread = new_session.query(Threads).filter(
+            Threads.thread_hash == thread_id).first()
+        if thread:
+            thread.hide = False
+            thread.hide_ts = time.time()
+            new_session.commit()
+
+
+def delete_thread(thread_id, only_hide=False):
     with session_scope(DB_PATH) as new_session:
         card = new_session.query(PostCards).filter(
             PostCards.thread_id == thread_id).first()
@@ -114,14 +147,69 @@ def delete_thread(thread_id):
         thread = new_session.query(Threads).filter(
             Threads.thread_hash == thread_id).first()
         if thread:
+            if only_hide:
+                thread.hide = True
+                thread.hide_ts = time.time()
+                new_session.commit()
+                return
+
+            thread_hash = thread.thread_hash
+            board_address = thread.chan.address
             new_session.delete(thread)
             new_session.commit()
 
+            # Store deleted thread ID to discard future posts to this thread
+            deleted_thread = DeletedThreads()
+            deleted_thread.thread_hash = thread_hash
+            deleted_thread.board_address = board_address
+            deleted_thread.timestamp_utc = time.time()
+            new_session.add(deleted_thread)
+            new_session.commit()
+
+            if board_address:
+                update_board_timestamp(board_address)
+
+            # Delete any games associated with thread
+            games = new_session.query(Games).filter(
+                Games.thread_hash == thread_hash).all()
+            for each_game in games:
+                new_session.delete(each_game)
+            new_session.commit()
+
+
+def update_board_timestamp(address):
+    """ Update board timestamp """
+    with session_scope(DB_PATH) as new_session:
+        chan = new_session.query(Chan).filter(
+            Chan.address == address).first()
+        if chan:
+            thread = new_session.query(Threads).filter(
+                Threads.chan_id == chan.id).order_by(
+                    Threads.timestamp_sent.desc()).first()
+            if thread and thread.timestamp_sent:
+                chan.timestamp_sent = thread.timestamp_sent
+                new_session.commit()
+
+
+def update_thread_timestamp(thread_hash):
+    """ Update thread timestamp """
+    with session_scope(DB_PATH) as new_session:
+        thread = new_session.query(Threads).filter(
+            Threads.thread_hash == thread_hash).first()
+        if thread:
+            message_latest = new_session.query(Messages).filter(
+                Messages.thread_id == thread.id).order_by(
+                    Messages.timestamp_sent.desc()).first()
+            if message_latest:
+                thread.timestamp_sent = message_latest.timestamp_sent
+                new_session.commit()
+
 
 def process_message_replies(message_id, message):
+    replies = []
+
     with session_scope(DB_PATH) as new_session:
         # Check for post replies
-        replies = []
         if message:
             lines = message.split("<br/>")
             for line in lines:
@@ -141,16 +229,20 @@ def process_message_replies(message_id, message):
         if replies:
             this_post_id = message_id[-config.ID_LENGTH:].upper()
             for each_reply_id in replies:
-                post_replied_to = new_session.query(PostReplies).filter(
-                    PostReplies.post_id == each_reply_id).first()
+                post_replied_to = new_session.query(Messages).filter(
+                    Messages.post_id == each_reply_id).first()
                 if post_replied_to:
-                    reply_ids = json.loads(post_replied_to.reply_ids)
+                    try:
+                        reply_ids = json.loads(post_replied_to.post_ids_replying_to_msg)
+                    except:
+                        reply_ids = []
                     if this_post_id not in reply_ids:
                         reply_ids.append(this_post_id)
-                        post_replied_to.reply_ids = json.dumps(reply_ids)
-                else:
-                    new_post_replies = PostReplies()
-                    new_post_replies.post_id = each_reply_id
-                    new_post_replies.reply_ids = json.dumps([this_post_id])
-                    new_session.add(new_post_replies)
-                new_session.commit()
+
+                        # If reply IDs change, regenerate post html
+                        if post_replied_to.post_ids_replying_to_msg != json.dumps(reply_ids):
+                            post_replied_to.regenerate_post_html = True
+                            post_replied_to.post_ids_replying_to_msg = json.dumps(reply_ids)
+                            new_session.commit()
+
+    return replies

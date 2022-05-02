@@ -162,27 +162,20 @@ def make_quote_from_book(lines_book, random_):
             return line_number, random_line
 
 
-def replace_8ball(text, seed):
-    regex = r"(?:\A|\s)(?i)#8ball"
-    lines = text.split("\n")
+def replace_8ball(body, seed):
+    matches = re.findall(r"(?i)(?<!\S)#8ball(?!\S)", body)
+    random.seed(seed)
 
-    find_count = 0
-    lines_finds = IterFinds(lines, regex)
-    for line_index, i in lines_finds:
-        for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
-            if find_count > 25:  # Process max of 25 per message
-                return "\n".join(lines)
-            elif match_index == i:
-                random.seed(seed + str(line_index) + str(match_index))
-                match = lines[line_index][each_find.start():each_find.end()]
-                start_string = lines[line_index][:each_find.start()]
-                end_string = lines[line_index][each_find.end():]
-                middle_string = ' <span class="replace-funcs">{}({})</span>'.format(
-                    match, random.choice(replacements_data.list_8ball))
-                find_count += 1
-                lines[line_index] = start_string + middle_string + end_string
+    for i in range(1, len(matches) + 1):
+        if i > 50:  # Process max of 50 per message
+            break
+        body = re.sub(
+            r"(?i)(?<!\S)#8ball(?!\S)",
+            '<span class="replace-funcs">#8ball({choice})</span>'.format(choice=random.choice(
+                replacements_data.list_8ball)),
+            body, count=1)
 
-    return "\n".join(lines)
+    return body
 
 
 def replace_card_pulls(text, seed):
@@ -192,14 +185,14 @@ def replace_card_pulls(text, seed):
         "2♦", "3♦", "4♦", "5♦", "6♦", "7♦", "8♦", "9♦", "10♦", "J♦", "Q♦", "K♦", "A♦",
         "2♣", "3♣", "4♣", "5♣", "6♣", "7♣", "8♣", "9♣", "10♣", "J♣", "Q♣", "K♣", "A♣",
     ]
-    regex = r"(?:\A|\s)(?i)#c(\d+)"
+    regex = r"(?i)(?<!\S)#c(\d+)(?!\S)"
     lines = text.split("\n")
 
     find_count = 1
     lines_finds = IterFinds(lines, regex)
     for line_index, i in lines_finds:
         for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
-            if find_count > 25:  # Process max of 25 per message
+            if find_count > 50:  # Process max of 50 per message
                 return "\n".join(lines)
             elif match_index == i:
                 random.seed(seed + str(line_index) + str(match_index))
@@ -239,14 +232,14 @@ def replace_card_pulls(text, seed):
 
 
 def replace_countdown(text):
-    regex = r"\#countdown\((\d*)\)"
+    regex = r"(?i)(?<!\S)#countdown\((\d*)\)(?!\S)"
     lines = text.split("\n")
 
     find_count = 1
     lines_finds = IterFinds(lines, regex)
     for line_index, i in lines_finds:
         for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
-            if find_count > 3:  # Process max of 25 per message
+            if find_count > 3:  # Process max of 3 per message
                 return "\n".join(lines)
             elif match_index == i:
                 try:
@@ -258,7 +251,7 @@ def replace_countdown(text):
                 rand_str = get_random_alphanumeric_string(
                     12, with_punctuation=False, with_spaces=False)
 
-                middle_string = """<span class="replace-funcs">#countdown(</span><span class="replace-funcs" id="countdown_{rand_str}"></span><span class="replace-funcs">)</span><script type="text/javascript">
+                middle_string = """<span class="replace-funcs">#countdown(</span><span class="replace-funcs countdown_{rand_str}"></span><span class="replace-funcs">)</span><script type="text/javascript">
 var countDownDate_{rand_str} = {epoch_end} * 1000;
 var x_{rand_str} = setInterval(function() {{
     var now = new Date().getTime();
@@ -285,9 +278,15 @@ var x_{rand_str} = setInterval(function() {{
 
     if (distance < 0) {{
         clearInterval(x_{rand_str});
-        document.getElementById("countdown_{rand_str}").innerHTML = "Expired";
+        var countdowns = document.getElementsByClassName("countdown_{rand_str}");
+        for (var i=0; i<countdowns.length; i++) {{
+            countdowns[i].innerHTML = "Expired";
+        }}
     }} else {{
-        document.getElementById("countdown_{rand_str}").innerHTML = str_return;
+        var countdowns = document.getElementsByClassName("countdown_{rand_str}");
+        for (var i=0; i<countdowns.length; i++) {{
+            countdowns[i].innerHTML = str_return;
+        }}
     }};
 }}, 1000);
 </script>""".format(rand_str=rand_str, epoch_end=match_epoch).replace("\n", " ")
@@ -299,13 +298,13 @@ var x_{rand_str} = setInterval(function() {{
 
 def replace_dice_rolls(text, seed):
     lines = text.split("\n")
-    regex = r"(?:\A|\s)(?i)#(\d*)d(\d+)"
+    regex = r"(?i)(?<!\S)#(\d*)d(\d+)(?!\S)"
     find_count = 1
 
     lines_finds = IterFinds(lines, regex)
     for line_index, i in lines_finds:
         for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
-            if find_count > 25:  # Process max of 25 per message
+            if find_count > 50:  # Process max of 50 per message
                 return "\n".join(lines)
             elif match_index == i:
                 random.seed(seed + str(line_index) + str(match_index))
@@ -357,14 +356,14 @@ def replace_flip_flop(text, seed):
         0: "flip",
         1: "flap"
     }
-    regex = r"(?:\A|\s)(?i)#flip"
+    regex = r"(?i)(?<!\S)#flip(?!\S)"
     lines = text.split("\n")
 
     find_count = 1
     lines_finds = IterFinds(lines, regex)
     for line_index, i in lines_finds:
         for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
-            if find_count > 25:  # Process max of 25 per message
+            if find_count > 50:  # Process max of 50 per message
                 return "\n".join(lines)
             elif match_index == i:
                 random.seed(seed + str(line_index) + str(match_index))
@@ -380,7 +379,7 @@ def replace_flip_flop(text, seed):
 
 
 def replace_god_song(text, seed, message_id):
-    regex = r"(?:\A|\s)(?i)#godsong"
+    regex = r"(?i)(?<!\S)#godsong(?!\S)"
     lines = text.split("\n")
     stichomancy_lf = "/var/lock/stichomancy.lock"
     lf = LF()
@@ -455,14 +454,14 @@ def replace_iching(text, seed):
     yin_yang = [  # ratio 3/8+3/8+1/8+1/8
         '-   -', '-   -', '-   -', '-----', '-----', '-----', '- x -', '--o--'
     ]
-    regex = r"(?:\A|\s)(?i)#iching"
+    regex = r"(?i)(?<!\S)#iching(?!\S)"
     lines = text.split("\n")
 
     find_count = 1
     lines_finds = IterFinds(lines, regex)
     for line_index, i in lines_finds:
         for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
-            if find_count > 25:  # Process max of 25 per message
+            if find_count > 50:  # Process max of 50 per message
                 return "\n".join(lines)
             elif match_index == i:
                 random.seed(seed + str(line_index) + str(match_index))
@@ -524,14 +523,14 @@ def replace_rock_paper_scissors(text, seed):
         1: "paper",
         2: "scissors"
     }
-    regex = r"(?:\A|\s)(?i)#rps"
+    regex = r"(?i)(?<!\S)#rps(?!\S)"
     lines = text.split("\n")
 
     find_count = 1
     lines_finds = IterFinds(lines, regex)
     for line_index, i in lines_finds:
         for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
-            if find_count > 25:  # Process max of 25 per message
+            if find_count > 50:  # Process max of 50 per message
                 return "\n".join(lines)
             elif match_index == i:
                 random.seed(seed + str(line_index) + str(match_index))
@@ -547,14 +546,14 @@ def replace_rock_paper_scissors(text, seed):
 
 
 def replace_rune_b_pulls(text, seed):
-    regex = r"(?:\A|\s)(?i)#rb(\d+)"
+    regex = r"(?i)(?<!\S)#rb(\d+)(?!\S)"
     lines = text.split("\n")
 
     find_count = 1
     lines_finds = IterFinds(lines, regex)
     for line_index, i in lines_finds:
         for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
-            if find_count > 25:  # Process max of 25 per message
+            if find_count > 50:  # Process max of 50 per message
                 return "\n".join(lines)
             elif match_index == i:
                 random.seed(seed + str(line_index) + str(match_index))
@@ -595,14 +594,14 @@ def replace_rune_b_pulls(text, seed):
 
 
 def replace_rune_pulls(text, seed):
-    regex = r"(?:\A|\s)(?i)#r(\d+)"
+    regex = r"(?i)(?<!\S)#r(\d+)(?!\S)"
     lines = text.split("\n")
 
     find_count = 1
     lines_finds = IterFinds(lines, regex)
     for line_index, i in lines_finds:
         for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
-            if find_count > 25:  # Process max of 25 per message
+            if find_count > 50:  # Process max of 50 per message
                 return "\n".join(lines)
             elif match_index == i:
                 random.seed(seed + str(line_index) + str(match_index))
@@ -644,7 +643,7 @@ def replace_rune_pulls(text, seed):
 
 def replace_stich(text, message_id):
     lines = text.split("\n")
-    regex = r"(?:\A|\s)(?i)#stich"
+    regex = r"(?i)(?<!\S)#stich(?!\S)"
     stichomancy_lf = "/var/lock/stichomancy.lock"
     lf = LF()
 
@@ -697,14 +696,14 @@ def replace_stich(text, message_id):
 
 
 def replace_tarot_pulls(text, seed):
-    regex = r"(?:\A|\s)(?i)#t(\d+)"
+    regex = r"(?i)(?<!\S)#t(\d+)(?!\S)"
     lines = text.split("\n")
 
     find_count = 1
     lines_finds = IterFinds(lines, regex)
     for line_index, i in lines_finds:
         for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
-            if find_count > 25:  # Process max of 25 per message
+            if find_count > 50:  # Process max of 50 per message
                 return "\n".join(lines)
             elif match_index == i:
                 random.seed(seed + str(line_index) + str(match_index))
@@ -746,14 +745,14 @@ def replace_tarot_pulls(text, seed):
 
 def replace_tarot_c_pulls(text, seed):
 
-    regex = r"(?:\A|\s)(?i)#ct(\d+)"
+    regex = r"(?i)(?<!\S)#ct(\d+)(?!\S)"
     lines = text.split("\n")
 
     find_count = 1
     lines_finds = IterFinds(lines, regex)
     for line_index, i in lines_finds:
         for match_index, each_find in enumerate(re.finditer(regex, lines[line_index])):
-            if find_count > 25:  # Process max of 25 per message
+            if find_count > 50:  # Process max of 50 per message
                 return "\n".join(lines)
             elif match_index == i:
                 random.seed(seed + str(line_index) + str(match_index))

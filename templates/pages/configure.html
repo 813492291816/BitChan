@@ -10,7 +10,7 @@
         }
 
         tr:nth-child(odd) {
-            background-color: {{themes[settings.theme].posthighlight}};
+            background-color: {{themes[get_theme()].posthighlight}};
         }
 
         .table-heading {
@@ -139,6 +139,15 @@
             </tr>
             <tr>
                 <td colspan="2">This will automatically delete the sent messages in your identity mailboxes.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.debug_posts.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="debug_posts" name="debug_posts" value="y"{% if settings.debug_posts %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">This will show the entire database table entry for boards/threads/posts in an accordion. If kiosk is enabled, must be an Admin.</td>
             </tr>
             <tr>
                 <td>{{form_settings.results_per_page_board.label(class_='heading-bold')}}</td>
@@ -318,7 +327,7 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2">Require the completion of a captcha in order to post. Useful when Kiosk mode is enabled.</td>
+                <td colspan="2">Require the completion of a captcha in order to post. Useful when Kiosk mode is enabled. Does not require session in browser.</td>
             </tr>
             <tr>
                 <td>{{form_settings.enable_verification.label(class_='heading-bold')}}</td>
@@ -327,7 +336,7 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2">Enable DoS-protection. Useful when Kiosk Mode is enabled.</td>
+                <td colspan="2">Enable DoS-protection. Makes the user initially wait 5 seconds then solve a captcha before being granted access. Useful when Kiosk Mode is enabled. Requires session in browser.</td>
             </tr>
             <tr>
                 <td>{{form_settings.enable_page_rate_limit.label(class_='heading-bold')}}</td>
@@ -336,7 +345,7 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2">Enable rate-limiting page requests. Useful when Kiosk Mode is enabled.</td>
+                <td colspan="2">Enable rate-limiting page requests. Useful when Kiosk Mode is enabled. Requires session in browser.</td>
             </tr>
             <tr>
                 <td>{{form_settings.max_requests_per_period.label(class_='heading-bold')}}</td>
@@ -364,6 +373,15 @@
             </tr>
             <tr>
                 <td colspan="2">Prevent passphrases from being shown in the Board/List Information.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.bitmessage_onion_services_only.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="bitmessage_onion_services_only" name="bitmessage_onion_services_only" value="y"{% if settings.bitmessage_onion_services_only %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Only allow Bitmessage to connect to onion services. Note: This is initially disabled because Bitmessage needs to first find connections before enabling. If this is enabled and Bitmessage has not found at least one onion address to connect to, it will never be able to connect to other peers.</td>
             </tr>
         </table>
 
@@ -445,12 +463,13 @@
         {% endif %}
     </div>
 
-    <div class="heading-2 head-center themed">Hidden Onion Service</div>
-    <div class="head-center themed" style="padding-bottom: 0.5em">Random Address: {% if tor_enabled_rand and tor_address_rand %}<a class="link" href="http://{{tor_address_rand}}">http://{{tor_address_rand}}</a>{% else %}Disabled{% endif %}</div>
-    <div class="head-center themed" style="padding-bottom: 0.5em">Custom Address: {% if tor_enabled_cus and tor_address_cus %}<a class="link" href="http://{{tor_address_cus}}">http://{{tor_address_cus}}</a>{% else %}Disabled{% endif %}</div>
+    <div class="heading-2 head-center themed">Hidden Onion Services</div>
+    <div class="head-center themed" style="padding-bottom: 0.5em; word-break: break-word;">Bitmessage Address: {% if tor_enabled_bm %}<span class="replace-spoiler">{{tor_address_bm}}</span>{% else %}Disabled{% endif %}</div>
+    <div class="head-center themed" style="padding-bottom: 0.5em; word-break: break-word;">BitChan Address (Random): {% if tor_enabled_rand and tor_address_rand %}<a class="link replace-spoiler" href="http://{{tor_address_rand}}">http://{{tor_address_rand}}</a>{% else %}Disabled{% endif %}</div>
+    <div class="head-center themed" style="padding-bottom: 0.5em; word-break: break-word;">BitChan Address (Custom): {% if tor_enabled_cus and tor_address_cus %}<a class="link replace-spoiler" href="http://{{tor_address_cus}}">http://{{tor_address_cus}}</a>{% else %}Disabled{% endif %}</div>
 
     <form method="post" enctype="multipart/form-data">
-    <div class='outer' style="max-width: 800px; padding-top: 0.5em">
+    <div class='outer' style="max-width: 800px; padding-top: 0.5em; padding-bottom: 3em">
         <table class="themed">
             <tr>
                 <td>Enable Random Address</td>
@@ -480,22 +499,56 @@
                 <td colspan="2">The ZIP archive must contain public and private keys (hs_ed25519_public_key and hs_ed25519_secret_key) for v3 hidden onion.</td>
             </tr>
         </table>
-        <div class="themed" style="padding-top: 1em;">
-            Note: If a Custom Address is currently enabled and you click Save Tor Settings or Get New Random Onion Address without selecting the ZIP file, your custom onion address will be replaced with a random onion address. Additionally, if tor restarts for any reason, your custom address will be replaced by a random address as well. This is due to the private key being deleted immediately after tor startup to prevent compromising your key if BitChan is running on a remote server.
-        </div>
         <div style="padding-top: 1em;">
             <input type="submit" name="save_tor_settings" value="Save Tor Settings"/>
         </div>
         <div style="padding-top: 1em;">
-            <input type="submit" name="get_new_rand_tor" value="Get New Random Onion Address"/>
+            <input type="submit" name="get_new_rand_tor" value="Generate New Random BitChan Onion Address"/>
+        </div>
+        <div style="padding-top: 1em;">
+            <input type="submit" name="get_new_bm_tor" value="Generate New Bitmessage Onion Address"/>
+        </div>
+    </div>
+    </form>
+
+    <div class="heading-2 head-center themed">Board/List Options</div>
+
+    <a class="head-center themed" href="/unlisted">Unlisted Page</a>
+
+    <form method="post" enctype="multipart/form-data">
+    <div class='outer' style="padding-bottom: 3em;">
+        <table class="themed">
+            <tr>
+                <td>Address</td>
+                <td>Type</td>
+                <td>Name</td>
+                <td>Unlist</td>
+            </tr>
+        {% for each_type in [chans_board_info, chans_list_info] %}
+            {% for each_address in each_type %}
+            <tr>
+                <td style="font-family: monospace">{{each_address}}</td>
+                <td>{% if each_type == chans_board_info %}Board{% else %}List{% endif %}</td>
+                <td>
+                    {% if each_type == chans_board_info %}
+                    <a class="link" href="/board/{{each_address}}/1">/{{each_type[each_address]["label_short"]|safe}}/ - {{each_type[each_address]["description"]|safe}}</a>
+                    {% elif each_type == chans_list_info %}
+                    <a class="link" href="/list/{{each_address}}">/{{each_type[each_address]["label_short"]|safe}}/ - {{each_type[each_address]["description"]|safe}}</a>
+                    {% endif %}
+                </td>
+                <td><input type="checkbox" id="option_unlisted_{{each_address}}" name="option_unlisted_{{each_address}}" value="y"{% if each_type[each_address]["db"].unlisted %} checked{% endif %}/></td>
+            </tr>
+            {% endfor %}
+        {% endfor %}
+        </table>
+        <div style="padding-top: 1em;">
+            <input type="submit" name="save_chan_options" value="Save Options"/>
         </div>
     </div>
     </form>
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
-
 </div>
 {% endblock %}

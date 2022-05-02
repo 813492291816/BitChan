@@ -30,14 +30,17 @@ class DaemonCom:
     def bulk_join(self, list_address, join_bulk_list):
         return self.proxy().bulk_join(list_address, join_bulk_list)
 
-    def check_sync(self):
-        return self.proxy().check_sync()
-
     def clear_bm_inventory(self):
         return self.proxy().clear_bm_inventory()
 
     def delete_and_vacuum(self):
         return self.proxy().delete_and_vacuum()
+
+    def enable_onion_services_only(self, enable=False):
+        return self.proxy().enable_onion_services_only(enable=enable)
+
+    def generate_post_numbers(self, all_boards=False):
+        return self.proxy().generate_post_numbers(all_boards=all_boards)
 
     def get_address_book(self):
         return self.proxy().get_address_book()
@@ -63,9 +66,9 @@ class DaemonCom:
     def get_chans_list_info(self):
         return self.proxy().get_chans_list_info()
 
-    def get_from_list(self, chan_address, only_owner_admin=False):
+    def get_from_list(self, chan_address, only_owner_admin=False, all_addresses=False):
         return self.proxy().get_from_list(
-            chan_address, only_owner_admin=only_owner_admin)
+            chan_address, only_owner_admin=only_owner_admin, all_addresses=all_addresses)
 
     def get_identities(self):
         return self.proxy().get_identities()
@@ -85,6 +88,9 @@ class DaemonCom:
     def get_utc(self):
         return self.proxy().get_utc()
 
+    def get_view_counter(self):
+        return self.proxy().get_view_counter()
+
     def join_chan(self, passphrase, clear_inventory=False):
         return self.proxy().join_chan(passphrase, clear_inventory=clear_inventory)
 
@@ -100,6 +106,9 @@ class DaemonCom:
     def refresh_settings(self):
         return self.proxy().refresh_settings()
 
+    def regenerate_bitmessage_onion_address(self):
+        return self.proxy().regenerate_bitmessage_onion_address()
+
     def remove_start_download(self, message_id):
         return self.proxy().remove_start_download(message_id)
 
@@ -114,6 +123,9 @@ class DaemonCom:
 
     def set_start_download(self, message_id):
         return self.proxy().set_start_download(message_id)
+
+    def set_view_counter(self, key, endpoint, value=None, increment=None):
+        return self.proxy().set_view_counter(key, endpoint, value=value, increment=increment)
 
     def update_unread_mail_count(self, ident_address):
         return self.proxy().update_unread_mail_count(ident_address)

@@ -1,0 +1,69 @@
+<br/>
+{%- if post.file_amount -%}
+    {%- if post.file_amount == 1 -%}
+        {{"(1 File"}}
+    {%- else -%}
+        {{"(%s Files" % post.file_amount}}
+    {%- endif -%}
+
+    {%- if post.file_size -%}
+        {{", " + human_readable_size(post.file_size)}}
+    {%- endif -%}
+
+    {%- if post.file_url or (not post.file_url and post.file_size) -%}
+        {%- if post.file_size -%}
+            {{", "}}
+        {%- else -%}
+            {{"("}}
+        {%- endif -%}
+        {%- if post.file_url -%}
+            <span title="{{post.file_url}}">{{urlparse(post.file_url).netloc}}</span>
+            {%- set site_info = json.loads(post.file_upload_settings) -%}
+            {%- if "domain" in site_info and
+                  "type" in site_info and
+                  "uri" in site_info and
+                  "download_prefix" in site_info and
+                  "response" in site_info and
+                  "direct_dl_url" in site_info and
+                  "extra_curl_options" in site_info and
+                  "upload_word" in site_info -%}
+                {%- set this_upload_site = upload_sites.query.filter(and_(
+                    upload_sites.domain == site_info["domain"],
+                    upload_sites.type == site_info["type"],
+                    upload_sites.uri == site_info["uri"],
+                    upload_sites.download_prefix == site_info["download_prefix"],
+                    upload_sites.response == site_info["response"],
+                    upload_sites.direct_dl_url == site_info["direct_dl_url"],
+                    upload_sites.extra_curl_options == site_info["extra_curl_options"],
+                    upload_sites.upload_word == site_info["upload_word"])).first() -%}
+                {%- if this_upload_site %}
+                    (<a class="link" title="View/edit attachment upload site settings" href="/upload_site/edit/{{this_upload_site.id}}">v</a>)
+                {%- else %}
+                    (<a class="link" title="Add attachment upload site settings" href="/upload_site/add_msg_id/{{post.message_id}}">a</a>)
+                {%- endif -%}
+            {%- endif -%}
+        {%- else -%}
+            Bitmessage
+        {%- endif -%}
+    {%- endif -%}
+
+    {%- if post.file_enc_cipher and post.file_enc_key_bytes -%}
+        {%- if post.file_size or
+               (post.file_url or (not post.file_url and post.file_size)) -%}
+            {{", "}}
+        {%- else -%}
+            {{"("}}
+        {%- endif -%}
+        {%- if post.file_enc_cipher == "NONE" -%}
+        Unencrypted
+        {%- else -%}
+        {{post.file_enc_key_bytes * 8}}-bit {{post.file_enc_cipher}}
+        {%- endif -%}
+    {%- endif -%}
+
+    {%- if post.file_size or
+           (post.file_url or (not post.file_url and post.file_size)) or
+           (post.file_enc_cipher and post.file_enc_key_bytes) -%}
+        {{")"}}
+    {%- endif %}
+{%- endif -%}

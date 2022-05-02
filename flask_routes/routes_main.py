@@ -9,12 +9,20 @@ import subprocess
 import time
 import zipfile
 from collections import OrderedDict
+from io import BytesIO
 from io import StringIO
+from threading import Thread
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from PIL import Image
+from flask import current_app
+from flask import make_response
 from flask import redirect
 from flask import render_template
 from flask import request
+from flask import send_from_directory
 from flask import session
 from flask import url_for
 from flask.blueprints import Blueprint
@@ -31,6 +39,7 @@ from bitchan_client import DaemonCom
 from database.models import AddressBook
 from database.models import Chan
 from database.models import Command
+from database.models import EndpointCount
 from database.models import Flags
 from database.models import GlobalSettings
 from database.models import Identity
@@ -39,6 +48,7 @@ from database.models import ModLog
 from database.models import Threads
 from database.models import UploadProgress
 from database.models import UploadSites
+from flask_routes.utils import count_views
 from flask_routes.utils import is_verified
 from flask_routes.utils import rate_limit
 from forms import forms_board
@@ -46,17 +56,21 @@ from forms import forms_settings
 from utils.cards import generate_card
 from utils.files import LF
 from utils.files import delete_file
+from utils.files import get_directory_size
+from utils.files import human_readable_size
 from utils.gateway import api
 from utils.general import display_time
 from utils.general import get_random_alphanumeric_string
 from utils.html_truncate import truncate
 from utils.posts import delete_post
 from utils.posts import delete_thread
+from utils.posts import restore_post
+from utils.posts import restore_thread
 from utils.routes import allowed_access
+from utils.routes import get_logged_in_user_name
+from utils.routes import get_onion_info
 from utils.routes import page_dict
-from utils.tor import path_torrc
-from utils.tor import str_custom_enabled
-from utils.tor import str_random_enabled
+from utils.shared import add_mod_log_entry
 
 logger = logging.getLogger('bitchan.routes_main')
 daemon_com = DaemonCom()
@@ -74,22 +88,52 @@ def global_var():
 
 @blueprint.before_request
 def before_view():
-    logger.info("Pre request session: {}".format(session))
     if not is_verified():
-        return redirect(url_for('routes_verify.verify_wait'))
+        full_path_b64 = "0"
+        if request.method == "GET":
+            if request.url:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.url.encode()).decode()
+            elif request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        elif request.method == "POST":
+            if request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        return redirect(url_for('routes_verify.verify_wait',
+                                full_path_b64=full_path_b64))
+
+
+@blueprint.route('/favicon.ico')
+def favicon():
+    return send_from_directory(os.path.join(current_app.root_path, 'static'),
+                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
 
 
 @blueprint.route('/', methods=('GET', 'POST'))
+@count_views
 @rate_limit
 def index():
-    allowed, allow_msg = allowed_access(check_can_view=True)
+    allowed, allow_msg = allowed_access("can_view")
     if not allowed:
         return allow_msg
+
+    try:
+        inventory_timer_epoch = daemon_com.get_timer_clear_inventory()
+        now = time.time()
+        if inventory_timer_epoch < now:
+            inventory_timer = None
+        else:
+            inventory_timer = int(inventory_timer_epoch - now)
+    except:
+        inventory_timer = None
 
     try:
         status = daemon_com.get_api_status()
     except:
         status = False
+
     status_msg = {"status_message": []}
     settings = GlobalSettings.query.first()
 
@@ -103,22 +147,26 @@ def index():
     now = time.time()
     ts_month = now - (60 * 60 * 24 * 30)
 
-    boards = Chan.query.filter(Chan.type == "board").order_by(
-        Chan.timestamp_sent.desc())
+    boards = Chan.query.filter(
+        Chan.type == "board",
+        Chan.unlisted.is_(False)).order_by(
+            Chan.timestamp_sent.desc())
 
-    lists = Chan.query.filter(Chan.type == "list").order_by(
-        Chan.list_timestamp_changed.desc())
+    lists = Chan.query.filter(
+        Chan.type == "list",
+        Chan.unlisted.is_(False)).order_by(
+            Chan.list_timestamp_changed.desc())
 
     count = 0
     for each_board in boards.all():
-        time_wipe = None
+        wipe_epoch = None
         rules = json.loads(each_board.rules)
         if "automatic_wipe" in rules and "wipe_epoch" in rules["automatic_wipe"]:
-            time_wipe = datetime.datetime.fromtimestamp(
-                rules["automatic_wipe"]["wipe_epoch"]).strftime('%Y-%m-%d %H:%M')
+            wipe_epoch = rules["automatic_wipe"]["wipe_epoch"]
 
-        threads = Threads.query.filter(
-            Threads.chan_id == each_board.id).order_by(
+        threads = Threads.query.filter(and_(
+            Threads.chan_id == each_board.id,
+            Threads.hide.is_(False))).order_by(
                 Threads.timestamp_sent.desc()).limit(4).all()
         for each_thread in threads:
             if each_board not in cards:
@@ -128,12 +176,13 @@ def index():
                     "latest_timestamp": each_board.timestamp_sent,
                     "total_threads": 0,
                     "total_posts": 0,
-                    "wipe_date": time_wipe
+                    "wipe_epoch": wipe_epoch
                 }
                 count += 1
 
             cards[each_board]["threads"][each_thread.thread_hash] = {
                 "last_post_past": None,
+                "total_posts": 0,
                 "messages": [],
                 "ppm": 0
             }
@@ -154,10 +203,11 @@ def index():
                 and_(
                     Messages.thread_id == each_thread.id,
                     Messages.is_op.is_(False))).order_by(
-                        Messages.timestamp_sent.desc()).first()
-            if message:
-                str_past = display_time(now - message.timestamp_sent)
+                        Messages.timestamp_sent.desc())
+            if message.first():
+                str_past = display_time(now - message.first().timestamp_sent)
                 cards[each_board]["threads"][each_thread.thread_hash]["last_post_past"] = str_past
+                cards[each_board]["threads"][each_thread.thread_hash]["total_posts"] = message.count()
             elif op_message:
                 str_past = display_time(now - op_message.timestamp_sent)
                 cards[each_board]["threads"][each_thread.thread_hash]["last_post_past"] = str_past
@@ -177,11 +227,10 @@ def index():
 
     count = 0
     for each_list in lists.all():
-        time_wipe = None
+        wipe_epoch = None
         rules = json.loads(each_list.rules)
         if "automatic_wipe" in rules and "wipe_epoch" in rules["automatic_wipe"]:
-            time_wipe = datetime.datetime.fromtimestamp(
-                rules["automatic_wipe"]["wipe_epoch"]).strftime('%Y-%m-%d %H:%M')
+            wipe_epoch = rules["automatic_wipe"]["wipe_epoch"]
 
         if each_list.list_timestamp_changed:
             str_past = display_time(time.time() - each_list.list_timestamp_changed)
@@ -191,7 +240,7 @@ def index():
                     "latest_timestamp": each_list.list_timestamp_changed,
                     "last_post_past": str_past,
                     "list_entries": len(json.loads(each_list.list)),
-                    "wipe_date": time_wipe
+                    "wipe_epoch": wipe_epoch
                 }
                 count += 1
             except:
@@ -212,15 +261,98 @@ def index():
 
     return render_template("pages/index.html",
                            generate_card=generate_card,
+                           inventory_timer=inventory_timer,
                            current_time=datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
                            newest_posts=sorted_counted_cards,
                            status_msg=status_msg)
 
 
+@blueprint.route('/options_save', methods=('GET', 'POST'))
+@count_views
+@rate_limit
+def options_save():
+    allowed, allow_msg = allowed_access("can_view")
+    if not allowed:
+        return allow_msg
+
+    full_path_url = request.referrer
+    if not full_path_url:
+        full_path_url = url_for('routes_main.index')
+
+    response = make_response(redirect(full_path_url))
+
+    if request.method == "POST":
+        if request.form.get('options_save_css'):
+            response.set_cookie('options_css', request.form.get('options_css'))
+        elif request.form.get('options_save_js'):
+            response.set_cookie('options_js', request.form.get('options_js'))
+        elif request.form.get('options_save_misc'):
+            response.set_cookie('theme', request.form.get('options_theme'))
+            if request.form.get('options_post_horizontal'):
+                response.set_cookie('options_post_horizontal', '1')
+            else:
+                response.set_cookie('options_post_horizontal', '0')
+            if request.form.get('options_hide_authors'):
+                response.set_cookie('options_hide_authors', '1')
+            else:
+                response.set_cookie('options_hide_authors', '0')
+        elif request.form.get('options_export'):
+            from io import StringIO
+            from flask import send_file
+            user_options = {
+                "options_css": request.cookies.get('options_css'),
+                "options_js": request.cookies.get('options_js'),
+                "options_theme": request.cookies.get('theme'),
+                "options_post_horizontal": request.cookies.get('options_post_horizontal'),
+                "options_hide_authors": request.cookies.get('options_hide_authors')
+            }
+            buffer = BytesIO()
+            buffer.write(json.dumps(user_options).encode())
+            buffer.seek(0)
+            return send_file(
+                buffer,
+                attachment_filename='bitchan_options_{}.json'.format(
+                    datetime.datetime.now().strftime('%Y%m%d_%H%M%S')),
+                as_attachment=True)
+        elif request.form.get('options_import'):
+            save_path = '/tmp/options_{}'.format(
+                get_random_alphanumeric_string(10, with_spaces=False, with_punctuation=False))
+            try:
+                delete_file(save_path)
+                f = request.files['options_import_file']
+                f.save(save_path)
+                with open(save_path) as f:
+                    file_cont = json.loads(f.read())
+                    response.set_cookie('options_css', file_cont['options_css'])
+                    response.set_cookie('options_js', file_cont['options_js'])
+                    response.set_cookie('theme', file_cont['options_theme'])
+                    if file_cont['options_post_horizontal']:
+                        response.set_cookie('options_post_horizontal', '1')
+                    else:
+                        response.set_cookie('options_post_horizontal', '0')
+                    if file_cont['options_hide_authors']:
+                        response.set_cookie('options_hide_authors', '1')
+                    else:
+                        response.set_cookie('options_hide_authors', '0')
+            except:
+                logger.exception("Importing options")
+            finally:
+                delete_file(save_path)
+        elif request.form.get('options_reset'):
+            response.set_cookie('options_css', "")
+            response.set_cookie('options_js', "")
+            response.set_cookie('theme', "")
+            response.set_cookie('options_post_horizontal', '0')
+            response.set_cookie('options_hide_authors', '0')
+
+    return response
+
+
 @blueprint.route('/overboard/<address>/<int:current_page>')
+@count_views
 @rate_limit
 def overboard(address, current_page):
-    allowed, allow_msg = allowed_access(check_can_view=True)
+    allowed, allow_msg = allowed_access("can_view")
     if not allowed:
         return allow_msg
 
@@ -245,6 +377,7 @@ def overboard(address, current_page):
             Chan.address == address).first()
         if chan:
             overboard_info["single_board"] = True
+            overboard_info["unlisted"] = chan.unlisted
             overboard_info["board_label"] = chan.label
             overboard_info["board_description"] = chan.description
             overboard_info["board_address"] = chan.address
@@ -322,8 +455,9 @@ def overboard(address, current_page):
         post_start = (current_page - 1) * per_page
         post_end = (current_page * per_page) - 1
 
-        threads = Threads.query.order_by(
-            Threads.timestamp_sent.desc())
+        threads = Threads.query.join(Chan).filter(
+            Chan.unlisted.is_(False)).order_by(
+                Threads.timestamp_sent.desc())
         overboard_info["thread_count"] = threads.count()
 
         for i, each_thread in enumerate(threads.all()):
@@ -373,31 +507,41 @@ def overboard(address, current_page):
                            status_msg=status_msg)
 
 
-def delete_posts_threads(message_ids):
-    post_ids_delete = []
-    thread_hashes_delete = []
+@blueprint.route('/unlisted')
+@count_views
+@rate_limit
+def unlisted():
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    if not global_admin:
+        return allow_msg
+
+    status_msg = {"status_message": []}
+
+    return render_template("pages/unlisted.html",
+                           status_msg=status_msg)
+
+
+def delete_posts_threads(message_ids, user_from=None):
+    thread_hashes = []
+    board_addresses = []
+
+    # Delete threads first
     for each_msg_id in message_ids:
         msg = Messages.query.filter(
             Messages.message_id == each_msg_id).first()
-        if msg:
-            if msg.is_op:
-                # Delete thread
-                if msg.thread:
-                    thread_hashes_delete.append(msg.thread.thread_hash)
-            else:
-                post_ids_delete.append(msg.message_id)
+        if msg and msg.is_op and msg.thread:
+            if msg.thread.chan.address not in board_addresses:
+                board_addresses.append(msg.thread.chan.address)
 
-    # Delete individual messages
-    for each_msg_id in post_ids_delete:
-        delete_post(each_msg_id)
+            add_mod_log_entry(
+                'Locally deleted thread "{}"'.format(msg.thread.subject),
+                message_id=None,
+                user_from=user_from,
+                board_address=msg.thread.chan.address,
+                thread_hash=msg.thread.thread_hash)
 
-    # Delete messages of a thread and the thread
-    for each_thread_hash in thread_hashes_delete:
-        thread = Threads.query.filter(
-            Threads.thread_hash == each_thread_hash).first()
-        if thread:
             list_delete_message_ids = []
-            for message in thread.messages:
+            for message in msg.thread.messages:
                 list_delete_message_ids.append(message.message_id)
 
             # First, delete messages from database
@@ -406,13 +550,33 @@ def delete_posts_threads(message_ids):
                     delete_post(each_id)
 
             # Next, delete thread from DB
-            delete_thread(each_thread_hash)
+            delete_thread(msg.thread.thread_hash)
+
+    # Delete remaining posts
+    for each_msg_id in message_ids:
+        msg = Messages.query.filter(
+            Messages.message_id == each_msg_id).first()
+        if msg:
+            if msg.thread and msg.thread.thread_hash not in thread_hashes:
+                thread_hashes.append(msg.thread.thread_hash)
+            if msg.thread and msg.thread.chan and msg.thread.chan.address not in board_addresses:
+                board_addresses.append(msg.thread.chan.address)
+
+            if msg.thread and msg.thread.chan:
+                add_mod_log_entry(
+                    'Locally deleted post from "{}"'.format(msg.thread.subject),
+                    message_id=each_msg_id,
+                    user_from=user_from,
+                    board_address=msg.thread.chan.address,
+                    thread_hash=msg.thread.thread_hash)
+            delete_post(each_msg_id)
 
 
 @blueprint.route('/recent/<address>/<int:current_page>', methods=('GET', 'POST'))
+@count_views
 @rate_limit
 def recent_posts(address, current_page):
-    allowed, allow_msg = allowed_access(check_can_view=True)
+    allowed, allow_msg = allowed_access("can_view")
     if not allowed:
         return allow_msg
 
@@ -426,30 +590,32 @@ def recent_posts(address, current_page):
     }
 
     if request.method == 'POST':
-        global_admin, allow_msg = allowed_access(
-            check_is_global_admin=True)
-        if not global_admin:
+        global_admin, allow_msg = allowed_access("is_global_admin")
+        janitor, allow_msg = allowed_access("is_janitor")
+        if not global_admin or not janitor:
             return allow_msg
 
         try:
             delete_bulk_message_ids = []
             for each_input in request.form:
-                if each_input.startswith("deletebulk_"):
+                if each_input.startswith("selectbulk_"):
                     delete_bulk_message_ids.append(each_input.split("_")[1])
 
             lf = LF()
             if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
                 try:
-                    delete_posts_threads(delete_bulk_message_ids)
+                    user_from = None
+                    if janitor:
+                        user_from = get_logged_in_user_name()
+
+                    delete_posts_threads(delete_bulk_message_ids, user_from=user_from)
                     status_msg['status_message'].append("Deleted posts/threads")
+                    status_msg['status_title'] = "Success"
                 except Exception as err:
                     logger.error("Exception while deleting posts/threads: {}".format(err))
                 finally:
                     daemon_com.signal_generate_post_numbers()
                     lf.lock_release(config.LOCKFILE_MSG_PROC)
-
-            status_msg['status_title'] = "Success"
-            status_msg['status_title'] = "Deleted Posts/Threads"
         except:
             logger.exception("deleting posts/threads")
 
@@ -479,8 +645,9 @@ def recent_posts(address, current_page):
                     recent_results.append(result)
                 msg_total += 1
     else:
-        messages = Messages.query.order_by(
-            Messages.timestamp_sent.desc())
+        messages = Messages.query.join(Threads).join(Chan).filter(
+            Chan.unlisted.is_(False)).order_by(
+                Messages.timestamp_sent.desc())
         msg_count = messages.count()
         for i, result in enumerate(messages.all()):
             if i > post_end:
@@ -498,17 +665,17 @@ def recent_posts(address, current_page):
 
 
 @blueprint.route('/search/<search_b64>/<int:current_page>', methods=('GET', 'POST'))
+@count_views
 @rate_limit
 def search(search_b64, current_page):
-    allowed, allow_msg = allowed_access(check_can_view=True)
+    allowed, allow_msg = allowed_access("can_view")
     if not allowed:
         return allow_msg
 
     settings = GlobalSettings.query.first()
     status_msg = {"status_message": []}
     search_string_b64 = search_b64
-    search_results = []
-    search_count = 0
+
     if search_b64 == '0':
         search_string = ""
     else:
@@ -518,142 +685,301 @@ def search(search_b64, current_page):
 
     if request.method == 'POST':
         if form_search.submit.data:
-            if not form_search.search.data or len(form_search.search.data) < 3:
+            current_page = 1
+
+            if form_search.search.data and len(form_search.search.data) < 3:
                 status_msg['status_message'].append(
                     "At search string of at least 3 characters is required.")
-            else:
-                current_page = 1
 
             if not status_msg['status_message']:
                 search_string = form_search.search.data
                 search_string_b64 = base64.urlsafe_b64encode(search_string.encode()).decode()
+                if not search_string_b64:
+                    search_string_b64 = "0"
                 status_msg['status_title'] = "Success"
 
-        else:
-            global_admin, allow_msg = allowed_access(
-                check_is_global_admin=True)
-            if not global_admin:
+        elif form_search.bulk_delete.data:
+            global_admin, allow_msg = allowed_access("is_global_admin")
+            janitor, allow_msg = allowed_access("is_janitor")
+            if not global_admin or not janitor:
                 return allow_msg
 
             try:
                 delete_bulk_message_ids = []
                 for each_input in request.form:
-                    if each_input.startswith("deletebulk_"):
+                    if each_input.startswith("selectbulk_"):
                         delete_bulk_message_ids.append(each_input.split("_")[1])
 
                 lf = LF()
                 if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
                     try:
-                        delete_posts_threads(delete_bulk_message_ids)
+                        user_from = None
+                        if janitor:
+                            user_from = get_logged_in_user_name()
+
+                        delete_posts_threads(delete_bulk_message_ids, user_from=user_from)
                         status_msg['status_message'].append("Deleted posts/threads")
+                        status_msg['status_title'] = "Success"
                     except Exception as err:
                         logger.error("Exception while deleting posts/threads: {}".format(err))
                     finally:
                         daemon_com.signal_generate_post_numbers()
                         lf.lock_release(config.LOCKFILE_MSG_PROC)
-
-                status_msg['status_title'] = "Success"
-                status_msg['status_title'] = "Deleted Posts/Threads"
             except:
                 logger.exception("deleting posts/threads")
 
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
 
-    if search_string:
-        search = Messages.query.filter(or_(
-            Messages.message.contains(search_string),
-            Messages.message_id.contains(search_string.lower()),
-            and_(Messages.subject.contains(search_string),
-                 Messages.is_op.is_(True))
-        )).order_by(Messages.timestamp_sent.desc())
+    arg_filter_hidden = request.args.get('fh', default=False, type=bool)
+    arg_filter_op = request.args.get('fo', default=False, type=bool)
+    arg_search_type = request.args.get('st', default="posts", type=str)
 
-        search_count = search.count()
+    search_type = arg_search_type
+    if form_search.search_type.data:
+        search_type = form_search.search_type.data
 
-        search_start = (current_page - 1) * settings.results_per_page_search
-        search_end = (current_page * settings.results_per_page_search) - 1
-        search_results = []
-        for i, result in enumerate(search.all()):
+    filter_hidden = False
+    filter_op = False
+    result_count = 0
+    search_results = []
+    thread_results = []
+
+    global_admin, allow_msg = allowed_access("is_global_admin")
+
+    search_threads = Threads.query
+    search_msgs = Messages.query
+
+    if search_string and len(search_string) > 2:
+        if search_type == "posts":
+            search_msgs = search_msgs.filter(or_(
+                Messages.message.contains(search_string),
+                Messages.message_id.contains(search_string.lower()),
+                and_(Messages.subject.contains(search_string),
+                     Messages.is_op.is_(True))
+            ))
+        elif search_type == "threads":
+            search_threads = Threads.query.join(Messages).filter(and_(
+                Messages.is_op.is_(True),
+                or_(Messages.message.contains(search_string),
+                    Messages.message_id.contains(search_string.lower()),
+                    Messages.subject.contains(search_string))))
+
+    if form_search.filter_hidden.data or arg_filter_hidden:
+        if global_admin:
+            filter_hidden = True
+            if search_type == "posts":
+                search_msgs = search_msgs.filter(Messages.hide.is_(True))
+            elif search_type == "threads":
+                search_threads = search_threads.filter(Threads.hide.is_(True))
+        else:
+            status_msg['status_message'].append(allow_msg)
+            status_msg['status_title'] = "Error"
+
+    if not filter_hidden:
+        if search_type == "posts":
+            search_msgs = search_msgs.filter(Messages.hide.is_(False))
+        elif search_type == "threads":
+            search_threads = search_threads.filter(Threads.hide.is_(False))
+
+    if form_search.filter_op.data or arg_filter_op and search_type == "posts":
+        filter_op = True
+        search_msgs = search_msgs.filter(Messages.is_op.is_(True))
+
+    if search_type == "posts":
+        search_msgs = search_msgs.join(Threads).join(Chan).filter(
+            Chan.unlisted.is_(False)).order_by(Messages.timestamp_sent.desc())
+        result_count = search_msgs.count()
+    elif search_type == "threads":
+        search_threads = search_threads.join(Chan).filter(
+            Chan.unlisted.is_(False)).order_by(Threads.timestamp_sent.desc())
+        result_count = search_threads.count()
+
+    search_start = (current_page - 1) * settings.results_per_page_search
+    search_end = (current_page * settings.results_per_page_search) - 1
+
+    if search_type == "posts":
+        for i, result in enumerate(search_msgs.all()):
             if i > search_end:
                 break
             if search_start <= i:
                 search_results.append(result)
 
+    if search_type == "threads":
+        for i, result in enumerate(search_threads.all()):
+            if i > search_end:
+                break
+            if search_start <= i:
+                thread_results.append(result)
+
     return render_template("pages/search.html",
+                           current_page=current_page,
+                           filter_hidden=filter_hidden,
+                           filter_op=filter_op,
                            now=time.time(),
-                           search_page=current_page,
-                           search_count=search_count,
+                           result_count=result_count,
                            search_results=search_results,
                            search_string=search_string,
                            search_string_b64=search_string_b64,
-                           status_msg=status_msg)
+                           search_type=search_type,
+                           status_msg=status_msg,
+                           thread_results=thread_results)
 
 
 @blueprint.route('/mod_log/<address>/<int:current_page>', methods=('GET', 'POST'))
+@count_views
 @rate_limit
 def mod_log(address, current_page):
-    allowed, allow_msg = allowed_access(check_can_view=True)
+    allowed, allow_msg = allowed_access("can_view")
     if not allowed:
         return allow_msg
 
     settings = GlobalSettings.query.first()
 
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if settings.kiosk_only_admin_access_mod_log and not global_admin:
         return allow_msg
+
+    form_modlog = forms_board.ModLog()
 
     status_msg = {"status_message": []}
 
     if request.method == 'POST':
-        global_admin, allow_msg = allowed_access(
-            check_is_global_admin=True)
         if not global_admin:
             return allow_msg
 
-        try:
-            delete_bulk_mod_log_ids = []
-            for each_input in request.form:
-                if each_input.startswith("deletebulk_"):
-                    delete_bulk_mod_log_ids.append(each_input.split("_")[1])
+        if form_modlog.bulk_delete_mod_log.data:
+            try:
+                delete_bulk_mod_log_ids = []
+                for each_input in request.form:
+                    if each_input.startswith("selectbulk_"):
+                        delete_bulk_mod_log_ids.append(each_input.split("_")[1])
 
-            if not delete_bulk_mod_log_ids:
-                status_msg['status_title'] = "Error"
-                status_msg['status_message'].append("Must select at least one entry to delete")
+                if not delete_bulk_mod_log_ids:
+                    status_msg['status_title'] = "Error"
+                    status_msg['status_message'].append("Must select at least one entry to delete")
 
-            if not status_msg['status_message']:
-                lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-                    try:
-                        for each_id in delete_bulk_mod_log_ids:
-                            mod_log_entry = ModLog.query.filter(ModLog.id == each_id).first()
-                            if mod_log_entry:
-                                mod_log_entry.delete()
+                if not status_msg['status_message']:
+                    lf = LF()
+                    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
+                        try:
+                            for each_id in delete_bulk_mod_log_ids:
+                                mod_log_entry = ModLog.query.filter(ModLog.id == each_id).first()
+                                if mod_log_entry:
+                                    mod_log_entry.delete()
 
-                        status_msg['status_message'].append(
-                            "Deleted {} Mod Log {}".format(
-                                len(delete_bulk_mod_log_ids),
-                                "entries" if len(delete_bulk_mod_log_ids) > 1 else "entry"))
-                        status_msg['status_title'] = "Success"
-                    except Exception as err:
-                        logger.error("Exception while deleting Mod Log entries: {}".format(err))
-                    finally:
-                        lf.lock_release(config.LOCKFILE_MSG_PROC)
-        except:
-            logger.exception("deleting Mod Log entries")
+                            status_msg['status_message'].append(
+                                "Deleted {} Mod Log {}".format(
+                                    len(delete_bulk_mod_log_ids),
+                                    "entries" if len(delete_bulk_mod_log_ids) > 1 else "entry"))
+                            status_msg['status_title'] = "Success"
+                        except Exception as err:
+                            logger.error("Exception while deleting Mod Log entries: {}".format(err))
+                        finally:
+                            lf.lock_release(config.LOCKFILE_MSG_PROC)
+            except:
+                logger.exception("deleting Mod Log entries")
+
+        elif form_modlog.bulk_restore_post_mod_log.data or form_modlog.bulk_restore_thread_mod_log.data:
+            try:
+                delete_bulk_mod_log_ids = []
+                for each_input in request.form:
+                    if each_input.startswith("selectbulk_"):
+                        delete_bulk_mod_log_ids.append(each_input.split("_")[1])
+
+                if not delete_bulk_mod_log_ids:
+                    status_msg['status_title'] = "Error"
+                    status_msg['status_message'].append("Must select at least one entry to delete")
+
+                if not status_msg['status_message']:
+                    lf = LF()
+                    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
+                        try:
+                            for each_id in delete_bulk_mod_log_ids:
+                                mod_log_entry = ModLog.query.filter(ModLog.id == each_id).first()
+                                if mod_log_entry:
+                                    log_description = ""
+                                    if form_modlog.bulk_restore_thread_mod_log.data and mod_log_entry.thread_hash:
+                                        # Restore thread
+                                        thread = Threads.query.filter(
+                                            Threads.thread_hash == mod_log_entry.thread_hash).first()
+                                        if thread:
+                                            log_description = 'Restore thread "{}"'.format(thread.subject)
+                                            restore_thread(mod_log_entry.thread_hash)
+                                    elif form_modlog.bulk_restore_post_mod_log.data and mod_log_entry.message_id:
+                                        # Restore post
+                                        message = Messages.query.filter(
+                                            Messages.message_id == mod_log_entry.message_id).first()
+                                        if message:
+                                            log_description = 'Restore post'
+                                            restore_post(mod_log_entry.message_id)
+
+                                    user_from_tmp = get_logged_in_user_name()
+                                    user_from = user_from_tmp if user_from_tmp else None
+
+                                    if log_description:
+                                        add_mod_log_entry(
+                                            log_description,
+                                            message_id=mod_log_entry.message_id,
+                                            user_from=user_from,
+                                            board_address=mod_log_entry.board_address,
+                                            thread_hash=mod_log_entry.thread_hash)
+
+                            status_msg['status_message'].append(
+                                "Restored post/thread from Mod Log")
+                            status_msg['status_title'] = "Success"
+                        except Exception as err:
+                            logger.error("Exception while restoring Mod Log entries: {}".format(err))
+                        finally:
+                            lf.lock_release(config.LOCKFILE_MSG_PROC)
+            except:
+                logger.exception("restoring Mod Log entries")
+
+    mod_log_msgs = ModLog.query
 
     if address != "0":
-        mod_log = ModLog.query.filter(
-            ModLog.board_address == address).order_by(ModLog.timestamp.desc())
+        mod_log_msgs = mod_log_msgs.filter(
+            ModLog.board_address == address)
     else:
-        mod_log = ModLog.query.order_by(ModLog.timestamp.desc())
+        mod_log_msgs = mod_log_msgs.join(Chan).filter(
+            Chan.unlisted.is_(False))
 
-    mod_log_count = mod_log.count()
+    arg_filter_remote_moderate = request.args.get('frm', default=False, type=bool)
+    arg_filter_failed_attempts = request.args.get('ffa', default=False, type=bool)
+
+    filter_remote_moderate = False
+    filter_failed_attempts = False
+
+    if (global_admin and
+            (
+                (form_modlog.filter.data and form_modlog.filter_remote_moderate.data) or
+                arg_filter_remote_moderate
+            )):
+        filter_remote_moderate = True
+        mod_log_msgs = mod_log_msgs.filter(ModLog.hidden.is_(True))
+    else:
+        mod_log_msgs = mod_log_msgs.filter(or_(
+            ModLog.hidden.is_(True), ModLog.hidden.is_(False)))
+
+    if (global_admin and
+            (
+                (form_modlog.filter.data and form_modlog.filter_failed_attempts.data) or
+                arg_filter_failed_attempts
+            )):
+        filter_failed_attempts = True
+        mod_log_msgs = mod_log_msgs.filter(ModLog.success.is_(False))
+    else:
+        mod_log_msgs = mod_log_msgs.filter(or_(
+            ModLog.success.is_(True), ModLog.success.is_(False)))
+
+    mod_log_msgs = mod_log_msgs.order_by(ModLog.timestamp.desc())
+
+    mod_log_count = mod_log_msgs.count()
 
     post_start = (current_page - 1) * settings.results_per_page_mod_log
     post_end = (current_page * settings.results_per_page_mod_log) - 1
     mod_log_results = []
-    for i, result in enumerate(mod_log.all()):
+    for i, result in enumerate(mod_log_msgs.all()):
         if i > post_end:
             break
         if post_start <= i:
@@ -661,6 +987,8 @@ def mod_log(address, current_page):
 
     return render_template("pages/mod_log.html",
                            address=address,
+                           filter_remote_moderate=filter_remote_moderate,
+                           filter_failed_attempts=filter_failed_attempts,
                            now=time.time(),
                            mod_log_page=current_page,
                            mod_log_count=mod_log_count,
@@ -669,9 +997,10 @@ def mod_log(address, current_page):
 
 
 @blueprint.route('/help')
+@count_views
 @rate_limit
 def help_docs():
-    allowed, allow_msg = allowed_access(check_can_view=True)
+    allowed, allow_msg = allowed_access("can_view")
     if not allowed:
         return allow_msg
 
@@ -679,9 +1008,9 @@ def help_docs():
 
 
 @blueprint.route('/configure', methods=('GET', 'POST'))
+@count_views
 def configure():
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 
@@ -715,8 +1044,7 @@ def configure():
             if not status_msg['status_message']:
                 flag_save_path = "/tmp/{}.{}".format(
                     get_random_alphanumeric_string(
-                        12, with_spaces=False, with_punctuation=False),
-                    flag_extension)
+                        12, with_spaces=False, with_punctuation=False), flag_extension)
 
                 # Save file to disk
                 form_flag.flag_file.data.save(flag_save_path)
@@ -770,6 +1098,7 @@ def configure():
             settings.never_auto_download_unencrypted = form_settings.never_auto_download_unencrypted.data
             settings.auto_dl_from_unknown_upload_sites = form_settings.auto_dl_from_unknown_upload_sites.data
             settings.delete_sent_identity_msgs = form_settings.delete_sent_identity_msgs.data
+            settings.debug_posts = form_settings.debug_posts.data
             settings.home_page_msg = form_settings.home_page_msg.data
             settings.html_head = form_settings.html_head.data
             settings.html_body = form_settings.html_body.data
@@ -787,6 +1116,12 @@ def configure():
             settings.max_requests_per_period = form_settings.max_requests_per_period.data
             settings.rate_limit_period_seconds = form_settings.rate_limit_period_seconds.data
             settings.hide_all_board_list_passphrases = form_settings.hide_all_board_list_passphrases.data
+            if bool(settings.bitmessage_onion_services_only) != bool(form_settings.bitmessage_onion_services_only.data):
+                settings.bitmessage_onion_services_only = form_settings.bitmessage_onion_services_only.data
+                change_onion = Thread(
+                    target=daemon_com.enable_onion_services_only,
+                    args=(form_settings.bitmessage_onion_services_only.data,))
+                change_onion.start()
 
             # Kioks mode
             settings.enable_kiosk_mode = form_settings.enable_kiosk_mode.data
@@ -803,7 +1138,10 @@ def configure():
                     form_settings.chan_update_display_number.data >= 0):
                 settings.chan_update_display_number = form_settings.chan_update_display_number.data
             settings.save()
-            daemon_com.refresh_settings()
+
+            refresh_settings = Thread(target=daemon_com.refresh_settings)
+            refresh_settings.start()
+
             status_msg['status_title'] = "Success"
             status_msg['status_message'].append("Settings saved")
 
@@ -962,6 +1300,33 @@ def configure():
                 status_msg['status_message'].append(
                     "Changes will take effect in a minute.")
 
+        elif form_settings.get_new_bm_tor.data:
+            daemon_com.regenerate_bitmessage_onion_address()
+            status_msg['status_title'] = "Success"
+            status_msg['status_message'].append(
+                "Generating a new bitmessage onion address.")
+
+        elif form_settings.save_chan_options.data:
+            chans_unlisted = []
+            for each_input in request.form:
+                if each_input.startswith("option_unlisted_"):
+                    chans_unlisted.append(each_input.split("_")[2])
+            chans = Chan.query.all()
+            for each_chan in chans:
+                options_changed = False
+                if each_chan.address in chans_unlisted:
+                    if not each_chan.unlisted:
+                        options_changed = True
+                    each_chan.unlisted = True
+                else:
+                    if each_chan.unlisted:
+                        options_changed = True
+                    each_chan.unlisted = False
+                if options_changed:
+                    each_chan.save()
+            status_msg['status_title'] = "Success"
+            status_msg['status_message'].append("Set chan options.")
+
         session['status_msg'] = status_msg
 
         if 'status_title' not in status_msg and status_msg['status_message']:
@@ -969,48 +1334,25 @@ def configure():
 
         return redirect(url_for("routes_main.configure"))
 
-    tor_enabled_rand = False
-    tor_address_rand = None
-    try:
-        with open(path_torrc) as f:
-            s = f.read()
-            if str_random_enabled in s:
-                tor_enabled_rand = True
-            if os.path.exists("/usr/local/tor/rand/hostname"):
-                text_file = open("/usr/local/tor/rand/hostname", "r")
-                tor_address_rand = text_file.read()
-                text_file.close()
-    except:
-        logger.exception("checking torrc")
-
-    tor_enabled_cus = False
-    tor_address_cus = None
-    try:
-        with open(path_torrc) as f:
-            s = f.read()
-            if str_custom_enabled in s:
-                tor_enabled_cus = True
-            if os.path.exists("/usr/local/tor/cus/hostname"):
-                text_file = open("/usr/local/tor/cus/hostname", "r")
-                tor_address_cus = text_file.read()
-                text_file.close()
-    except:
-        logger.exception("checking torrc")
+    (tor_enabled_bm, tor_address_bm,
+     tor_enabled_rand, tor_address_rand,
+     tor_enabled_cus, tor_address_cus) = get_onion_info()
 
     return render_template("pages/configure.html",
                            form_settings=form_settings,
                            status_msg=status_msg,
-                           tor_address_rand=tor_address_rand,
-                           tor_enabled_rand=tor_enabled_rand,
+                           tor_address_bm=tor_address_bm,
+                           tor_enabled_bm=tor_enabled_bm,
                            tor_address_cus=tor_address_cus,
                            tor_enabled_cus=tor_enabled_cus,
+                           tor_address_rand=tor_address_rand,
+                           tor_enabled_rand=tor_enabled_rand,
                            upload_sites=UploadSites.query.all())
 
 
 @blueprint.route('/upload_site/<action>/<upload_site_id>', methods=('GET', 'POST'))
 def upload_site(action, upload_site_id):
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 
@@ -1041,13 +1383,18 @@ def upload_site(action, upload_site_id):
                     upload_site = UploadSites()
                     upload_site.domain = site_options["domain"]
                     upload_site.type = site_options["type"]
+                    upload_site.subtype = site_options["subtype"]
                     upload_site.uri = site_options["uri"]
                     upload_site.download_prefix = site_options["download_prefix"]
                     upload_site.response = site_options["response"]
+                    upload_site.json_key = site_options["json_key"]
                     upload_site.direct_dl_url = site_options["direct_dl_url"]
                     upload_site.extra_curl_options = site_options["extra_curl_options"]
                     upload_site.upload_word = site_options["upload_word"]
                     upload_site.form_name = site_options["form_name"]
+                    upload_site.http_headers = site_options["http_headers"]
+                    upload_site.proxy_type = site_options["proxy_type"]
+                    upload_site.replace_download_domain = site_options["replace_download_domain"]
                     upload_site.save()
                 else:
                     status_msg['status_msg'].append("Message not found")
@@ -1055,13 +1402,18 @@ def upload_site(action, upload_site_id):
                 new_site = UploadSites()
                 new_site.domain = form_upload_site.domain.data
                 new_site.type = form_upload_site.type.data
+                new_site.subtype = form_upload_site.subtype.data
                 new_site.uri = form_upload_site.uri.data
                 new_site.download_prefix = form_upload_site.download_prefix.data
                 new_site.response = form_upload_site.response.data
+                new_site.json_key = form_upload_site.json_key.data
                 new_site.direct_dl_url = form_upload_site.direct_dl_url.data
                 new_site.extra_curl_options = form_upload_site.extra_curl_options.data
                 new_site.upload_word = form_upload_site.upload_word.data
                 new_site.form_name = form_upload_site.form_name.data
+                new_site.http_headers = form_upload_site.http_headers.data
+                new_site.proxy_type = form_upload_site.proxy_type.data
+                new_site.replace_download_domain = form_upload_site.replace_download_domain.data
                 new_site.save()
 
             status_msg['status_message'].append("Upload site added")
@@ -1078,6 +1430,10 @@ def upload_site(action, upload_site_id):
                     upload_site.type = form_upload_site.type.data
                 else:
                     upload_site.type = None
+                if form_upload_site.subtype.data:
+                    upload_site.subtype = form_upload_site.subtype.data
+                else:
+                    upload_site.subtype = None
                 if form_upload_site.uri.data:
                     upload_site.uri = form_upload_site.uri.data
                 else:
@@ -1090,6 +1446,10 @@ def upload_site(action, upload_site_id):
                     upload_site.response = form_upload_site.response.data
                 else:
                     upload_site.response = None
+                if form_upload_site.json_key.data:
+                    upload_site.json_key = form_upload_site.json_key.data
+                else:
+                    upload_site.json_key = None
                 upload_site.direct_dl_url = form_upload_site.direct_dl_url.data
                 if form_upload_site.extra_curl_options.data:
                     upload_site.extra_curl_options = form_upload_site.extra_curl_options.data
@@ -1103,6 +1463,18 @@ def upload_site(action, upload_site_id):
                     upload_site.form_name = form_upload_site.form_name.data
                 else:
                     upload_site.form_name = None
+                if form_upload_site.http_headers.data:
+                    upload_site.http_headers = form_upload_site.http_headers.data
+                else:
+                    upload_site.http_headers = None
+                if form_upload_site.proxy_type.data:
+                    upload_site.proxy_type = form_upload_site.proxy_type.data
+                else:
+                    upload_site.proxy_type = None
+                if form_upload_site.replace_download_domain.data:
+                    upload_site.replace_download_domain = form_upload_site.replace_download_domain.data
+                else:
+                    upload_site.replace_download_domain = None
                 upload_site.save()
 
                 status_msg['status_message'].append("Upload site saved")
@@ -1131,10 +1503,301 @@ def upload_site(action, upload_site_id):
                            upload_sites=UploadSites.query.all())
 
 
+def generate_charts(past_minutes=(60 * 24), include_update=0):
+    charts = {}
+    data = OrderedDict()
+    time_end = datetime.datetime.now()
+    time_start = time_end - datetime.timedelta(minutes=past_minutes)
+
+    if past_minutes > 1440:
+        time_start = (time_start - datetime.timedelta(
+            hours=time_start.hour, minutes=time_start.minute,
+            seconds=time_start.second, microseconds=time_start.microsecond))
+        epoch_round = int(time_start.strftime('%s'))
+        endpoint_data = EndpointCount.query.filter(
+            EndpointCount.timestamp_epoch > epoch_round).order_by(
+            EndpointCount.timestamp_epoch.asc()).all()
+    else:
+        endpoint_data = EndpointCount.query.filter(
+            EndpointCount.timestamp_epoch > time.time() - past_minutes * 60).order_by(
+            EndpointCount.timestamp_epoch.asc()).all()
+
+    for entry in endpoint_data:
+        if entry.timestamp_epoch not in data:
+            data[entry.timestamp_epoch] = {"thread": {}, "chan": {}, "endpoint": {}}
+        if entry.thread_hash:
+            if entry.thread_hash not in data[entry.timestamp_epoch]["thread"]:
+                data[entry.timestamp_epoch]["thread"][entry.thread_hash] = {}
+            if entry.new_posts:
+                data[entry.timestamp_epoch]["thread"][entry.thread_hash]["new_posts"] = entry.new_posts
+            else:
+                data[entry.timestamp_epoch]["thread"][entry.thread_hash]["general"] = entry.requests
+        if entry.chan_address:
+            data[entry.timestamp_epoch]["chan"][entry.chan_address] = entry.requests
+        if entry.endpoint and not entry.thread_hash and not entry.chan_address:
+            data[entry.timestamp_epoch]["endpoint"][entry.endpoint] = entry.requests
+
+    #
+    # Chart: Verifications
+    #
+
+    verify_data = {}
+    x_axis_ts = []
+    y_wait = []
+    y_test = []
+
+    dt_start_last = None
+    ts_day_last = None
+    last_epoch = None
+
+    # Get first timestamp
+    for ts in data:
+        if last_epoch:
+            break
+        if "endpoint" in data[ts] and data[ts]["endpoint"]:
+            for endpoint in data[ts]["endpoint"]:
+                if endpoint == "verify_wait":
+                    dt_start_last = datetime.date.fromtimestamp(ts)
+                    ts_day_last = dt_start_last.timetuple().tm_yday
+                    last_epoch = int(dt_start_last.strftime('%s'))
+                    break
+
+    for ts in data:
+        if not last_epoch:
+            break
+
+        if "endpoint" in data[ts] and data[ts]["endpoint"]:
+            for endpoint in data[ts]["endpoint"]:
+                dt_last = datetime.date.fromtimestamp(ts)
+                ts_day = dt_last.timetuple().tm_yday
+                ts_epoch = int(dt_last.strftime('%s'))
+
+                if endpoint == "verify_wait":
+                    if past_minutes <= 1440:
+                        if ts not in verify_data:
+                            verify_data[ts] = {}
+                        verify_data[ts]["verify_wait"] = data[ts]["endpoint"][endpoint]
+                    else:
+                        if last_epoch not in verify_data:
+                            verify_data[last_epoch] = {}
+                        if "verify_wait" not in verify_data[last_epoch]:
+                            verify_data[last_epoch]["verify_wait"] = data[ts]["endpoint"][endpoint]
+                        else:
+                            verify_data[last_epoch]["verify_wait"] += data[ts]["endpoint"][endpoint]
+
+                if endpoint == "verify_test":
+                    if past_minutes <= 1440:
+                        if ts not in verify_data:
+                            verify_data[ts] = {}
+                        verify_data[ts]["verify_test"] = data[ts]["endpoint"][endpoint]
+                    else:
+                        if last_epoch not in verify_data:
+                            verify_data[last_epoch] = {}
+                        if "verify_test" not in verify_data[last_epoch]:
+                            verify_data[last_epoch]["verify_test"] = data[ts]["endpoint"][endpoint]
+                        else:
+                            verify_data[last_epoch]["verify_test"] += data[ts]["endpoint"][endpoint]
+
+                if ts_day != ts_day_last:
+                    ts_day_last = ts_day
+                    last_epoch = ts_epoch
+
+    for ts in verify_data:
+        if "verify_wait" in verify_data[ts] or "verify_test" in verify_data[ts]:
+            if past_minutes <= 1440:
+                x_axis_ts.append(datetime.datetime.fromtimestamp(int(ts)).strftime('%Y-%m-%d %H:%M'))
+            else:
+                x_axis_ts.append(datetime.datetime.fromtimestamp(int(ts)).strftime('%Y-%m-%d'))
+            if "verify_wait" in verify_data[ts]:
+                y_wait.append(verify_data[ts]["verify_wait"])
+            else:
+                y_wait.append(0)
+            if "verify_test" in verify_data[ts]:
+                y_test.append(verify_data[ts]["verify_test"])
+            else:
+                y_test.append(0)
+
+    if x_axis_ts:
+        x_axis = np.arange(len(x_axis_ts))
+
+        plt.clf()
+        figure = plt.gcf()
+        figure.set_size_inches(7, 5)
+        plt.rc('xtick', labelsize=6)
+        plt.title('Verification\n{} - {}'.format(
+            time_start.strftime('%Y-%m-%d %H:%M'),
+            time_end.strftime('%Y-%m-%d %H:%M')))
+        plt.ylabel('Requests')
+        plt.bar(x_axis - 0.2, y_wait, 0.4, label='Wait')
+        plt.bar(x_axis + 0.2, y_test, 0.4, label='Test')
+        plt.xticks(x_axis, x_axis_ts, rotation=90)
+        plt.tight_layout()
+        plt.legend()
+        figfile = BytesIO()
+        plt.savefig(figfile, dpi=125, format='png')
+        figfile.seek(0)
+
+        charts["verify"] = base64.b64encode(figfile.getvalue()).decode()
+
+    #
+    # Chart: Boards/Lists
+    #
+
+    boards = {}
+    labels_chans = []
+
+    for ts in data:
+        if "chan" in data[ts] and data[ts]["chan"]:
+            for address, value in data[ts]["chan"].items():
+                if address not in boards:
+                    boards[address] = 0
+                boards[address] += value
+
+    boards_sorted = OrderedDict(
+        sorted(boards.items(), key=lambda kv: kv[1]))
+
+    for address in boards_sorted:
+        chan = Chan.query.filter(Chan.address == address).first()
+        if chan:
+            labels_chans.append("/{}/ - {} ({})".format(
+                html.unescape(chan.label),
+                html.unescape(chan.description),
+                chan.type))
+        else:
+            labels_chans.append("Unknown: {}".format(address))
+    values_chans = [y for x, y in boards_sorted.items()]
+
+    if labels_chans:
+        plt.clf()
+        figure = plt.gcf()
+        figure.set_size_inches(7, 1.1 + len(labels_chans) * 0.25)
+        plt.rc('ytick', labelsize=8)
+        plt.title('Boards/Lists ({})\n{} - {}'.format(
+            len(labels_chans),
+            time_start.strftime('%Y-%m-%d %H:%M'),
+            time_end.strftime('%Y-%m-%d %H:%M')))
+        plt.xlabel('Requests')
+        plt.barh(labels_chans, values_chans)
+        plt.tight_layout()
+        figfile = BytesIO()
+        plt.savefig(figfile, dpi=125, format='png')
+        figfile.seek(0)
+
+        charts["chans"] = base64.b64encode(figfile.getvalue()).decode()
+
+    #
+    # Chart: Threads
+    #
+
+    threads = {}
+    labels_threads = []
+
+    # Combine thread hashes and sum counts
+    for ts in data:
+        if "thread" in data[ts] and data[ts]["thread"]:
+            for thread_hash, categories in data[ts]["thread"].items():
+                for category, value in categories.items():
+                    if not include_update and category == "new_posts":
+                        continue
+
+                    # Ensure short and non-short thread hash are condensed to the short hash
+                    thread = Threads.query.filter(
+                        or_(Threads.thread_hash == thread_hash,
+                            Threads.thread_hash_short == thread_hash)).first()
+                    if thread:
+                        save_hash = thread.thread_hash_short
+                    else:
+                        save_hash = thread_hash
+
+                    if save_hash not in threads:
+                        threads[save_hash] = 0
+                    threads[save_hash] += value
+
+    # Get labels from thread hashes
+    for thread_hash in threads:
+        thread = Threads.query.filter(
+            or_(Threads.thread_hash == thread_hash,
+                Threads.thread_hash_short == thread_hash)).first()
+        if thread and thread.chan:
+            labels_threads.append("/{}/ - {}".format(
+                html.unescape(thread.chan.label),
+                html.unescape(thread.subject)))
+        else:
+            labels_threads.append("Unknown: {}".format(thread_hash))
+    values_threads = [y for x, y in threads.items()]
+
+    # Sort threads by values
+    df = pd.DataFrame(
+        dict(threads=labels_threads, values=values_threads))
+    df_sorted = df.sort_values('values')
+
+    if labels_threads:
+        plt.clf()
+        figure = plt.gcf()
+        figure.set_size_inches(7, 1.1 + len(labels_threads) * 0.25)
+        plt.rc('ytick', labelsize=8)
+        plt.title('Threads ({})\n{} - {} '.format(
+            len(labels_threads),
+            time_start.strftime('%Y-%m-%d %H:%M'),
+            time_end.strftime('%Y-%m-%d %H:%M')))
+        plt.xlabel('Requests')
+        plt.barh("threads", "values", data=df_sorted)
+        plt.tight_layout()
+        figfile = BytesIO()
+        plt.savefig(figfile, dpi=125, format='png')
+        figfile.seek(0)
+
+        charts["threads"] = base64.b64encode(figfile.getvalue()).decode()
+
+    return charts
+
+
+@blueprint.route('/stats', methods=('GET', 'POST'))
+@count_views
+def stats():
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    if not global_admin:
+        return allow_msg
+
+    status_msg = session.get('status_msg', {"status_message": []})
+
+    count_posts = Messages.query.count()
+    count_threads = Threads.query.count()
+    attachment_size = human_readable_size(get_directory_size(config.FILE_DIRECTORY))
+
+    try:
+        past_min = request.args.get('past_min', default=(60 * 24), type=int)
+        if past_min < 0:
+            past_min = (60 * 24)
+    except:
+        past_min = (60 * 24)
+
+    try:
+        include_update = request.args.get('include_update', default=0, type=int)
+    except:
+        include_update = 0
+
+    try:
+        view_counter = daemon_com.get_view_counter()
+    except:
+        view_counter = {}
+
+    return render_template("pages/stats.html",
+                           attachment_size=attachment_size,
+                           count_posts=count_posts,
+                           count_threads=count_threads,
+                           generated_charts=generate_charts(past_min, include_update),
+                           include_update=include_update,
+                           past_min=past_min,
+                           status_msg=status_msg,
+                           table_endpoint_count=EndpointCount,
+                           view_counter=view_counter)
+
+
 @blueprint.route('/status', methods=('GET', 'POST'))
+@count_views
 def status():
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 
@@ -1143,6 +1806,21 @@ def status():
     tor_status = {"Circuit Established": False}
     form_status = forms_settings.Status()
     logging.getLogger("stem").setLevel(logging.WARNING)
+
+    (tor_enabled_bm, tor_address_bm,
+     tor_enabled_rand, tor_address_rand,
+     tor_enabled_cus, tor_address_cus) = get_onion_info()
+
+    try:
+        bm_messages_size = human_readable_size(os.path.getsize('/usr/local/bitmessage/messages.dat'))
+    except:
+        bm_messages_size = "ERROR"
+
+    try:
+        df = subprocess.check_output(
+            "/usr/bin/df-host -h", shell=True, text=True).replace("\n", "<br/>")
+    except:
+        df = None
 
     if request.method == 'POST':
         if form_status.tor_newnym.data:
@@ -1161,14 +1839,14 @@ def status():
             bm_status_raw = api.clientStatus()
             bm_status = OrderedDict(sorted(bm_status_raw.items()))
         except Exception as err:
-            logger.error("Error: {}".format(err))
+            logger.exception("Error: {}".format(err))
         finally:
             time.sleep(config.API_PAUSE)
             lf.lock_release(config.LOCKFILE_API)
 
     try:
         tor_version = subprocess.check_output(
-            'docker exec -i tor tor --version --quiet', shell=True, text=True)
+            'docker exec -i bitchan_tor tor --version --quiet', shell=True, text=True)
     except:
         logger.exception("getting tor version")
         tor_version = "Error getting tor version"
@@ -1208,19 +1886,27 @@ def status():
         logger.exception("Tor stats")
 
     return render_template("pages/status.html",
+                           bm_messages_size=bm_messages_size,
                            bm_status=bm_status,
+                           df=df,
                            form_status=form_status,
                            status_msg=status_msg,
                            tor_circuit_dict=tor_circuit_dict,
+                           tor_address_bm=tor_address_bm,
+                           tor_enabled_bm=tor_enabled_bm,
+                           tor_address_cus=tor_address_cus,
+                           tor_enabled_cus=tor_enabled_cus,
+                           tor_address_rand=tor_address_rand,
+                           tor_enabled_rand=tor_enabled_rand,
                            tor_status=tor_status,
                            tor_version=tor_version,
                            upload_progress=UploadProgress.query.all())
 
 
 @blueprint.route('/log', methods=('GET', 'POST'))
+@count_views
 def log():
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 

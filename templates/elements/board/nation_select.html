@@ -1,9 +1,9 @@
-<select name="nation">
+<select style="width: 100%;" name="nation">
 	<option value=""></option>
-{% for each_flag in custom_flags %}
+{% for each_flag in custom_flags -%}
 	<option value="customflag_{{each_flag.id}}">Custom: {{each_flag.name}}</option>
 {% endfor %}
-{% for value, text in nations.items() %}
+{% for value, text in nations.items() -%}
 	<option value="{{value}}">{{text}}</option>
 {% endfor %}
 </select>

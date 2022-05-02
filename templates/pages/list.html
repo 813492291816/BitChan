@@ -127,7 +127,7 @@ List
     {% if rules and "automatic_wipe" in rules %}
     <center>
         <div class="themed" style="padding-top: 0.5em">
-            Content Wipe in <span id="clear_content_countdown">-</span>
+            Content Wipe in <span id="clear_content_countdown">{{wipe_time_left(rules["automatic_wipe"]["wipe_epoch"])}}</span>
         </div>
     </center>
     {% endif %}
@@ -298,7 +298,7 @@ List
     </div>
 
     <center>
-        <a class="themed" href="/list_bulk_add/{{board['current_chan'].address}}">Bulk Add to List</a>
+        <a class="link" href="/list_bulk_add/{{board['current_chan'].address}}">Bulk Add to List</a>
     </center>
     {% endif %}
 
@@ -528,6 +528,5 @@ List
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

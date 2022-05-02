@@ -1,3 +1,4 @@
+import base64
 import logging
 import os
 import shutil
@@ -10,7 +11,8 @@ from flask import session
 from flask import url_for
 from flask.blueprints import Blueprint
 
-from database.models import GlobalSettings
+from flask_routes.utils import count_views
+from flask_routes.utils import is_verified
 from forms import forms_settings
 from utils.routes import allowed_access
 from utils.routes import page_dict
@@ -30,17 +32,27 @@ def global_var():
 
 @blueprint.before_request
 def before_view():
-    if (GlobalSettings.query.first().enable_verification and
-            ("verified" not in session or not session["verified"])):
-        session["verified_msg"] = "You are not verified"
-        return redirect(url_for('routes_verify.verify_wait'))
-    session["verified_msg"] = "You are verified"
+    if not is_verified():
+        full_path_b64 = "0"
+        if request.method == "GET":
+            if request.url:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.url.encode()).decode()
+            elif request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        elif request.method == "POST":
+            if request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        return redirect(url_for('routes_verify.verify_wait',
+                                full_path_b64=full_path_b64))
 
 
 @blueprint.route('/pgp', methods=('GET', 'POST'))
+@count_views
 def pgp():
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 

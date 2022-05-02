@@ -41,8 +41,8 @@
                         <td>
                             <img style="width: 25px; height: 25px" src="/icon/{{address}}">
                         </td>
-                        <td style="font-family: monospace">
-                            <a class="link" href="/mailbox/{{address}}/inbox/1/0">{{address}}</a>
+                        <td>
+                            <a style="font-family: monospace" class="link" href="/mailbox/{{address}}/inbox/1/0">{{address}}</a>
                         </td>
                         <td>
                             <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyToClipboard('{{address}}')">&#128203;</button>
@@ -77,6 +77,9 @@
                     <label style="display: block" for="passphrase">Passphrase</label>
                     <input type="text" id="passphrase" name="passphrase"/>
                 </div>
+                    <div class="themed" style="padding-top: 0.5em">
+                    <input type="checkbox" id="generate_shorter_address" name="generate_shorter_address" value="y"> <label for="generate_shorter_address">Generate Shorter Address</label>
+                </div>
                 <div class="themed" style="padding-top: 0.5em">
                     <input type="checkbox" id="resync" name="resync" value="y"> <label for="resync">Resync</label>
                 </div>
@@ -90,6 +93,5 @@
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

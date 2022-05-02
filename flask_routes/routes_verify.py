@@ -1,7 +1,9 @@
+import base64
 import logging
 import time
 import uuid
 
+from flask import abort
 from flask import redirect
 from flask import render_template
 from flask import request
@@ -11,6 +13,8 @@ from flask.blueprints import Blueprint
 
 from bitchan_flask import captcha
 from database.models import SessionInfo
+from flask_routes.utils import count_views
+from flask_routes.utils import watch_ban
 from utils.routes import allowed_access
 
 logger = logging.getLogger('bitchan.routes_verify')
@@ -21,9 +25,17 @@ blueprint = Blueprint('routes_verify',
                       template_folder='../templates')
 
 
-@blueprint.route('/wait')
-def verify_wait():
-    allowed, allow_msg = allowed_access(check_can_view=True)
+@blueprint.route('/wait/<full_path_b64>')
+@watch_ban
+@count_views
+def verify_wait(full_path_b64):
+    if "banned" in session:
+        if session["banned"] == 1:
+            return "lol"
+        elif session["banned"] == 2:
+            abort(404)
+
+    allowed, allow_msg = allowed_access("can_verify")
     if not allowed:
         return allow_msg
 
@@ -34,12 +46,21 @@ def verify_wait():
     session[page_id] = time.time()
 
     return render_template("pages/verify_wait.html",
-                           page_id=page_id)
+                           page_id=page_id,
+                           full_path_b64=full_path_b64)
 
 
-@blueprint.route('/verify/<page_id>', methods=('GET', 'POST'))
-def verify_test(page_id):
-    allowed, allow_msg = allowed_access(check_can_view=True)
+@blueprint.route('/verify/<page_id>/<full_path_b64>', methods=('GET', 'POST'))
+@watch_ban
+@count_views
+def verify_test(page_id, full_path_b64):
+    if "banned" in session:
+        if session["banned"] == 1:
+            return "lol"
+        elif session["banned"] == 2:
+            abort(404)
+
+    allowed, allow_msg = allowed_access("can_verify")
     if not allowed:
         return allow_msg
 
@@ -52,8 +73,8 @@ def verify_test(page_id):
         return '<div style="text-align:center;padding-top:2em">Invalid Wait. <a href="/">Reverify</a></div>'
 
     if request.method == 'POST':
-        page_id = request.form.get('page_id', None)
-        if captcha.validate(page_id=page_id):
+        captcha_id = request.form.get('page_id', None)
+        if captcha.validate(captcha_id):
             session_test = SessionInfo.query.filter(
                 SessionInfo.session_id == session["session_id"]).first()
             if not session_test:
@@ -72,16 +93,25 @@ def verify_test(page_id):
             session["verified"] = True
             session.pop(page_id)
             logger.info("Post request session: {}".format(session))
-            return redirect(url_for('routes_main.index'))
+
+            if full_path_b64 == "0":
+                return redirect(url_for('routes_main.index'))
+            else:
+                try:
+                    full_path_url = base64.b64decode(full_path_b64.encode()).decode()
+                    return redirect(full_path_url)
+                except:
+                    return redirect(url_for('routes_main.index'))
         else:
             if "verify_captcha_count" not in session:
                 session["verify_captcha_count"] = 1
             elif session["verify_captcha_count"] > 4:
                 session["verify_captcha_count"] = 0
                 session.pop(page_id)
-                return redirect(url_for('routes_verify.verify_wait'))
+                return redirect(url_for('routes_verify.verify_wait', full_path_b64=full_path_b64))
             else:
                 session["verify_captcha_count"] += 1
 
     return render_template("pages/verify_test.html",
-                           page_id=page_id)
+                           page_id=page_id,
+                           full_path=full_path_b64)

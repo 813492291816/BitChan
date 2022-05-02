@@ -1,10 +1,14 @@
 # From https://raw.githubusercontent.com/Tethik/flask-session-captcha
 import base64
 import logging
+import time
 from random import SystemRandom
 
 from captcha.image import ImageCaptcha
-from flask import session, request, Markup
+from flask import Markup
+from flask import request
+
+from database.models import Captcha
 
 
 class FlaskSessionCaptcha(object):
@@ -57,13 +61,12 @@ class FlaskSessionCaptcha(object):
             # Flask-sessionstore seems to have the same problem. 
             app.session_interface.db.create_all()
 
-    def generate(self, page_id):
+    def generate(self, captcha_id):
         """
-        Generates and returns a numeric captcha image in base64 format. 
-        Saves the correct answer in `session['captcha_answer']`
+        Generates and returns a numeric captcha image in base64 format.
         Use later as:
 
-        src = captcha.generate()
+        src = captcha.generate(captcha_id)
         <img src="{{src}}">
         """                
         answer = self.rand.randrange(self.max)
@@ -72,17 +75,17 @@ class FlaskSessionCaptcha(object):
         base64_captcha = base64.b64encode(image_data.getvalue()).decode("ascii")
         logging.debug('Generated captcha with answer: ' + answer)
 
-        # if page_id provided, permit saving multiple answers to session
-        if page_id:
-            if 'captcha_answers_id' not in session:
-                session['captcha_answers_id'] = {}
-            session['captcha_answers_id'][page_id] = answer
-        else:
-            session['captcha_answer'] = answer
+        captcha = Captcha.query.filter(Captcha.captcha_id == captcha_id).first()
+        if not captcha:
+            new_captcha = Captcha()
+            new_captcha.captcha_id = captcha_id
+            new_captcha.captcha_answer = answer
+            new_captcha.timestamp_utc = time.time()
+            new_captcha.save()
 
         return base64_captcha
 
-    def validate(self, form_key="captcha", page_id=None, value=None):
+    def validate(self, captcha_id, form_key="captcha", value=None):
         """
         Validate a captcha answer (taken from request.form) against the answer saved in the session.
         Returns always true if CAPTCHA_ENABLE is set to False. Otherwise return true only if it is the correct answer.
@@ -90,32 +93,16 @@ class FlaskSessionCaptcha(object):
         if not self.enabled:
             return True
 
-        if page_id:
-            session_values_id = session.get('captcha_answers_id', None)
-            if session_values_id and page_id in session_values_id:
-                session_value = session_values_id[page_id]
-            else:
-                return False
-        else:
-            session_value = session.get('captcha_answer', None)
+        captcha = Captcha.query.filter(Captcha.captcha_id == captcha_id).first()
+        if not captcha:
+            return False
 
-        if not session_value:
+        if not captcha.captcha_answer:
             return False
 
         if not value and form_key in request.form:
             value = request.form[form_key].strip()
 
-        # invalidate the answer to stop new tries on the same challenge.
-        if page_id and 'captcha_answers_id' in session:
-            session['captcha_answers_id'].pop(page_id, None)
-        else:
-            session['captcha_answer'] = None
+        captcha.delete()
 
-        return value and value == session_value
-
-    def get_answers(self):
-        """
-        Shortcut function that returns the currently saved answers.
-        """
-        return (session.get('captcha_answer', None),
-                session.get('captcha_answers_id', None))
+        return value and value == captcha.captcha_answer

@@ -10,7 +10,7 @@
      - Set proper down_revision of new upgrade script
      - Use post_alembic_write() to initiate execution of post-database-upgrade
      - Add post-database-upgrade changes to database/upgrade_database_post.py
-   - Change config.VERSION_ALEMBIC to latest version
+   - Change config.VERSION_ALEMBIC to the latest version
 
  - Config update
    - increment config.VERSION_BITCHAN

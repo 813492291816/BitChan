@@ -2,10 +2,7 @@ from database import CRUDMixin
 from flask_extensions import db
 
 HOME_MESSAGE = """<div class="bold" style="text-align: center;">
-  BitChan is a decentralized anonymous imageboard built on top of <a class="link" target="_blank" href="https://github.com/Bitmessage/PyBitmessage">Bitmessage</a> with <a class="link" target="_blank" href="https://www.torproject.org">Tor</a> and <a class="link" target="_blank" href="https://gnupg.org">GnuPG</a>.
-</div>
-<div style="padding-top: 1em;">
-  This is a beta release of BitChan. Some features are only partially implemented and there are likely to be bugs. Please report any issues or bugs you find with a <a class="link" href="/bug_report">Bug Report</a>. Also watch the official <a class="link" href="/board/BM-2cVZdtgUe7uq7LbWx12W2btJybAphF3VxG/1">BitChan-Dev Board</a> for announcements, the <a class="link" href="/list/BM-2cUYu7r41Bbnox4P8gEVtdnZGLnisgG7Yu">BitChan List</a> for other boards and lists that may appear for discussion and other purposes, and the <a class="link" href="https://www.github.com/813492291816/BitChan">BitChan GitHub page</a> for updates to the code.
+  BitChan is a decentralized anonymous imageboard built on top of <a class="link" target="_blank" href="https://github.com/Bitmessage/PyBitmessage">Bitmessage</a> with <a class="link" target="_blank" href="https://www.torproject.org">Tor</a> and <a class="link" target="_blank" href="https://gnupg.org">GnuPG</a>. Learn more in the <a class="link" href="/help">manual</a>.
 </div>"""
 
 
@@ -59,12 +56,14 @@ class GlobalSettings(CRUDMixin, db.Model):
     results_per_page_overboard = db.Column(db.Integer, default=64)
     results_per_page_catalog = db.Column(db.Integer, default=64)
     results_per_page_mod_log = db.Column(db.Integer, default=30)
+    debug_posts = db.Column(db.Boolean, default=False)
 
     # Security
     enable_page_rate_limit = db.Column(db.Boolean, default=False)
     max_requests_per_period = db.Column(db.Integer, default=10)
     rate_limit_period_seconds = db.Column(db.Integer, default=60)
     hide_all_board_list_passphrases = db.Column(db.Boolean, default=False)
+    bitmessage_onion_services_only = db.Column(db.Boolean, default=False)
 
     # Kiosk Mode
     enable_kiosk_mode = db.Column(db.Boolean, default=False)
@@ -91,13 +90,18 @@ class UploadSites(CRUDMixin, db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True)
     domain = db.Column(db.String, default=None)
     type = db.Column(db.String, default=None)
+    subtype = db.Column(db.String, default=None)
     uri = db.Column(db.String, default=None)
     download_prefix = db.Column(db.String, default=None)
     response = db.Column(db.String, default=None)
+    json_key = db.Column(db.String, default=None)
     direct_dl_url = db.Column(db.Boolean, default=None)
     extra_curl_options = db.Column(db.String, default=None)
     upload_word = db.Column(db.String, default=None)
     form_name = db.Column(db.String, default=None)
+    http_headers = db.Column(db.String, default=None)
+    proxy_type = db.Column(db.String, default=None)
+    replace_download_domain = db.Column(db.String, default=None)
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(

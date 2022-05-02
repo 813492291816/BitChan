@@ -10,7 +10,7 @@
         }
 
         tr:nth-child(odd) {
-            background-color: {{themes[settings.theme].posthighlight}};
+            background-color: {{themes[get_theme()].posthighlight}};
         }
 
         .table-heading {
@@ -46,14 +46,14 @@
                 <td>{{login_credentials["global_admin"]}}</td>
             </tr>
             <tr>
-                <td colspan="2">Credentials that provide global admin rights, essentially removing all restrictions.</td>
+                <td colspan="2">Credentials that provide global admin permissions, essentially removing all restrictions.</td>
             </tr>
             <tr>
                 <td>Board/List Admin</td>
                 <td>{{login_credentials["board_list_admin"]}}</td>
             </tr>
             <tr>
-                <td colspan="2">Credentials that provide board/list admin rights, allowing the ability to perform some actions for the boards/lists listed below.</td>
+                <td colspan="2">Credentials that provide board/list admin permissions, allowing the ability to perform some actions for the boards/lists listed below.</td>
             </tr>
             <tr>
                 <td>Admin Board/List Addresses</td>
@@ -61,6 +61,13 @@
             </tr>
             <tr>
                 <td colspan="2">The boards that some actions can be performed on (if Board Admin).</td>
+            </tr>
+            <tr>
+                <td>Janitor</td>
+                <td>{{login_credentials["janitor"]}}</td>
+            </tr>
+            <tr>
+                <td colspan="2">Credentials that provide janitor permissions, allowing the ability to delete posts and threads.</td>
             </tr>
             <tr>
                 <td>Single Session Only</td>
@@ -84,6 +91,5 @@
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

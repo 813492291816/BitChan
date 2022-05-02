@@ -8,20 +8,45 @@ from .chans import AddressBook
 from .chans import AdminMessageStore
 from .chans import Chan
 from .chans import Command
+from .chans import Games
 from .chans import Identity
 from .chans import Messages
-from .chans import PostReplies
 from .chans import Threads
 from .chans import UploadProgress
+from .maintenance import Captcha
 from .maintenance import DeletedMessages
+from .maintenance import DeletedThreads
+from .maintenance import EndpointCount
 from .maintenance import ModLog
 from .maintenance import PostCards
+from .maintenance import PostDeletePasswordHashes
 from .maintenance import SessionInfo
 from .settings import Flags
 from .settings import GlobalSettings
 from .settings import UploadSites
 
 logger = logging.getLogger('bitchan.db_models')
+
+
+def regenerate_upload_sites():
+    if not UploadSites.query.count():
+        for domain, upload_info in config.DICT_UPLOAD_SERVERS.items():
+            UploadSites(
+                domain=domain,
+                type=upload_info["type"],
+                subtype=upload_info["subtype"],
+                uri=upload_info["uri"],
+                download_prefix=upload_info["download_prefix"],
+                response=upload_info["response"],
+                json_key=upload_info["json_key"],
+                direct_dl_url=upload_info["direct_dl_url"],
+                extra_curl_options=upload_info["extra_curl_options"],
+                upload_word=upload_info["upload_word"],
+                form_name=upload_info["form_name"],
+                http_headers=upload_info["http_headers"],
+                proxy_type=upload_info["proxy_type"],
+                replace_download_domain=upload_info["replace_download_domain"]
+            ).save()
 
 
 def populate_db():
@@ -35,19 +60,7 @@ def populate_db():
     # for each in UploadSites.query.all():
     #     each.delete()
 
-    if not UploadSites.query.count():
-        for domain, upload_info in config.DICT_UPLOAD_SERVERS.items():
-            UploadSites(
-                domain=domain,
-                type=upload_info["type"],
-                uri=upload_info["uri"],
-                download_prefix=upload_info["download_prefix"],
-                response=upload_info["response"],
-                direct_dl_url=upload_info["direct_dl_url"],
-                extra_curl_options=upload_info["extra_curl_options"],
-                upload_word=upload_info["upload_word"],
-                form_name=upload_info["form_name"],
-            ).save()
+    regenerate_upload_sites()
 
     if not AddressBook.query.count():
         AddressBook(

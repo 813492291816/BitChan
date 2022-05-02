@@ -11,8 +11,13 @@ credentials = Credentials()
 credentials.add_user(
     id_="Admin_01",
     password="DEFAULT_PASSWORD_CHANGE_ME",  # Default password is prohibited. Must be changed to something else to work.
-    single_session=False, global_admin=True, can_post=True,
+    single_session=False, global_admin=True, can_post=True, janitor=False,
     board_list_admin=False, admin_boards=[])
+# credentials.add_user(
+#     id_="Janitor_no_01",
+#     password="JANITOR_MULTI_NO",
+#     single_session=True, global_admin=False, can_post=True, janitor=True,
+#     board_list_admin=False, admin_boards=[])
 # credentials.add_user(
 #     id_="Board_admin_post_yes_multi_no_01",
 #     password="BOARD_ADMIN_MULTI_NO",

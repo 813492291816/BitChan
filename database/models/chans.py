@@ -1,6 +1,9 @@
+import json
+
+from sqlalchemy.orm import relationship
+
 from database import CRUDMixin
 from flask_extensions import db
-from sqlalchemy.orm import relationship
 
 
 class AddressBook(CRUDMixin, db.Model):
@@ -30,6 +33,7 @@ class Identity(CRUDMixin, db.Model):
     passphrase_base64 = db.Column(db.String, default=None)
     total_messages = db.Column(db.Integer, default=0)
     unread_messages = db.Column(db.Integer, default=0)
+    short_address = db.Column(db.Boolean, default=False)
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(
@@ -51,6 +55,8 @@ class Command(CRUDMixin, db.Model):
     thread_id = db.Column(db.String, default=None)
     message_id = db.Column(db.String, default=None)
     options = db.Column(db.String, default="{}")
+    locally_deleted = db.Column(db.Boolean, default=False)
+    locally_restored = db.Column(db.Boolean, default=False)
 
     # Thread options
     thread_sticky = db.Column(db.Boolean, default=False)
@@ -78,6 +84,7 @@ class Chan(CRUDMixin, db.Model):
     type = db.Column(db.String, default=None)
     passphrase = db.Column(db.String, unique=True, default=None)
     address = db.Column(db.String, unique=True, default=None)
+    unlisted = db.Column(db.Boolean, default=False)
     primary_addresses = db.Column(db.String, default="[]")
     secondary_addresses = db.Column(db.String, default="[]")
     tertiary_addresses = db.Column(db.String, default="[]")
@@ -108,6 +115,7 @@ class Chan(CRUDMixin, db.Model):
     list_send = db.Column(db.Boolean, default=False)
 
     threads = relationship("Threads", back_populates="chan")
+    mod_log = relationship("ModLog", back_populates="chan")
 
     # Not used, can be removed
     image_banner_base64 = db.Column(db.String, default=None)
@@ -140,6 +148,8 @@ class Threads(CRUDMixin, db.Model):
     locked_local_ts = db.Column(db.Integer, default=0)
     anchored_local = db.Column(db.Boolean, default=False)
     anchored_local_ts = db.Column(db.Integer, default=0)
+    hide = db.Column(db.Boolean, default=False)
+    time_ts = db.Column(db.Integer, default=0)
 
     chan = relationship("Chan", back_populates="threads")
     messages = relationship("Messages", back_populates="thread")
@@ -200,27 +210,35 @@ class Messages(CRUDMixin, db.Model):
     image2_spoiler = db.Column(db.Boolean, default=None)
     image3_spoiler = db.Column(db.Boolean, default=None)
     image4_spoiler = db.Column(db.Boolean, default=None)
+    delete_password_hash = db.Column(db.String, default=None)
     message_original = db.Column(db.String, default=None)
     message_steg = db.Column(db.String, default="{}")
     popup_html = db.Column(db.String, default="")
-    regenerate_popup_html = db.Column(db.Boolean, default=False)
+    popup_moderate = db.Column(db.String, default="")
+    regenerate_popup_html = db.Column(db.Boolean, default=True)
+    hide = db.Column(db.Boolean, default=False)
+    time_ts = db.Column(db.Integer, default=0)
+    delete_comment = db.Column(db.String, default=None)
+    post_html = db.Column(db.String, default=None)
+    post_html_board_view = db.Column(db.String, default=None)
+    regenerate_post_html = db.Column(db.Boolean, default=False)
+    post_ids_replied_to = db.Column(db.String, default="[]")  # Reply Post IDs in this message
+    post_ids_replying_to_msg = db.Column(db.String, default="[]")  # Post IDs that reply to this message
+
+    # Games
+    game_password_a = db.Column(db.String, default=None)
+    game_password_b_hash = db.Column(db.String, default=None)
+    game_player_move = db.Column(db.String, default=None)
+    game_image_file = db.Column(db.String, default=None)
+    game_image_name = db.Column(db.String, default=None)
+    game_image_extension = db.Column(db.String, default=None)
+    game_message_extra = db.Column(db.String, default=None)
 
     thread = relationship("Threads", back_populates="messages")
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(
             cls=self.__class__.__name__, rep=self)
-
-
-class PostReplies(CRUDMixin, db.Model):
-    __tablename__ = "post_replies"
-    __table_args__ = {
-        'extend_existing': True
-    }
-
-    id = db.Column(db.Integer, unique=True, primary_key=True)
-    post_id = db.Column(db.String, db.ForeignKey('thread.id'), default=None)  # post that people replied to
-    reply_ids = db.Column(db.String, default="[]")  # posts that replied to post_id
 
 
 class UploadProgress(CRUDMixin, db.Model):
@@ -251,6 +269,32 @@ class AdminMessageStore(CRUDMixin, db.Model):
     id = db.Column(db.Integer, unique=True, primary_key=True)
     message_id = db.Column(db.String, unique=True, default=None)
     time_added = db.Column(db.DateTime, default=None)
+
+    def __repr__(self):
+        return "<{cls}(id={rep.id})>".format(
+            cls=self.__class__.__name__, rep=self)
+
+
+class Games(CRUDMixin, db.Model):
+    __tablename__ = "games"
+    __table_args__ = {
+        'extend_existing': True
+    }
+
+    id = db.Column(db.Integer, unique=True, primary_key=True)
+    game_hash = db.Column(db.String, unique=True, default=None)
+    thread_hash = db.Column(db.String, default=None)
+    is_host = db.Column(db.Boolean, default=None)
+    host_from_address = db.Column(db.String, default=None)
+    moves = db.Column(db.String, default=json.dumps({"game_moves": [], "game_log": []}))
+    players = db.Column(db.String, default="{}")
+    turn_player = db.Column(db.String, default=None)
+    turn_ts = db.Column(db.Integer, default=None)
+    game_type = db.Column(db.String, default=None)
+    game_ts = db.Column(db.Integer, default=None)
+    game_initiated = db.Column(db.String, default=None)
+    game_over = db.Column(db.Boolean, default=False)
+    game_termination_pw_hash = db.Column(db.String, default=None)
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(

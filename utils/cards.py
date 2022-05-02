@@ -13,8 +13,8 @@ from database.models import Messages
 from database.models import PostCards
 from database.models import Threads
 from database.utils import session_scope
+from utils.generate_card import get_card_link_html
 from utils.html_truncate import truncate
-from utils.message_summary import get_card_link_html
 from utils.shared import post_has_image
 
 DB_PATH = 'sqlite:///' + DATABASE_BITCHAN

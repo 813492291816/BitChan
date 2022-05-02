@@ -119,7 +119,7 @@ List
     </center>
 
     <center>
-        <a class="themed" href="/list/{{board['current_chan'].address}}">Back to List</a>
+        <a class="link" href="/list/{{board['current_chan'].address}}">Back to List</a>
     </center>
 
     {% if primary_access or secondary_access or tertiary_access or not is_private %}
@@ -230,6 +230,5 @@ List
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

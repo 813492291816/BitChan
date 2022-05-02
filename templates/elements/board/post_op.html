@@ -1,5 +1,5 @@
 {% set is_op_post = True %}
-{% set is_board_view = board['current_thread'] == None %}
+{% set is_board_view = board['board_view'] %}
 {% set file_order, attach, number_files = attachment_info(post.message_id) %}
 
 <input type="hidden" id="type_{{post.message_id}}" name="type" value="op"/>
@@ -8,6 +8,7 @@
 <div class="themed" style="display: block; vertical-align: top;" id="{{post.post_id}}">
     <div>
         {% include '/elements/board/post_header.html' %}
+        {% include '/elements/board/post_files.html' %}
     </div>
 
     <div style="display: block; padding-top: 0.3em">
@@ -18,7 +19,9 @@
         </div>
 {% endif %}
 
-{% if post.file_currently_downloading %}
+{% if post.hide %}
+
+{% elif post.file_currently_downloading %}
         <div style="min-width: 100px; float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; margin-right: 1em">
             {% include '/elements/board/post_filenames_only.html' %}
             Processing attachment(s): {{post.file_progress}}.<br/>Please wait.
@@ -99,16 +102,16 @@
             <input type="hidden" id="spoiler_{{post.message_id}}_{{loop.index}}" name="spoiler" value="{% if attach[file_name]['spoiler'] %}1{% else %}0{% endif %}"/>
             <input type="hidden" id="src_thumb_{{post.message_id}}_{{loop.index}}" name="src_thumb" value="{% if attach[file_name]['spoiler'] %}/spoiler/{{board['current_chan'].address}}{% else %}/files/thumb/{{post.message_id}}/{{quote(file_name)}}{% endif %}"/>
             <input type="hidden" id="filename_{{post.message_id}}_{{loop.index}}" name="filename" value="{{quote(file_name)}}"/>
-            <img id="{{post.message_id}}" name="{{loop.index}}" style="border-radius: 2px" class="opimg pic" src="{% if attach[file_name]['spoiler'] %}/spoiler/{{board['current_chan'].address}}{% else %}/files/thumb/{{post.message_id}}/{{quote(file_name)}}{% endif %}">
+            <img loading="lazy" id="img_{{post.message_id}}_{{loop.index}}" style="height: {{130 * attach[file_name]['thumb_percent_height']}}px; border-radius: 2px" class="opimg pic" src="{% if attach[file_name]['spoiler'] %}/spoiler/{{board['current_chan'].address}}{% else %}/files/thumb/{{post.message_id}}/{{quote(file_name)}}{% endif %}">
             {% elif attach[file_name]["extension"] in config.FILE_EXTENSIONS_AUDIO %}
-            <div id="{{post.message_id}}" name="{{loop.index}}" class="video" style="border-radius: 5px; margin: 3px 3px 2px 2px; max-width: 450px;">
-                <audio class="video-insert volume-75" controls>
+            <div id="audio_{{post.message_id}}_{{loop.index}}" class="video" style="border-radius: 5px; margin: 3px 3px 2px 2px; max-width: 450px;">
+                <audio preload="metadata" class="video-insert volume-75" controls>
                   <source src="/files/file/{{post.message_id}}/{{quote(file_name)}}">
                   Your browser does not support the audio tag.
                 </audio>
             </div>
             {% elif attach[file_name]["extension"] in config.FILE_EXTENSIONS_VIDEO %}
-            <div id="{{post.message_id}}" name="{{loop.index}}" class="video" style="border: 0px solid #000; border-radius: 5px; margin: 3px 3px 2px 2px; width: 275px; height: 200px;">
+            <div id="vid_{{post.message_id}}_{{loop.index}}" class="video" style="border: 0px solid #000; border-radius: 5px; margin: 3px 3px 2px 2px; width: 275px; height: 200px;">
                 Click to Enlarge/Shrink<br/>
                 <video class="video-insert volume-75" controls>
                   <source src="/files/file/{{post.message_id}}/{{quote(file_name)}}">
@@ -128,6 +131,11 @@
     {% endfor %}
 {% endif %}
 
+{% if post.delete_comment %}
+        {{post.delete_comment|safe}}
+{% elif post.hide %}
+        <span class="god-text">[moderated: hidden]</span>
+{% else %}
         <input type="hidden" id="truncate_{{post.message_id}}" name="truncate" value="0"/>
         <br id="newline_{{post.message_id}}" style="
             {%- if number_files > 2 %}
@@ -136,8 +144,8 @@
                 display: none;
             {%- endif -%}
         clear: both" />
-        <blockquote class="post">
-        {{format_body(post.message_id, text, is_board_view)|safe}}
-        </blockquote>
+
+        <blockquote class="post">{{format_body(post.message_id, text, False, is_board_view)|safe}}</blockquote>
+{% endif %}
     </div>
 </div>

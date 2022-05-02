@@ -1,0 +1,12 @@
+{% set is_op_post = True %}
+{% set is_board_view = board['board_view'] %}
+
+<div class="themed" style="display: block; vertical-align: top;" id="{{thread.thread_hash}}">
+	<div>
+        {% include '/elements/board/post_header.html' %}
+    </div>
+
+	<div style="display: block; padding-top: 1em">
+		<span class="god-text">[moderated: hidden]</span>
+	</div>
+</div>

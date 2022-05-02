@@ -17,6 +17,8 @@ from bitchan_client import DaemonCom
 from database.models import Chan
 from database.models import GlobalSettings
 from database.models import Identity
+from flask_routes.utils import count_views
+from flask_routes.utils import is_verified
 from forms import forms_mailbox
 from utils.files import LF
 from utils.gateway import api
@@ -40,11 +42,21 @@ def global_var():
 
 @blueprint.before_request
 def before_view():
-    if (GlobalSettings.query.first().enable_verification and
-            ("verified" not in session or not session["verified"])):
-        session["verified_msg"] = "You are not verified"
-        return redirect(url_for('routes_verify.verify_wait'))
-    session["verified_msg"] = "You are verified"
+    if not is_verified():
+        full_path_b64 = "0"
+        if request.method == "GET":
+            if request.url:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.url.encode()).decode()
+            elif request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        elif request.method == "POST":
+            if request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        return redirect(url_for('routes_verify.verify_wait',
+                                full_path_b64=full_path_b64))
 
 
 def timestamp_format(ts):
@@ -107,9 +119,9 @@ def get_messages_from_page(mailbox, page, address):
 
 
 @blueprint.route('/mailbox/<ident_address>/<mailbox>/<page>/<msg_id>', methods=('GET', 'POST'))
+@count_views
 def mailbox(ident_address, mailbox, page, msg_id):
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 
@@ -355,9 +367,9 @@ def get_from_list_all():
 
 
 @blueprint.route('/compose/<address_from>/<address_to>', methods=('GET', 'POST'))
+@count_views
 def compose(address_from, address_to):
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 

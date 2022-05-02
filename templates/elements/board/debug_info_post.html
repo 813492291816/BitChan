@@ -1,0 +1,15 @@
+<section>
+    <details>
+    <summary>Post {{post.post_id}} Debug Details</summary>
+    <table class="themed">
+        <tbody>
+        {% for i in range(debug_post_columns|length) %}
+            <tr>
+                <td>{{debug_post_columns[i]}}</td>
+                <td>{{debug_post_data[i]}}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </details>
+</section>

@@ -1,0 +1,45 @@
+{% set primary_addresses = chans_board_info[board['current_chan'].address]["primary_addresses"] -%}
+{%- set secondary_addresses = chans_board_info[board['current_chan'].address]["secondary_addresses"] -%}
+{%- set tertiary_addresses = chans_board_info[board['current_chan'].address]["tertiary_addresses"] -%}
+{%- set restricted_addresses = chans_board_info[board['current_chan'].address]["restricted_addresses"] -%}
+
+{%- set primary_access = [] -%}
+{%- set secondary_access = [] -%}
+{%- set tertiary_access = [] -%}
+{%- set on_any_access_list = [] -%}
+
+{%- for id_type in [identities, all_chans] -%}
+    {%- for address in id_type if id_type[address]['enabled'] -%}
+        {%- if address in primary_addresses -%}
+            {%- do primary_access.append(1) -%}
+        {%- endif -%}
+        {%- if address in secondary_addresses -%}
+            {%- do secondary_access.append(1) -%}
+        {%- endif %}
+        {%- if address in tertiary_addresses -%}
+            {%- do tertiary_access.append(1) -%}
+        {%- endif -%}
+    {%- endfor -%}
+{%- endfor -%}
+
+{%- if primary_access or secondary_access or tertiary_access -%}
+    {%- do on_any_access_list.append(1) -%}
+{%- endif -%}
+
+{%- set thread = board["current_thread"] -%}
+
+{%- if msg.is_op -%}
+    {%- set post = msg -%}
+    {%- set text = msg.message -%}
+    {%- if msg.message_steg != "{}" -%}
+        {%- set steg_found = true -%}
+    {%- endif -%}
+    {%- include '/elements/board/post_op.html' %}
+{%- else -%}
+    {%- set post = msg -%}
+    {%- set text = msg.message -%}
+    {%- if msg.message_steg != "{}" -%}
+        {%- set reply_steg = true -%}
+    {%- endif -%}
+    {%- include '/elements/board/post_reply.html' %}
+{%- endif -%}

@@ -1,19 +1,20 @@
-<section>
-    <details>
-        <summary>Post Options</summary>
-        <table style="width: 100%;">
-          <tbody>
-        {% if thread %}
-            <tr>
-                <td><label for="sage">Sage</label></td>
-                <td><input type="checkbox" id="sage" name="sage" value="y"{% if "sage" in form_populate and form_populate["sage"] %} checked{% endif %}/></td>
-            </tr>
-        {% endif %}
-            <tr>
-                <td><label for="ttl">TTL (seconds)</label></td>
-                <td><input type="number" id="ttl" name="ttl" value="{% if 'ttl' in form_populate and form_populate['ttl'] %}{{form_populate['ttl']}}{% else %}2419200{% endif %}"/></td>
-            </tr>
-          </tbody>
-        </table>
-    </details>
-</section>
+{% if thread %}
+    <tr>
+      <td class="form themed bold"><label for="sage">Sage</label></td>
+      <td colspan="2">
+          <input type="checkbox" id="sage" name="sage" value="y"{% if "sage" in form_populate and form_populate["sage"] %} checked{% endif %}/>
+      </td>
+    </tr>
+{% endif %}
+    <tr>
+      <td class="form themed bold"><label for="ttl">TTL (seconds)</label></td>
+      <td>
+          <input style="width: 100%; box-sizing: border-box;" type="number" id="ttl" name="ttl" value="{% if 'ttl' in form_populate and form_populate['ttl'] %}{{form_populate['ttl']}}{% else %}2419200{% endif %}"/>
+      </td>
+    </tr>
+    <tr>
+        <td class="form themed bold"><label for="delete_password">Password to Delete <span title="Max 512 characters. Use unique passwords for different posts and record them somewhere (see manual for more info).">&#9432;</span></label></td>
+        <td>
+            <input class="form" style="width: 100%; box-sizing: border-box;" type="password" maxlength="512" id="delete_password" name="delete_password" value="{% if 'delete_password' in form_populate and form_populate['delete_password'] %}{{form_populate['delete_password']}}{% endif %}"/>
+      </td>
+    </tr>

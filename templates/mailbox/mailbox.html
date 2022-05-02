@@ -231,7 +231,11 @@
                 {% endif %}
                     </td>
                     <td class="{% if is_selected %} border-2px{% endif %}" style="{% if is_selected %}{% elif mailbox == 'inbox' and not each_msg['read'] %}font-weight: bold;{% endif %}">
+                {% if msg_selected and each_msg["msgid"] == msg_selected["msgid"] %}
                         {{base64_decode(each_msg["subject"])}}
+                {% else %}
+                        <a class="link" href="/mailbox/{{ident_address}}/{{mailbox}}/{{page}}/{{each_msg['msgid']}}">{{base64_decode(each_msg["subject"])}}</a>
+                {% endif %}
                     </td>
                     <td class="{% if is_selected %} border-2px{% endif %}" style="white-space: nowrap;{% if is_selected %}{% elif mailbox == 'inbox' and not each_msg['read'] %}font-weight: bold;{% endif %}">
                 {% if msg_selected and each_msg["msgid"] == msg_selected["msgid"] %}
@@ -330,6 +334,5 @@
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

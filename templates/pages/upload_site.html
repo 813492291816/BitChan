@@ -44,6 +44,12 @@
                         </td>
                     </tr>
                     <tr>
+                        <td>{{form_upload_site.subtype.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="subtype" name="subtype"/>
+                        </td>
+                    </tr>
+                    <tr>
                         <td>{{form_upload_site.uri.label(class_='heading-bold')}}</td>
                         <td>
                             <input type="text" id="uri" name="uri"/>
@@ -59,6 +65,12 @@
                         <td>{{form_upload_site.response.label(class_='heading-bold')}}</td>
                         <td>
                             <input type="text" id="response" name="response"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.json_key.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="json_key" name="json_key"/>
                         </td>
                     </tr>
                     <tr>
@@ -85,6 +97,24 @@
                             <input type="text" id="form_name" name="form_name"/>
                         </td>
                     </tr>
+                    <tr>
+                        <td>{{form_upload_site.http_headers.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="http_headers" name="http_headers"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.proxy_type.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="proxy_type" name="proxy_type"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.replace_download_domain.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="replace_download_domain" name="replace_download_domain"/>
+                        </td>
+                    </tr>
                 </table>
                 <div style="padding-top: 1em; text-align: center;">
                     <input type="submit" name="add" value="Add"/>
@@ -107,6 +137,10 @@
                         <td>{{site_options['type']}}</td>
                     </tr>
                     <tr>
+                        <td>{{form_upload_site.subtype.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['subtype']}}</td>
+                    </tr>
+                    <tr>
                         <td>{{form_upload_site.uri.label(class_='heading-bold')}}</td>
                         <td>{{site_options['uri']}}</td>
                     </tr>
@@ -117,6 +151,10 @@
                     <tr>
                         <td>{{form_upload_site.response.label(class_='heading-bold')}}</td>
                         <td>{{site_options['response']}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.json_key.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['json_key']}}</td>
                     </tr>
                     <tr>
                         <td>{{form_upload_site.direct_dl_url.label(class_='heading-bold')}}</td>
@@ -133,6 +171,18 @@
                     <tr>
                         <td>{{form_upload_site.form_name.label(class_='heading-bold')}}</td>
                         <td>{{site_options['form_name']}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.http_headers.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['http_headers']}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.proxy_type.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['proxy_type']}}</td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.replace_download_domain.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['replace_download_domain']}}</td>
                     </tr>
                 </table>
                 <div style="padding-top: 1em; text-align: center;">
@@ -160,6 +210,12 @@
                         </td>
                     </tr>
                     <tr>
+                        <td>{{form_upload_site.subtype.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="subtype" name="subtype" value="{% if current_upload_site.subtype %}{{current_upload_site.subtype}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
                         <td>{{form_upload_site.uri.label(class_='heading-bold')}}</td>
                         <td>
                             <input type="text" id="uri" name="uri" value="{% if current_upload_site.uri %}{{current_upload_site.uri}}{% endif %}"/>
@@ -175,6 +231,12 @@
                         <td>{{form_upload_site.response.label(class_='heading-bold')}}</td>
                         <td>
                             <input type="text" id="response" name="response" value="{% if current_upload_site.response %}{{current_upload_site.response}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.json_key.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="json_key" name="json_key" value="{% if current_upload_site.json_key %}{{current_upload_site.json_key}}{% endif %}"/>
                         </td>
                     </tr>
                     <tr>
@@ -199,6 +261,24 @@
                         <td>{{form_upload_site.form_name.label(class_='heading-bold')}}</td>
                         <td>
                             <input type="text" id="form_name" name="form_name" value="{% if current_upload_site.form_name %}{{current_upload_site.form_name}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.http_headers.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="http_headers" name="http_headers" value="{% if current_upload_site.http_headers %}{{current_upload_site.http_headers}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.proxy_type.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="proxy_type" name="proxy_type" value="{% if current_upload_site.proxy_type %}{{current_upload_site.proxy_type}}{% endif %}"/>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>{{form_upload_site.replace_download_domain.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="text" id="replace_download_domain" name="replace_download_domain" value="{% if current_upload_site.replace_download_domain %}{{current_upload_site.replace_download_domain}}{% endif %}"/>
                         </td>
                     </tr>
                 </table>

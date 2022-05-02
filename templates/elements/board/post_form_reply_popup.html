@@ -1,0 +1,190 @@
+{% set thread = None %}
+{% if "current_thread" in board %}
+  {% set thread = board["current_thread"] %}
+{% endif %}
+
+{% set chan = board['current_chan'] %}
+
+<div>
+  <form method="post" enctype="multipart/form-data" autocomplete="off" onsubmit="return checkForm(this);" action="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}{% if last %}?last={{last}}{% endif %}">
+    <input type="hidden" name="thread_id" value="{{thread.thread_hash}}"/>
+    <input type="hidden" name="board_id" value="{{board['current_chan'].address}}"/>
+    <input type="hidden" name="page_id" value="{{page_id}}"/>
+    <input type="hidden" name="is_op" value="no"/>
+    <input type="hidden" name="op_sha256_hash" value="{{thread.op_sha256_hash}}"/>
+    <input type="hidden" name="game_hash" value="{{game_hash}}"/>
+    {% if thread %}
+    <input type="hidden" name="subject" value="{{thread.subject|safe}}"/>
+    {% endif %}
+    <input type="hidden" name="submit" value="Post"/>
+    {{form_post.csrf_token}}
+    <table class="bold" style="table-layout: fixed; max-width: 600px;">
+      <tbody>
+        <tr>
+          <td colspan="3">
+            <section>
+              <details>
+                <summary>Post Options</summary>
+                <section>
+                  <details>
+                    <summary>Formatting</summary>
+                    {% set is_popup = True %}
+                    {% set is_reply = True %}
+                    {% include '/elements/board/form_post_options_formatting.html' %}
+                  </details>
+                </section>
+                <section>
+                  <details>
+                    <summary>Post</summary>
+                    <table style="width: 100%;">
+                      <tbody>
+                        <tr>
+                        {% if thread %}
+                          <td class="form themed bold">Thread Default From</td>
+                          <td colspan="2"><input type="checkbox" id="default_from_address" name="default_from_address" value="y"{% if thread.default_from_address or ("default_from_address" in form_populate and form_populate["default_from_address"]) %} checked{% endif %}/></td>
+                        {% else %}
+                          <td class="form themed bold">Board Default From</td>
+                          <td colspan="2"><input type="checkbox" id="default_from_address" name="default_from_address" value="y"{% if board['current_chan'].default_from_address or ("default_from_address" in form_populate and form_populate["default_from_address"]) %} checked{% endif %}/></td>
+                        {% endif %}
+                        </tr>
+                        <tr>
+                          <td class="form themed bold">Flag</td>
+                          <td colspan="2">
+                            {% include '/elements/board/nation_select.html' %}
+                          </td>
+                        </tr>
+              {% include '/elements/board/form_post_options.html' %}
+                      </tbody>
+                    </table>
+                  </details>
+                </section>
+                <section>
+                  <details>
+                    <summary>Steganography</summary>
+                    <table style="width: 100%">
+                      <tbody>
+                        <tr>
+                          <td class="form themed bold">Image to Insert Steg</td>
+                          <td>
+                            <select name="image_steg_insert" style="width: 100%">
+                              <option value="1"{% if "image_steg_insert" in form_populate and form_populate["image_steg_insert"] == 1 %} selected{% endif %}>1</option>
+                              <option value="2"{% if "image_steg_insert" in form_populate and form_populate["image_steg_insert"] == 2 %} selected{% endif %}>2</option>
+                              <option value="3"{% if "image_steg_insert" in form_populate and form_populate["image_steg_insert"] == 3 %} selected{% endif %}>3</option>
+                              <option value="4"{% if "image_steg_insert" in form_populate and form_populate["image_steg_insert"] == 4 %} selected{% endif %}>4</option>
+                            </select>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td class="form themed bold">Steg Comment<br/><span style="font-size: 0.7em">JPG only</span></td>
+                          <td><textarea rows="7" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" name="steg_message">{% if "steg_comment" in form_populate and form_populate["steg_comment"] %}{{form_populate["steg_comment"]}}{% endif %}</textarea></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </details>
+                </section>
+                <section>
+                  <details>
+                    <summary>Game</summary>
+                    <table style="width: 100%;">
+                      <tbody>
+              {% include '/elements/board/form_post_game_options.html' %}
+                      </tbody>
+                    </table>
+                  </details>
+                </section>
+              </details>
+            </section>
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold">From Address</td>
+          <td colspan="2">
+              <select name="from_address" style="width: 100%">
+            {% if board['current_chan'].address not in from_list -%}
+              <option value=""></option>
+            {%- endif %}
+            {% for each_address in from_list -%}
+              <option value="{{each_address}}"
+              {%- if (thread and thread.default_from_address == each_address) or
+                   (
+                    (not thread and board['current_chan'].default_from_address == each_address) or
+                    (thread and not thread.default_from_address and board['current_chan'].default_from_address == each_address)
+                  ) or
+                     ('from_address' in form_populate and form_populate['from_address'] == each_address) -%}
+                {{' selected'}}
+              {%- endif -%}>{{from_list[each_address]}}</option>
+            {% endfor %}
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold">Comment</td>
+          <td colspan="2">
+            <textarea rows="7" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="body_reply_popup" name="body">{% if "comment" in form_populate and form_populate["comment"] %}{{form_populate["comment"]}}{% endif %}</textarea>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="3">
+            <details>
+                <summary>Upload
+                  {%- if "file1" in form_populate and form_populate["file1"] or
+                        "file2" in form_populate and form_populate["file2"] or
+                        "file3" in form_populate and form_populate["file3"] or
+                        "file4" in form_populate and form_populate["file4"] -%}
+                  <span style="font-weight: bold; color: red; animation: blinkingText 1s infinite;"> PLEASE RESELECT FILES/IMAGES</span>
+                  {%- endif -%}
+                </summary>
+                <table>
+                  <tr>
+                    <td class="form themed bold">Upload Images/Files<br/><span style="font-size: 0.7em">(Check to spoiler image)</span></td>
+                    <td class="themed" colspan="2">
+                      1 <input style="vertical-align: middle;" type="checkbox" id="image1_spoiler" name="image1_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file1')">&#8856;</button> <input id="file1" name="file1" type="file"/>
+                      <br/>2 <input style="vertical-align: middle;" type="checkbox" id="image2_spoiler" name="image2_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file2')">&#8856;</button> <input id="file2" name="file2" type="file"/>
+                      <br/>3 <input style="vertical-align: middle;" type="checkbox" id="image3_spoiler" name="image3_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file3')">&#8856;</button> <input id="file3" name="file3" type="file"/>
+                      <br/>4 <input style="vertical-align: middle;" type="checkbox" id="image4_spoiler" name="image4_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file4')">&#8856;</button> <input id="file4" name="file4" type="file"/>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="form themed bold">Strip EXIF<br/><span style="font-size: 0.7em">JPG/PNG only</span></td>
+                    <td colspan="2"><input type="checkbox" id="strip_exif" name="strip_exif" value="y"{% if "strip_exif" in form_populate and not form_populate["strip_exif"] %}{% else %} checked{% endif %}/></td>
+                  </tr>
+                  <tr>
+                    <td class="form themed bold">Upload Method</td>
+                    <td>
+                      <select style="width: 100%;" name="upload">
+                      {% if not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and not settings.kiosk_disable_bm_attach) %}
+                        <option value="bitmessage"{% if "upload" in form_populate and form_populate["upload"] == "bitmessage" %} selected{% endif %}>Bitmessage (most secure, ~250KB)</option>
+                      {% endif %}
+                      {% for each_server in upload_sites.query.all() %}
+                        <option value="{{each_server.domain}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.domain %} selected{% endif %}>{{each_server.form_name}}</option>
+                      {% endfor %}
+                      </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="form themed bold">Upload Encryption</td>
+                    <td>
+                      <select style="width: 100%;" name="upload_cipher_and_key">
+                      {% for each_cipher in config.UPLOAD_ENCRYPTION_CIPHERS %}
+                        <option value="{{each_cipher[0]}}"{% if "upload_cipher_and_key" in form_populate and form_populate["upload_cipher_and_key"] == each_cipher[0] %} selected{% endif %}>{{each_cipher[1]}}</option>
+                      {% endfor %}
+                      </select>
+                    </td>
+                  </tr>
+                </table>
+              </details>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="3">
+        {% if settings.enable_captcha %}
+            {{captcha(page_id=page_id, img_id="post_captcha")}}
+            <input type="text" name="captcha">
+        {% endif %}
+            <input class="postbutton" type="submit" name="submit_post" value="Post"/>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </form>
+</div>

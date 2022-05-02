@@ -1,0 +1,39 @@
+{% if thread %}
+    <tr>
+        <td class="form themed bold"><label for="game">Host a Game <span title="Select a game to host">&#9432;</span></label></td>
+        <td>
+            <select id="game" name="game">
+                <option value="">None</option>
+                {% for value, name in config.GAMES.items() %}
+                <option value="{{value}}"{% if "game" in form_populate and form_populate["game"] == value %} selected{% endif %}>{{name}}</option>
+                {% endfor %}
+            </select>
+        </td>
+    </tr>
+    <tr>
+        <td class="form themed bold"><label for="game_termination_password">Game Termination Password <span title="Enter a password you cna later use to terminate the game. Max 512 characters.">&#9432;</span></label></td>
+        <td>
+            <input class="form" style="width: 100%; box-sizing: border-box;" type="password" maxlength="512" id="game_termination_password" name="game_termination_password" value="{% if 'game_termination_password' in form_populate and form_populate['game_termination_password'] %}{{form_populate['game_termination_password']}}{% endif %}"/>
+      </td>
+    </tr>
+    <tr>
+        <td class="form themed bold"><label for="game_password_a">Game Previous Password <span title="Max 512 characters">&#9432;</span></label></td>
+        <td>
+            <input class="form" style="width: 100%; box-sizing: border-box;" type="password" maxlength="512" id="game_password_a" name="game_password_a" value="{% if 'game_password_a' in form_populate and form_populate['game_password_a'] %}{{form_populate['game_password_a']}}{% endif %}"/>
+      </td>
+    </tr>
+    <tr>
+        <td class="form themed bold"><label for="game_password_b">Game New Password <span title="Max 512 characters">&#9432;</span></label></td>
+        <td>
+            <input class="form" style="width: 100%; box-sizing: border-box;" type="password" maxlength="512" id="game_password_b" name="game_password_b" value="{% if 'game_password_b' in form_populate and form_populate['game_password_b'] %}{{form_populate['game_password_b']}}{% endif %}"/>
+            <br/><button class="white-space: nowrap;" type="button" onclick="randomString('game_password_b')">Generate & Copy to Clipboard</button>
+        </td>
+    </tr>
+    <tr>
+        <td class="form themed bold"><label for="game_player_move">Game Command <span title="Enter a game command (typically a move if it's your turn)">&#9432;</span></label></td>
+        <td>
+            <input class="form" style="width: 100%; box-sizing: border-box;" type="text" maxlength="512" id="game_player_move" name="game_player_move" value="{% if 'game_player_move' in form_populate and form_populate['game_player_move'] %}{{form_populate['game_player_move']}}{% endif %}"/>
+      </td>
+    </tr>
+{% endif %}
+

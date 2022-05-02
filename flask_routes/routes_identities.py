@@ -11,15 +11,20 @@ from flask.blueprints import Blueprint
 
 import config
 from bitchan_client import DaemonCom
-from database.models import GlobalSettings
+from database.models import Chan
 from database.models import Identity
+from database.models import Messages
+from flask_routes.utils import count_views
+from flask_routes.utils import is_verified
 from forms import forms_board
 from forms import forms_settings
 from utils.files import LF
 from utils.gateway import api
+from utils.gateway import generate_identity
 from utils.general import process_passphrase
 from utils.routes import allowed_access
 from utils.routes import page_dict
+from utils.shared import regenerate_card_popup_post_html
 
 logger = logging.getLogger('bitchan.routes_identities')
 daemon_com = DaemonCom()
@@ -37,17 +42,27 @@ def global_var():
 
 @blueprint.before_request
 def before_view():
-    if (GlobalSettings.query.first().enable_verification and
-            ("verified" not in session or not session["verified"])):
-        session["verified_msg"] = "You are not verified"
-        return redirect(url_for('routes_verify.verify_wait'))
-    session["verified_msg"] = "You are verified"
+    if not is_verified():
+        full_path_b64 = "0"
+        if request.method == "GET":
+            if request.url:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.url.encode()).decode()
+            elif request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        elif request.method == "POST":
+            if request.referrer:
+                full_path_b64 = base64.urlsafe_b64encode(
+                    request.referrer.encode()).decode()
+        return redirect(url_for('routes_verify.verify_wait',
+                                full_path_b64=full_path_b64))
 
 
 @blueprint.route('/identities', methods=('GET', 'POST'))
+@count_views
 def identities():
-    global_admin, allow_msg = allowed_access(
-        check_is_global_admin=True)
+    global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 
@@ -67,51 +82,74 @@ def identities():
 
             errors, dict_chan_info = process_passphrase(form_identity.passphrase.data)
             if dict_chan_info:
-                status_msg['status_message'].append("Cannot create an Identity with board/list passphrase")
+                status_msg['status_message'].append(
+                    "Cannot create an Identity with passphrase, it did not pass checks.")
 
             if not status_msg['status_message']:
-                lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
-                    try:
-                        b64_passphrase = base64.b64encode(form_identity.passphrase.data.encode())
-                        return_str = api.createDeterministicAddresses(b64_passphrase.decode())
-                        if return_str:
-                            if ("addresses" in return_str and
-                                    len(return_str["addresses"]) == 1 and
-                                    return_str["addresses"][0]):
+                b64_passphrase = base64.b64encode(form_identity.passphrase.data.encode())
 
-                                ident = Identity.query.filter(
-                                    Identity.address == return_str["addresses"][0]).first()
-                                if ident:
-                                    logger.info(
-                                        "Creating identity that already exists in the database. "
-                                        "Skipping adding entry")
-                                else:
-                                    new_ident = Identity()
-                                    new_ident.address = return_str["addresses"][0]
-                                    new_ident.label = form_identity.label.data
-                                    new_ident.passphrase_base64 = b64_passphrase
-                                    new_ident.save()
+                if form_identity.generate_shorter_address.data:
+                    logger.info("Generating shorter Identity address")
 
-                                daemon_com.refresh_identities()
+                return_str = generate_identity(
+                    form_identity.passphrase.data,
+                    form_identity.generate_shorter_address.data)
 
-                                if form_identity.resync.data:
-                                    daemon_com.signal_clear_inventory()
+                if return_str:
+                    if ("addresses" in return_str and
+                            len(return_str["addresses"]) == 1 and
+                            return_str["addresses"][0]):
 
-                                status_msg['status_title'] = "Success"
-                                status_msg['status_message'].append(
-                                    "Created identity {} with address {}.".format(
-                                        form_identity.label.data, return_str["addresses"][0]))
-                                status_msg['status_message'].append(
-                                    "Give the system a few seconds for the change to take effect.")
-                            else:
-                                status_msg['status_message'].append(
-                                    "Error creating Identity: {}".format(return_str))
+                        ident = Identity.query.filter(
+                            Identity.address == return_str["addresses"][0]).first()
+                        if ident:
+                            logger.info(
+                                "Creating identity that already exists in the database. "
+                                "Skipping adding entry")
                         else:
-                            status_msg['status_message'].append("Error creating Identity")
-                    finally:
-                        time.sleep(config.API_PAUSE)
-                        lf.lock_release(config.LOCKFILE_API)
+                            new_ident = Identity()
+                            new_ident.address = return_str["addresses"][0]
+                            new_ident.label = form_identity.label.data
+                            new_ident.passphrase_base64 = b64_passphrase
+                            new_ident.short_address = form_identity.generate_shorter_address.data
+                            new_ident.save()
+
+                        ident_address = return_str["addresses"][0]
+
+                        # Find boards where address is owner/admin and regenerate post HTML
+                        chans_board_info = daemon_com.get_chans_board_info()
+                        chans = Chan.query.all()
+                        for chan in chans:
+                            if chan.address in chans_board_info:
+                                primary_addresses = chans_board_info[chan.address]["primary_addresses"]
+                                secondary_addresses = chans_board_info[chan.address]["secondary_addresses"]
+                                if ident_address in primary_addresses or ident_address in secondary_addresses:
+                                    # Regenerate post HTML for all posts of board/list
+                                    regenerate_card_popup_post_html(all_posts_of_board_address=chan.address)
+
+                        # Find posts with from address and regenerate post HTML
+                        msgs = Messages.query.filter(
+                            Messages.address_from == ident_address).all()
+                        for message in msgs:
+                            if not message.regenerate_post_html or not message.regenerate_popup_html:
+                                regenerate_card_popup_post_html(message_id=message.message_id)
+
+                        daemon_com.refresh_identities()
+
+                        if form_identity.resync.data:
+                            daemon_com.signal_clear_inventory()
+
+                        status_msg['status_title'] = "Success"
+                        status_msg['status_message'].append(
+                            "Created identity {} with address {}.".format(
+                                form_identity.label.data, return_str["addresses"][0]))
+                        status_msg['status_message'].append(
+                            "Give the system a few seconds for the change to take effect.")
+                    else:
+                        status_msg['status_message'].append(
+                            "Error creating Identity: {}".format(return_str))
+                else:
+                    status_msg['status_message'].append("Error creating Identity")
 
         elif form_identity.rename.data:
             if not form_identity.ident_label.data or not form_identity.address.data:
@@ -123,6 +161,14 @@ def identities():
                 if ident:
                     ident.label = form_identity.ident_label.data
                     ident.save()
+
+                    # Find posts with from address and regenerate post HTML
+                    msgs = Messages.query.filter(
+                        Messages.address_from == form_identity.address.data).all()
+                    for message in msgs:
+                        if not message.regenerate_post_html or not message.regenerate_popup_html:
+                            regenerate_card_popup_post_html(message_id=message.message_id)
+
                     daemon_com.refresh_identities()
                     status_msg['status_title'] = "Success"
                     status_msg['status_message'].append("Identity renamed.")
@@ -150,7 +196,34 @@ def identities():
                         if return_str == "success":
                             if ident:
                                 ident.delete()
+
+                            # Find posts with from address and regenerate post HTML
+                            msgs = Messages.query.filter(
+                                Messages.address_from == form_identity.address.data).all()
+                            for message in msgs:
+                                regenerate_card_popup_post_html(message_id=message.message_id)
+
                             daemon_com.refresh_identities()
+
+                            # Find boards where address is owner/admin and regenerate post HTML
+                            chans_board_info = daemon_com.get_chans_board_info()
+                            chans = Chan.query.all()
+                            for chan in chans:
+                                if chan.address in chans_board_info:
+                                    primary_addresses = chans_board_info[chan.address]["primary_addresses"]
+                                    secondary_addresses = chans_board_info[chan.address]["secondary_addresses"]
+                                    if (form_identity.address.data in primary_addresses or
+                                            form_identity.address.data in secondary_addresses):
+                                        # Regenerate post HTML for all posts of board/list
+                                        regenerate_card_popup_post_html(all_posts_of_board_address=chan.address)
+
+                            # Find posts with from address and regenerate post HTML
+                            msgs = Messages.query.filter(
+                                Messages.address_from == form_identity.address.data).all()
+                            for message in msgs:
+                                if not message.regenerate_post_html or not message.regenerate_popup_html:
+                                    regenerate_card_popup_post_html(message_id=message.message_id)
+
                             status_msg['status_title'] = "Success"
                             status_msg['status_message'].append("Identity deleted.")
                             status_msg['status_message'].append(

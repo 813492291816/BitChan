@@ -41,39 +41,9 @@
           margin: 0 3px;
         }
     </style>
-    <script>
-        $(window).scroll(function() {
-            var height = $(window).scrollTop();
-            if (height > 100) {
-                $('#back2Top').fadeIn();
-                $('#back2Bottom').fadeOut();
-            } else {
-                $('#back2Bottom').fadeIn();
-                $('#back2Top').fadeOut();
-            }
-        });
-
-        $(document).ready(function() {
-            $("#back2Top").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: 0}, "slow");
-                return false;
-            });
-            $("#back2Bottom").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: $(document).height()}, "slow");
-                return false;
-            });
-
-            document.getElementById('back2Top').style.display  = 'block';
-            document.getElementById('back2Bottom').style.display  = 'block';
-        });
-    </script>
 {% endblock %}
 
 {% block body %}
-    <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
-    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
@@ -83,19 +53,22 @@
         {% include '/elements/status.html' %}
     {% endif %}
 
-    <div class="intro themed">
-        <p>
-            <center><h1 class="title themed bold">Welcome to BitChan {{config.VERSION_BITCHAN}}</h1></center>
-            <center>{{current_time}}
+    <div class="intro themed center">
+        <h1 class="title themed bold">Welcome to BitChan {{config.VERSION_BITCHAN}}</h1>
+        {{current_time}}
     {%- if not settings.enable_kiosk_mode or logged_in -%}
-            , <a class="bold link" href="/mailbox/0/0/0/0">{{unread_mail}} Unread Messages</a>
+        , <a class="bold link" href="/mailbox/0/0/0/0">{{unread_mail}} Unread Messages</a>
     {% endif -%}
-            </center>
-    {% if settings.home_page_msg %}
-            <br/>
-            {{settings.home_page_msg|safe}}
+
+    {% if inventory_timer %}
+        <br/>Bitmessage Resync in {{inventory_timer}} seconds
     {% endif %}
-        </p>
+
+    {% if settings.home_page_msg %}
+        <div class="themed" style="padding-top: 1em">
+            {{settings.home_page_msg|safe}}
+        </div>
+    {% endif %}
     </div>
 
     {% if newest_posts and settings.chan_update_display_number %}
@@ -114,7 +87,7 @@
             / <a class="link" title="Mod Log" href="/mod_log/{{each_chan.address}}/1">M</a>
             {%- endif -%}
             ]
-            <span style="font-size: 0.7em">{{newest_posts[each_chan]['total_threads']}} Thread{% if newest_posts[each_chan]['total_threads'] > 1 %}s{% endif %}, {{newest_posts[each_chan]['total_posts']}} Post{% if newest_posts[each_chan]['total_posts'] > 1 %}s{% endif %}{% if newest_posts[each_chan]["wipe_date"] %}, Wipe at {{newest_posts[each_chan]["wipe_date"]}}{% endif %}</span>
+            <span style="font-size: 0.7em">{{newest_posts[each_chan]['total_threads']}} Thread{% if newest_posts[each_chan]['total_threads'] > 1 %}s{% endif %}, {{newest_posts[each_chan]['total_posts']}} Post{% if newest_posts[each_chan]['total_posts'] > 1 %}s{% endif %}{% if newest_posts[each_chan]["wipe_epoch"] %}, Wipe in {{wipe_time_left(newest_posts[each_chan]["wipe_epoch"], show_seconds=False)}}{% endif %}</span>
         </div>
         <div class="row">
                     {% for each_thread_hash in newest_posts[each_chan]["threads"] %}
@@ -123,6 +96,9 @@
                 <div class="themed" style="font-size: 0.7em; padding-left: 0.25em; padding-bottom: 0.25em">
                     {{newest_posts[each_chan]["threads"][each_thread_hash]["last_post_past"]}} ago |
                     {{newest_posts[each_chan]["threads"][each_thread_hash]["ppm"]}} PPM
+                    {% if newest_posts[each_chan]["threads"][each_thread_hash]["total_posts"] > 100 %}
+                    | <a class="link" style="font-size: 1em;" href="/thread/{{each_chan.address}}/{{each_thread_hash}}?last=100">Last 100</a>
+                    {% endif %}
                     {% if thread_options["sticky"] %}
                         <img style="position: relative; top: 1px; height: 10px" title="Stickied{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
                         {%- if thread_options['sticky_local'] and not thread_options['sticky_remote'] -%}
@@ -171,7 +147,7 @@
                   (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_mod_log) %}
             [<a class="link" title="Mod Log" href="/mod_log/{{each_chan.address}}/1">M</a>]
             {% endif %}
-            <span style="font-size: 0.7em">{{newest_posts[each_chan]['list_entries']}} Entries{% if newest_posts[each_chan]["wipe_date"] %}, Wipe at {{newest_posts[each_chan]["wipe_date"]}}{% endif %}</span>
+            <span style="font-size: 0.7em">{{newest_posts[each_chan]['list_entries']}} Entries{% if newest_posts[each_chan]["wipe_epoch"] %}, Wipe in {{wipe_time_left(newest_posts[each_chan]["wipe_epoch"], show_seconds=False)}}{% endif %}</span>
         </div>
         <div class="themed" style="font-size: 0.7em; padding-left: 0.25em">
             {{newest_posts[each_chan]['last_post_past']}} ago | {{timestamp_to_date(newest_posts[each_chan]['latest_timestamp'])}}
@@ -184,6 +160,5 @@
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

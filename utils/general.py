@@ -5,7 +5,7 @@ import logging
 import random
 import string
 import time
-
+import datetime
 import config
 
 logger = logging.getLogger('bitchan.general')
@@ -55,7 +55,7 @@ def get_thread_id(text_str):
     return thread_id
 
 
-def get_random_alphanumeric_string(length, with_punctuation=True, with_digits=True, with_spaces=True,):
+def get_random_alphanumeric_string(length, with_punctuation=True, with_digits=True, with_spaces=True):
     letters_and_digits = string.ascii_letters
     if with_punctuation:
         letters_and_digits += string.punctuation
@@ -352,3 +352,8 @@ def display_time(seconds, granularity=2):
                 name = name.rstrip('s')
             result.append("{} {}".format(int(value), name))
     return ', '.join(result[:granularity])
+
+
+def timestamp_to_date(timestamp):
+    return datetime.datetime.fromtimestamp(
+        timestamp).strftime('%d %b %Y (%a) %H:%M:%S')

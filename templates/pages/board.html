@@ -54,42 +54,21 @@ Board
             form.submit_post.value = "Please wait...";
         }
 
-        $(window).scroll(function() {
-            var height = $(window).scrollTop();
-            if (height > 100) {
-                $('#back2Top').fadeIn();
-                $('#back2Bottom').fadeOut();
-            } else {
-                $('#back2Bottom').fadeIn();
-                $('#back2Top').fadeOut();
-            }
-        });
-
         $(document).ready(function() {
-            $("#back2Top").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: 0}, "slow");
-                return false;
-            });
-            $("#back2Bottom").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: $(document).height()}, "slow");
-                return false;
-            });
-
             var volume_set = document.getElementsByClassName("volume-75");
             if (volume_set.length) {
                 for(var i = 0; i < volume_set.length; i++) {
                     volume_set[i].volume = 0.75;
                 }
             }
-
-            document.getElementById('back2Top').style.display  = 'block';
-            document.getElementById('back2Bottom').style.display  = 'block';
         });
 
     {% if rules and "automatic_wipe" in rules %}
     {% include '/elements/timer_content_wipe.html' %}
+    {% endif %}
+
+    {% if settings.enable_kiosk_mode and settings.kiosk_post_rate_limit %}
+        {% include '/elements/js_post_countdown.html' %}
     {% endif %}
 
     </script>
@@ -112,8 +91,6 @@ Board
 {% endblock %}
 
 {% block body %}
-    <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
-    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
@@ -147,7 +124,7 @@ Board
     {% if rules and "automatic_wipe" in rules %}
     <center>
         <div class="themed" style="padding-top: 0.5em">
-            Content Wipe in <span id="clear_content_countdown">-</span>
+            Content Wipe in <span id="clear_content_countdown">{{wipe_time_left(rules["automatic_wipe"]["wipe_epoch"])}}</span>
         </div>
     </center>
     {% endif %}
@@ -157,6 +134,18 @@ Board
     {% endif %}
 
     <hr/>
+
+    {% if settings.debug_posts %}
+        {% set debug_board_columns, debug_board_data = debug_info_board(board['current_chan'].address) %}
+        {% if debug_board_columns and not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) -%}
+            <div style="padding-top: 1em">
+                <center>
+                    {% include '/elements/board/debug_info_board.html' %}
+                </center>
+            </div>
+        {% endif %}
+    {% endif %}
+
     <center>
         <div style="max-width: 500px; padding-bottom: 1em">
             <section>
@@ -208,7 +197,7 @@ Board
                                 <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_attach')">&#128203;</button>
                             </div>
 
-                            <span class="themed">Steg PGP Passphrase  (max {{config.PGP_PASSPHRASE_LENGTH}})</span>
+                            <span class="themed">Steg PGP Passphrase (max {{config.PGP_PASSPHRASE_LENGTH}})</span>
                             <div style="padding-bottom: 0.5em">
                                 <form method="post" style="display: inline-block;" enctype="multipart/form-data">
                                     <input type="text" id="pgp_passphrase_steg" name="pgp_passphrase_steg" value="{{board['current_chan'].pgp_passphrase_steg}}">
@@ -292,6 +281,12 @@ Board
         </div>
         {% endif %}
 
+        {% if settings.enable_kiosk_mode and settings.kiosk_post_rate_limit %}
+        <div class="themed" title="Time To Post: the number of seconds until you can post (updated every 20 seconds)" style="max-width: 500px; padding-bottom: 1em">
+            <span id="post-timer">TTP: ... s</span>
+        </div>
+        {% endif %}
+
     {% if not is_private or (is_private and on_any_access_list) %}
         {% include '/elements/board/post_form.html' %}
     {% else %}
@@ -303,54 +298,72 @@ Board
     {% set threads = get_threads_from_page(board['current_chan'].address, board["current_page"]) %}
     {% for thread in threads %}
 
-        {% set steg_found = board["messages"].query
-           .filter(board["messages"].thread_id == thread.id)
-           .filter(board["messages"].message_steg.isnot("{}")).count() %}
-
         {% set message_op = board["messages"].query
-               .filter(board["messages"].thread_id == thread.id)
-               .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash).first() %}
+           .filter(board["messages"].thread_id == thread.id)
+           .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash).first() %}
 
-        {% set message_replies = board["messages"].query
+        {% if message_op %}
+            {% set post = message_op %}
+            {% set text = post.message %}
+        {% endif %}
+
+        {% if thread.hide %}
+
+    <div class="thread" style="padding-bottom: 1em">
+        {% include '/elements/board/thread_hidden.html' %}
+    </div>
+
+        {% else %}
+
+            {% set steg_found = board["messages"].query
+               .filter(board["messages"].thread_id == thread.id)
+               .filter(board["messages"].message_steg.isnot("{}")).count() %}
+
+            {% set message_replies = board["messages"].query
                .filter(board["messages"].thread_id == thread.id)
                .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
                .order_by(board["messages"].timestamp_sent.asc()) %}
 
-        <div class="thread" style="padding-bottom: 1em">
-        {% if message_op %}
-            {% set post = message_op %}
-            {% set text = post.message %}
-            {% include '/elements/board/post_op.html' %}
-        {% else %}
-            {% include '/elements/board/op_missing.html' %}
-        {% endif %}
-        {% if message_replies.count() > 5 %}
-            <br>
-            <span class="expand">
-                <br/>
-                {{message_replies.count() - 5}} posts truncated.
-                <a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}" class="link">Click here</a>
-                to view.
-            </span>
-            {% for post in message_replies[-5:] %}
-                <br/>
-                {% set text = post.message %}
-                {% set reply_steg = board["messages"].query
-                   .filter(board["messages"].message_id == post.message_id)
-                   .filter(board["messages"].message_steg.isnot("{}")).count() %}
-                {% include '/elements/board/post_reply.html' %}
-            {% endfor %}
-        {% else %}
-            {% for post in message_replies %}
-                {% set text = post.message %}
-                {% set reply_steg = board["messages"].query
-                   .filter(board["messages"].message_id == post.message_id)
-                   .filter(board["messages"].message_steg.isnot("{}")).count() %}
-                {% include '/elements/board/post_reply.html' %}
-                <br/>
-            {% endfor %}
-        {% endif %}
+    <div class="thread" style="padding-bottom: 1em">
+            {% if message_op %}
+                {{generate_post_html(post.message_id, board_view=True)|safe}}
+            {% else %}
+                {% include '/elements/board/op_missing.html' %}
+            {% endif %}
+            {% if message_replies.count() > 5 %}
+        <br>
+        <span class="expand">
+            <br/>
+            {{message_replies.count() - 5}} posts truncated.
+            View <a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}" class="link">all posts</a>
+            {%- if message_replies.count() > 100 %}
+            or <a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}?last=100">last 100 posts</a>
+            {%- endif -%}
+            .
+        </span>
+                {% for post in message_replies[-5:] %}
+                    {% set text = post.message %}
+                    {% set reply_steg = board["messages"].query
+                       .filter(board["messages"].message_id == post.message_id)
+                       .filter(board["messages"].message_steg.isnot("{}")).count() %}
+        <div class="post plaque" id="{{post.post_id}}">
+            {{generate_post_html(post.message_id, board_view=True)|safe}}
         </div>
+                {% endfor %}
+            {% else %}
+                {% for post in message_replies %}
+                    {% set text = post.message %}
+                    {% set reply_steg = board["messages"].query
+                       .filter(board["messages"].message_id == post.message_id)
+                       .filter(board["messages"].message_steg.isnot("{}")).count() %}
+        <div class="post plaque" id="{{post.post_id}}">
+            {{generate_post_html(post.message_id, board_view=True)|safe}}
+        </div>
+                {% endfor %}
+            {% endif %}
+    </div>
+
+        {% endif %}
 
         {% if loop.index < threads|length %}<hr/>{% endif %}
     {% endfor %}
@@ -362,6 +375,5 @@ Board
     {% include '/elements/footer_board.html' %}
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

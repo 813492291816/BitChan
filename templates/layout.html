@@ -2,7 +2,8 @@
 <html lang="en">
     <head>
         <title>{% block title %}{% endblock %}BitChan {{config.VERSION_BITCHAN}}</title>
-        <link rel="icon" type="image/png" href="/static/favicon.ico">
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/favicon.ico" type="image/x-icon" />
         <script src="/static/js/jquery-3.5.1.min.js"></script>
         <script src="/static/js/toggle.js"></script>
         <script src="/static/js/post_formatter.js"></script>
@@ -26,6 +27,15 @@
                 $(clear_id).val('');
             }
         </script>
+
+        {% if user_options['options_js'] %}
+        <script>
+$(document).ready(function() {
+{{user_options['options_js']|safe}}
+});
+        </script>
+        {% endif %}
+
         <style>
             {% include '/elements/css_theme.css' %}
         </style>
@@ -33,16 +43,181 @@
         <style>
             {% include '/elements/css_extra.css' %}
         </style>
+
+        {% if user_options['options_post_horizontal'] == '1' %}
+        <style>
+            div.plaque {
+                display: inline-block;
+            }
+        </style>
+        {% endif %}
+
+        {% if user_options['options_css'] %}
+        <style>
+{{user_options['options_css']|safe}}
+        </style>
+        {% endif %}
+
+        {% if user_options['options_hide_authors'] == '1' %}
+            {% set theme = themes[get_theme()] %}
+            <style>
+                .identicon {
+                    filter: blur(4px) grayscale(100%);
+                }
+
+                .identicon:hover {
+                    filter: blur(0px) grayscale(0%);
+                }
+
+                .head_from_spoiler {
+                    color: {{theme.head_from}};
+                    background-color: {{theme.head_from}};
+                }
+
+                .head_from_spoiler:hover {
+                    color: {{theme.spoiler_hover_text}};
+                    background-color: {{theme.spoiler_hover_bg}};
+                }
+            </style>
+        {% endif %}
+
         {%- block admin_css %}{% endblock -%}
         {% if settings.html_head %}
             {{settings.html_head|safe}}
         {% endif %}
     </head>
-    <body class="board">
+    <body id="body" class="board">
+        <nav class="stickynav">
+            <a class="link nav-item" href="#bottom">[▼]</a> <a class="link nav-item" href="#top">[▲]</a>
+        </nav>
+        <div class="themed navbar">
+            <center style="padding-left: 1.5em; padding-right: 1.5em;">
+                <a class="bold link" href="/">Home</a>
+                / <a class="bold link" href="/overboard/0/1">Overboard</a>
+                / <a class="bold link" href="/recent/0/1">Recent</a>
+                / <a class="bold link" href="/search/0/1">Search</a>
+            {% if not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) -%}
+                / <a class="bold link" href="/join">Create or Join</a>
+                / <a class="bold link" href="/identities">Identities</a>
+                / <a class="bold link" href="/mailbox/0/0/0/0">Mailboxes</a> ({{unread_mail}})
+                / <a class="bold link" href="/address_book">Address Book</a>
+                / <a class="bold link" href="/configure">Configure</a>
+                / <a class="bold link" href="/status">Status</a>
+                / <a class="bold link" href="/stats">Stats</a>
+            {% endif -%}
+            {% if not settings.enable_kiosk_mode or
+                      (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_mod_log and logged_in and has_permission("is_global_admin")) or
+                      (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_mod_log) -%}
+                / <a class="bold link" href="/mod_log/0/1">Mod Log</a>
+                / <a class="bold link" href="/log">BC Log</a>
+            {% endif -%}
+                / <a class="bold link" href="#options">Options</a>
+                / <a class="bold link" href="/help">Help</a>
+                / <a class="bold link" href="/bug_report">Bug</a>
+            {% if settings.enable_kiosk_mode and not logged_in -%}
+                / <a class="bold link" href="/login">Log In</a>
+            {% elif settings.enable_kiosk_mode and logged_in %}
+                / <a class="bold link" href="/login_info">Login Info</a>
+                / <a class="bold link" href="/logout">Log Out</a>
+            {% endif %}
+            </center>
+        </div>
+
+        <div id="options" class="optionsoverlay themed">
+            <div class="optionspopup">
+                <h2>Options (requires cookies)</h2>
+                <a class="close themed" href="#">&times;</a>
+                <form method="post" action="/options_save" enctype="multipart/form-data">
+                    <div class="content"> <!--beginning of content -->
+                        <div class="tabset">
+                            <!-- Tab 1 -->
+                            <input type="radio" name="tabset" id="tab3" aria-controls="OPT" checked>
+                            <label class="bold link" for="tab3">Options</label>
+                            <!-- Tab 2 -->
+                            <input type="radio" name="tabset" id="tab1" aria-controls="CSS">
+                            <label class="bold link" for="tab1">CSS</label>
+                            <!-- Tab 3 -->
+                            <input type="radio" name="tabset" id="tab2" aria-controls="JS">
+                            <label class="bold link" for="tab2">JS</label>
+                            <!-- Tab 4 -->
+                            <input type="radio" name="tabset" id="tab4" aria-controls="EXPORT">
+                            <label class="bold link" for="tab4">Export</label>
+                            <div class="tab-panels">
+                                <section id="OPT" class="tab-panel">
+                                    <!--Tab #3 content -->
+                                    <table class="themed">
+                                        <tr>
+                                            <td>Theme</td>
+                                            <td>
+                                                <select name="options_theme">
+                                        {% for theme_name in themes %}
+                                                    <option value="{{theme_name}}"{% if get_theme() == theme_name %} selected{% endif %}>{{theme_name}}</option>
+                                        {% endfor %}
+                                                </select>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Horizontal Posts</td>
+                                            <td>
+                                                <input type="checkbox" name="options_post_horizontal" value="y"{% if user_options['options_post_horizontal'] == '1' %} checked{% endif %}/>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Hide Authors</td>
+                                            <td>
+                                                <input type="checkbox" name="options_hide_authors" value="y"{% if user_options['options_hide_authors'] == '1' %} checked{% endif %}/>
+                                            </td>
+                                        </tr>
+                                        </tr>
+                                    </table>
+                                    <div style="padding-top: 1em">
+                                        <input type="submit" name="options_save_misc" value="Save Options"/>
+                                    </div>
+                                </section>
+                                <section id="CSS" class="tab-panel">
+                                    <!--Tab #1 content -->
+                                    <textarea name="options_css" rows=12 style="width: 100%;">{{user_options['options_css']}}</textarea>
+                                    <div style="padding-top: 1em">
+                                        <input type="submit" name="options_save_css" value="Save CSS"/>
+                                    </div>
+                                </section>
+                                <section id="JS" class="tab-panel">
+                                    <!--Tab #2 content -->
+                                    <textarea name="options_js" rows=12 style="width: 100%;">{{user_options['options_js']}}</textarea>
+                                    <div style="padding-top: 1em">
+                                        <input type="submit" name="options_save_js" value="Save Javascript"/>
+                                    </div>
+                                </section>
+                                <section id="EXPORT" class="tab-panel">
+                                    <!--Tab #4 content -->
+                                    <table class="themed">
+                                        <tr>
+                                            <td><input type="submit" name="options_export" value="Export"/></td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding-top: 1em"><input name="options_import_file" type="file"/></td>
+                                        </tr>
+                                        <tr>
+                                            <td><input type="submit" name="options_import" value="Import"/></td>
+                                        </tr>
+                                        <tr>
+                                            <td style="padding-top: 1em"><input type="submit" name="options_reset" value="Reset All Options"/></td>
+                                        </tr>
+                                    </table>
+                                </section>
+                            </div>
+                        </div>
+                    </div> <!--end of popup content -->
+                </form>
+            </div>
+        </div>
+
+        <div style="padding-top: 1.5em"></div>
         {% if settings.html_body %}
             {{settings.html_body|safe}}
         {% endif %}
-        <div class="gradient"></div>
+        <div id="gradient" class="gradient"></div>
         {%- block body %}{% endblock -%}
+        <a name="bottom"></a>
     </body>
 </html>

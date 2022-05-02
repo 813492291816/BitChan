@@ -1,8 +1,8 @@
 version: "2.4"
 
 services:
-  nginx:
-    container_name: nginx
+  bitchan_nginx:
+    container_name: bitchan_nginx
     networks:
       bc_net:
         ipv4_address: 172.28.1.1
@@ -12,14 +12,14 @@ services:
       dockerfile: docker/nginx/Dockerfile
     volumes:
       - bitchan:/usr/local/bitchan
-      - nginx:/usr/local/nginx
+      - run_vol:/run
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     ports:
       - "8000:8000"
     cpuset: '0'
 
-  tor:
-    container_name: tor
+  bitchan_tor:
+    container_name: bitchan_tor
     networks:
       bc_net:
         ipv4_address: 172.28.1.2
@@ -31,16 +31,16 @@ services:
         password: "torpass1234"  # also change TOR_PASS in config.py
     privileged: true
     volumes:
-      - nginx:/usr/local/nginx
       - tor:/usr/local/tor
       - tor_etc:/etc/tor
+      - run_vol:/run
     cpuset: '0'
     command: tor -f /etc/tor/torrc
     depends_on:
-      - nginx
+      - bitchan_nginx
 
-  bitmessage:
-    container_name: bitmessage
+  bitchan_bitmessage:
+    container_name: bitchan_bitmessage
     image: app
     networks:
       bc_net:
@@ -54,11 +54,13 @@ services:
       - bitmessage:/usr/local/bitmessage
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
+    cpuset: '1,2,3'
     command: >
-      bash -c "/home/bitchan/database/upgrade_database.sh &&
+      bash -c "/home/bitchan/docker/bitmessage_setup.sh &&
+               /home/bitchan/database/upgrade_database.sh &&
                /usr/local/bin/pybitmessage -d"
     depends_on:
-      - tor
+      - bitchan_tor
 
   bitchan_flask:
     container_name: bitchan_flask
@@ -71,15 +73,21 @@ services:
     volumes:
       - bitchan:/usr/local/bitchan
       - bitmessage:/usr/local/bitmessage
+      - flask_session:/home/bitchan/flask_session
       - tor:/usr/local/tor
       - tor_etc:/etc/tor
+      - var_lock:/var/lock
+      - run_vol:/run
+      - i2p:/i2p/.i2p
+      - i2psnark:/i2psnark
+      - /usr/bin/df:/usr/bin/df-host  # Change to the location of df on host system
       - /var/run/docker.sock:/var/run/docker.sock:ro  # For bitchan to control docker containers
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
     cpuset: '0'
-    command: gunicorn --workers 1 --worker-class gthread --threads 4 --timeout 1800 --bind unix:/usr/local/bitchan/bitchan.sock bitchan_flask:app
+    command: gunicorn --workers 1 --worker-class gthread --threads 4 --timeout 1800 --bind unix:/run/bitchan.sock bitchan_flask:app
     depends_on:
-      - bitmessage
+      - bitchan_bitmessage
 
   bitchan_daemon:
     container_name: bitchan_daemon
@@ -94,6 +102,9 @@ services:
       - bitmessage:/usr/local/bitmessage
       - tor:/usr/local/tor
       - tor_etc:/etc/tor
+      - var_lock:/var/lock
+      - i2p:/i2p/.i2p
+      - i2psnark:/i2psnark
       - /var/run/docker.sock:/var/run/docker.sock:ro  # For bitchan to control docker containers
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
@@ -102,12 +113,42 @@ services:
     depends_on:
       - bitchan_flask
 
+  # You can comment out the following block to prevent the i2p service from starting
+  # After starting for the first time, navigate to http://172.28.1.6:7657 and complete the setup.
+  # If your docker is publicly-accessible, you can uncomment the ports section and allow remote access (at http://publicIP:7999).
+  # If public, it's recommended to:
+  #  1. Immediately create a user and password in the i2p router console UI configuration page, then restart the service.
+  #  2. Remove port 7999 after configuring
+  # See the manual for setting up an i2p hidden service to host your BitChan kiosk.
+  bitchan_i2p:
+    container_name: bitchan_i2p
+    image: geti2p/i2p
+    networks:
+      bc_net:
+        ipv4_address: 172.28.1.6
+    restart: always
+    volumes:
+      - i2p:/i2p/.i2p
+      - i2psnark:/i2psnark
+    cpuset: '0'
+#    ports:
+#      - "7999:7657"  # UI port
+#      - "12345:12345"  # UDP port (change and set in Settings/Network)
+#      - "12345:12345"  # TCP port (change and set in Settings/Network)
+
 volumes:
+  run_vol:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
   bitchan:
   bitmessage:
-  nginx:
+  flask_session:
   tor:
   tor_etc:
+  i2p:
+  i2psnark:
+  var_lock:
 
 networks:
     bc_net:

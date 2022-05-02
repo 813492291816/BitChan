@@ -15,14 +15,7 @@ depends_on = None
 
 
 def upgrade():
-    op.create_table(
-        'post_replies',
-        sa.Column('id', sa.Integer, nullable=False, unique=True),
-        sa.Column('post_id', sa.String, nullable=False, unique=True),
-        sa.Column('reply_ids', sa.Text),
-        sa.PrimaryKeyConstraint('id'),
-        keep_existing=True
-    )
+    pass
 
 def downgrade():
-    op.drop_table('post_replies')
+    pass

@@ -1,15 +1,20 @@
 # TODO
 
-## To be completed before next release
-
- - None
-
 # Bugs
 
- - None
+ - Starting attachment download of post from recent/search page doesn't work as expected
+ - recovering hidden post broken
 
 # Ideas
 
+ - if locally deleting or restoring a post/thread, search and delete admin command entries for deleting that thread/post. Or indicate on admin msg that it can be ignored because a local action has been performed (since admin commands can continually come in, deleting the admin command will not prevent it from being received form someone else in the future). Perhaps delete admin commands after a certain period of time (60 days?).
+ - Add diag option: Recreate Orphaned Identities in Bitmessage
+ - Periodically delete DB entries for PostDeletePasswordHashes older than 30 days
+ - allow sending mail to multiple addresses
+ - Link TTL to auto wipe (add 6hrs) for boards/lists with auto wipe rule
+ - allow lists featured on the homepage to display custom banner pic like boards display OP's pic
+ - reduce moderation dropdown menu to moderate thread, moderate post. Move finer moderation options to confirmation page
+ - ability to delete thread with comment and ability to preserve op but delete thread with comment
  - add ~~exporting~~ and importing to preserve address book, identities, lists, and boards
  - include upload methods in exporting/importing
  - allow owners/admin to reverse bans
@@ -18,7 +23,6 @@
  - allow boards/lists to have categories (to group together)
  - allow changing board/list label
  - refresh threads for new board joiners, either automatically or manually. Posting with an identity will be required to authenticate the sender. Anyone receiving the refreshed messages who already has one will see no change, but anyone who doesn't have a message will see it appear. This is more crucial for OPs than replies. The refresh function will preserve the original timestamp. If a recipient of a refreshed post previously deleted reply, it should stay deleted (deleted post IDs are currently logged in a database until the message TTL expires).
- - when someone goes to reply by clicking a post id and has text highlighted in that post to which he is replying, that text should be copied below the message id in the body of the reply's comment box. The cursor in the message box should appear on a new line below the copied, highlighted text.
  - allow local deletion of images on posts and prevent them from being redownloaded (locally blacklist a message ID).
  - allow ability to sort messages by sent or received time
  - add post tree view
@@ -31,14 +35,13 @@
  - more board rules: pictures or other files could be disabled, message length
  - add post editing (non-board addresses only)
  - add list of watched threads
- - add "last 100" thread view. Only load the last 100 posts plus the OP appears at the top.
  - add "expand all images" button
  - add bell icon in top right indicating a new software version is available
  - allow owners/admins to see the from address of an item on a list, for banning/restricting purposes
  - allow owners/admins to add text under posts (post content cannot be modified but a custom message can be added below it, e.g. "USER WAS BANNED FOR THIS POST...")
  - allow users to locally undo owner/admin moderation
  - allow for user initiated global delete of posts for which he has a password. Allow for the entry of passwords during the composition of a message. Perhaps owners can have a rule dis/allowing user initiated post deletes.
- - allow for a forwarder address for a board. Users send messages directly to an address from which all posts come. Modes: off, strict, relaxed
+ - allow for a forwarder address for a board. Users send messages directly to an address from which all posts come. Modes: off, strict, relaxed. This could allow for bannable anonymity. Controller of FA gives a unique password to each board member. FA code would allow FA controller to ban etc. an offending member.
  - add an option to allow removal of a file after download or a button to clear all downloads or both options?
  - allow custom banners: externally hosted banners? multiple cycling banners by uploading a zip? movie banners? large file banners?
  - sfw/nsfw labels for boards
@@ -47,17 +50,46 @@
  - gather unjoined board/list passphrases posted on all joined boards into a list and present it on the home page so the user can easily join them if they want.
  - write full BitChan build instructions for ARM, POWER9 and RISC-V, and the other Free Hardware architectures.
  - can ed25519 or better (post-quantum quality curves) be used
- - Link TTL to auto wipe and add 6hrs for messages sent in boards with auto wipe by default
  - check for .onion BM bootstrap
  - thumbnail of video OPs for home page
- - allow owner selected custom spoiler images
+ - ~~allow owner selected custom spoiler images~~
  - could omemo or some form of double ratchet be used?
  - bulk delete boards/lists/identities/address book entries
  - add a message PGP, attachment PGP and steg PGP passphrase manager and allow trying to decrypt every message, attachment and steg with each stored passphrase.
- - allow sending mail to multiple addresses at once
- - allow lists featured on the homepage to display custom banner pic like boards display OP's pic
  - put flags inside a scrollable area if there's more than 5
  - put upload sites inside a scrollable area if there's more than 5
  - make ID/address section in the board/list creation page collapsible after if entries are greater than a certain number
  - The greyed out (in dark theme anyway) unlinked board/list name that occurs when you're in a board/thread/list should still be linked so that when you are at the bottom of a thread, board index or list you can click it and reload that page.
  - thread watch list
+ - implement SHA3 where we can
+ - cyclical thread option
+ - unlisted boards/threads new posts/threads don't show up on home page/recent etc.
+ - summary/detail element for picture/file metadata included at footer of post
+ - Scroll bar added after x number of lines should be default, but there should be an option to turn it off so screen shots of a thread can be taken which grabs all text.
+ - Controller of FA gives a unique password to each board member. FA code would allow FA controller to ban etc. an offending member.
+ - Private boards could come with an automation tool allowing owners, at the press of a button, to prepare a mail addressed to all permitted users. Use case: Let's say the owner just restricted a previously permitted user and wants to change the PGP passphrase for the board. Pressing the button could bring the owner to the mail-compose page with the 'To:' field already populated with the newly updated list or permitted users. Another use case: If/when the Owner has decided to migrate and wants to share a new passphrase for the new board.
+ - Board-PGP passphrases which appear in mail could be formatted to be linkified and, when clicked, replace the old board's PGP passphrase. The link could look like: /mypriv/ - My Private Board (New Passphrase - Click to Replace)
+ - file hash and/or post content hash based auto moderation operations
+ - post content based auto-moderation
+ - x number of threads created per t on board (kiosk rule)
+ - prominently display that BC doesn't need cloudflare or similar services
+ - On configuration page, put tor status information in an accordion
+ - list BM connections like they appear in the BM gui network status tab
+ - Button in /status to create a new BM .onion service and forget the old one.
+ - Per-board search page
+ - Add a post popup link to every applicable confirmation page.
+ - Random post on a random thread on a random board, keyboard key binding
+ - Allow domain exceptions to verifications
+ - Summary/Detail text formatting tag
+ - File hash based banning
+ - lock to bottom JS
+ - rotate x degrees text formatting
+ - summary/detail text formatting
+ - per board kiosk option to hide board information?
+ - Add Last 100 link after "X posts truncated. Click here to view" in board view if thread has over 100 posts
+ - Is there a way to indicate the number of replies per post on /recent and /search results?
+ - Duplicate image detection
+ - Always reveal text spoilers option
+ - Hover over pictures to show metadata popup
+ - Add usage and examples for CSS/JS options panel
+ - Admin command to set board specific theme. 

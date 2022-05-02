@@ -1,0 +1,141 @@
+{% extends "layout.html" %}
+
+{% block title %}Statistics - {% endblock %}
+
+{% block head %}
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div class="themed head-center" style="max-width: 1000px;">
+
+            <h1 class="title themed bold">Statistics</h1>
+            <div class="themed" style="padding-bottom: 2em">
+                Total Posts: {{count_posts}}
+                <br/>Total Threads: {{count_threads}}
+                <br/>Attachments: {{attachment_size}}
+            </div>
+
+            <h1 class="title themed bold">Charts</h1>
+            Past:
+            {% if past_min == (60 * 24) %}<span class="bold">1 Day</span>{% else %}<a class="link" href="?past_min={{60 * 24}}&include_update={{include_update}}">1 Day</a>{% endif %} |
+            {% if past_min == (60 * 24 * 7) %}<span class="bold">1 Week</span>{% else %}<a class="link" href="?past_min={{60 * 24 * 7}}&include_update={{include_update}}">1 Week</a>{% endif %} |
+            {% if past_min == (60 * 24 * 7 * 2) %}<span class="bold">2 Weeks</span>{% else %}<a class="link" href="?past_min={{60 * 24 * 7 * 2}}&include_update={{include_update}}">2 Weeks</a>{% endif %} |
+            {% if past_min == (60 * 24 * 7 * 3) %}<span class="bold">3 Weeks</span>{% else %}<a class="link" href="?past_min={{60 * 24 * 7 * 3}}&include_update={{include_update}}">3 Weeks</a>{% endif %} |
+            {% if past_min == (60 * 24 * 30) %}<span class="bold">1 Month</span>{% else %}<a class="link" href="?past_min={{60 * 24 * 30}}&include_update={{include_update}}">1 Month</a>{% endif %}
+            //
+            Include Updates:
+            {% if include_update %}<span class="bold">Y</span>{% else %}<a class="link" href="?past_min={{past_min}}&include_update=1">Y</a>{% endif %} /
+            {% if not include_update %}<span class="bold">N</span>{% else %}<a class="link" href="?past_min={{past_min}}&include_update=0">N</a>{% endif %}
+
+            <div style="padding-top: 1em"></div>
+
+            {% if "verify" in generated_charts and generated_charts["verify"] %}
+                <img src="data:image/png;base64,{{generated_charts['verify']}}">
+                <div style="padding-top: 1em"></div>
+            {% endif %}
+
+            {% if "chans" in generated_charts and generated_charts["chans"] %}
+                <img src="data:image/png;base64,{{generated_charts['chans']}}">
+                <div style="padding-top: 1em"></div>
+            {% endif %}
+
+            {% if "threads" in generated_charts and generated_charts["threads"] %}
+                <img src="data:image/png;base64,{{generated_charts['threads']}}">
+                <div style="padding-top: 1em"></div>
+            {% endif %}
+
+            <div style="width: 100%; padding-bottom: 2em;">
+
+                <section>
+                    <details>
+                    <summary>Page Views (Database, past 24 hours)</summary>
+                    <table class="table" style="margin-left: auto; margin-right: auto;">
+                        <tr>
+                            <td>Timestamp</td>
+                            <td>Date/Time</td>
+                            <td>Category</td>
+                            <td>Endpoint</td>
+                            <td>Address</td>
+                            <td>Thread Hash</td>
+                            <td>Count</td>
+                        </tr>
+                        {% set counts = table_endpoint_count.query.filter(table_endpoint_count.timestamp_epoch > time.time() - 86400).all() %}
+                        {% for each_count in counts %}
+                        <tr>
+                            <td>{{each_count.timestamp_epoch}}</td>
+                            <td>{{datetime.datetime.fromtimestamp(each_count.timestamp_epoch).strftime('%Y-%m-%d %H:%M')}}</td>
+                            <td>{{each_count.category}}</td>
+                            <td>{{each_count.endpoint}}</td>
+                            <td>{{each_count.chan_address}}</td>
+                            <td>{{each_count.thread_hash}}</td>
+                            <td>{{each_count.requests}}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                    </details>
+                </section>
+
+                <div style="padding-top: 1em"></div>
+
+                <section>
+                    <details>
+                    <summary>Page Views (Tallied, past hour)</summary>
+                    <table class="table" style="margin-left: auto; margin-right: auto;">
+                        <tr>
+                            <td></td>
+                            <td></td>
+                            <td>Count</td>
+                        </tr>
+        {% for pri in view_counter %}
+            {% for sec in view_counter[pri] %}
+                        <tr>
+                            <td>{{pri}}</td>
+                            <td>
+                {% if table_thread.query.filter(table_thread.thread_hash == sec).first() %}
+                    {% set thread = table_thread.query.filter(table_thread.thread_hash == sec).first() %}
+                {% elif table_thread.query.filter(table_thread.thread_hash_short == sec).first() %}
+                    {% set thread = table_thread.query.filter(table_thread.thread_hash_short == sec).first() %}
+                {% endif %}
+
+                {% if sec in chans_board_info %}
+                                <a class="link" href="/board/{{sec}}/1">/{{chans_board_info[sec]["label_short"]|safe}}/ - {{chans_board_info[sec]['description']|safe}}</a>
+                {% elif sec in chans_list_info %}
+                                <a class="link" href="/list/{{sec}}">/{{chans_list_info[sec]["label_short"]|safe}}/ - {{chans_list_info[sec]['description']|safe}}</a>
+                {% elif thread %}
+                                (<a class="link" href="/board/{{thread.chan.address}}/1">/{{chans_board_info[thread.chan.address]["label_short"]|safe}}/</a>) <a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}">{{thread.subject|safe}}</a>
+                {% else %}
+                                {{sec}}
+                {% endif %}
+                            </td>
+                            <td>
+                                {{view_counter[pri][sec]}}
+                            </td>
+                        </tr>
+            {% endfor %}
+        {% endfor %}
+                    </table>
+                    </details>
+                </section>
+
+            </div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

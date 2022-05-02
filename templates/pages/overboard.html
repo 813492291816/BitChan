@@ -45,39 +45,9 @@
           margin: 0 3px;
         }
     </style>
-    <script>
-        $(window).scroll(function() {
-            var height = $(window).scrollTop();
-            if (height > 100) {
-                $('#back2Top').fadeIn();
-                $('#back2Bottom').fadeOut();
-            } else {
-                $('#back2Bottom').fadeIn();
-                $('#back2Top').fadeOut();
-            }
-        });
-
-        $(document).ready(function() {
-            $("#back2Top").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: 0}, "slow");
-                return false;
-            });
-            $("#back2Bottom").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: $(document).height()}, "slow");
-                return false;
-            });
-
-            document.getElementById('back2Top').style.display  = 'block';
-            document.getElementById('back2Bottom').style.display  = 'block';
-        });
-    </script>
 {% endblock %}
 
 {% block body %}
-    <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
-    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
@@ -90,6 +60,9 @@
     <div class="themed" style="font-size: 2em; text-align: center; padding-bottom: 0.5em">
     {% if overboard_info["single_board"] %}
         Catalog - <a class="link" style="font-size: 1em" href="/board/{{overboard_info['board_address']}}/1">/{{overboard_info["board_label"]}}/ - {{overboard_info["board_description"]}}</a>
+        {% if overboard_info["unlisted"] %}
+            <br/>Unlisted Board
+        {% endif %}
     {% else %}
         Overboard
     {% endif %}
@@ -109,8 +82,13 @@
                 <div class="themed" style="font-size: 0.7em; padding-left: 0.25em; padding-bottom: 0.25em">
                     {{thread_info[each_thread_hash]["last_post_past"]}} ago |
                     {{thread_info[each_thread_hash]["ppm"]}} PPM
-                    {% if not overboard_info["single_board"] %}
-                    <a class="link" style="font-size: 1em;" href="/board/{{thread_info[each_thread_hash]['board_address']}}/1" title="/{{thread_info[each_thread_hash]['board_label']}}/ - {{thread_info[each_thread_hash]['board_description']}}">/{{thread_info[each_thread_hash]["board_label"]}}/</a>
+
+                    {% if thread_info[each_thread_hash]["total_posts"] > 100 -%}
+                    | <a class="link" style="font-size: 1em;" href="/thread/{{thread_info[each_thread_hash]['board_address']}}/{{each_thread_hash}}?last=100">Last 100</a>
+                    {%- endif %}
+
+                    {% if not overboard_info["single_board"] -%}
+                    | <a class="link" style="font-size: 1em;" href="/board/{{thread_info[each_thread_hash]['board_address']}}/1" title="/{{thread_info[each_thread_hash]['board_label']}}/ - {{thread_info[each_thread_hash]['board_description']}}">/{{thread_info[each_thread_hash]["board_label"]}}/</a>
                     [<a class="link" style="font-size: 1em;" title="Catalog" href="/overboard/{{thread_info[each_thread_hash]['board_address']}}/1">C</a>
                     / <a class="link" style="font-size: 1em;" title="Recent" href="/recent/{{thread_info[each_thread_hash]['board_address']}}/1">R</a>
                     {% if not settings.enable_kiosk_mode or
@@ -119,7 +97,7 @@
                     / <a class="link" style="font-size: 1em;" title="Mod Log" href="/mod_log/{{thread_info[each_thread_hash]['board_address']}}/1">M</a>
                     {%- endif -%}
                     ]
-                    {% endif %}
+                    {%- endif %}
 
                     {% if thread_options["sticky"] %}
                         <img style="position: relative; top: 1px; height: 10px" title="Stickied{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
@@ -166,6 +144,5 @@
     {% include '/elements/footer_overboard_pages.html' %}
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

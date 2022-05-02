@@ -3,8 +3,9 @@ import html
 import json
 import logging
 import re
-from urllib import parse
 import uuid
+from urllib import parse
+
 from sqlalchemy import and_
 
 import config
@@ -19,7 +20,7 @@ from utils import replacements_simple
 from utils.general import get_random_alphanumeric_string
 from utils.general import pairs
 from utils.general import process_passphrase
-from utils.message_summary import get_reply_link_html
+from utils.generate_popup import generate_reply_link_and_popup_html
 
 DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 
@@ -77,7 +78,7 @@ def is_chan_reply(text):
     return dict_ids_strings
 
 
-def format_body(message_id, body, truncate):
+def format_body(message_id, body, truncate, is_board_view):
     """
     Formatting of post body text at time of page render
     Mostly to allow links to properly form after initial message processing from bitmessage
@@ -258,8 +259,12 @@ def format_body(message_id, body, truncate):
                     if message:
                         link_text = '&gt;&gt;&gt;/{l}/{p}'.format(
                             l=html.escape(chan_entry.label), p=message.post_id)
-                        rep_str = get_reply_link_html(
-                            message, external_thread=True, external_board=True, link_text=link_text)
+                        rep_str = generate_reply_link_and_popup_html(
+                            message,
+                            board_view=is_board_view,
+                            external_thread=True,
+                            external_board=True,
+                            link_text=link_text)
 
                         # Store replacement in dict to conduct after all matches have been found
                         new_id = str(uuid.uuid4())
@@ -334,8 +339,11 @@ def format_body(message_id, body, truncate):
                         message.thread.thread_hash == this_message.thread.thread_hash):
                     if message.thread.op_sha256_hash == message.message_sha256_hash:
                         name_str = " (OP)"
-                    rep_str = get_reply_link_html(
-                        message, self_post=self_post, name_str=name_str)
+                    rep_str = generate_reply_link_and_popup_html(
+                        message,
+                        board_view=is_board_view,
+                        self_post=self_post,
+                        name_str=name_str)
 
                 # Off-board cross-post
                 elif (targetpostdata["location"] == "remote" and
@@ -345,8 +353,9 @@ def format_body(message_id, body, truncate):
                       this_message.thread and
                       message.thread.thread_hash != this_message.thread.thread_hash and
                       message.thread.chan.address != this_message.thread.chan.address):
-                    rep_str = get_reply_link_html(
+                    rep_str = generate_reply_link_and_popup_html(
                         message,
+                        board_view=is_board_view,
                         self_post=self_post,
                         name_str=name_str,
                         external_thread=True,
@@ -359,8 +368,9 @@ def format_body(message_id, body, truncate):
                       this_message and
                       this_message.thread and
                       message.thread.thread_hash != this_message.thread.thread_hash):
-                    rep_str = get_reply_link_html(
+                    rep_str = generate_reply_link_and_popup_html(
                         message,
+                        board_view=is_board_view,
                         self_post=self_post,
                         name_str=name_str,
                         external_thread=True)
@@ -401,27 +411,25 @@ def eliminate_buddy(op_matches, cl_matches):
     return op_matches, cl_matches
 
 
-def replace_two_regex(body, start_regex, end_regex, start_tag, end_tag):
-    op_matches = re.findall(start_regex, body)
-    cl_matches = re.findall(end_regex, body)
-    op_matches, cl_matches = eliminate_buddy(op_matches, cl_matches)
+def replace_regex(body, regex, op, cl):
+    matches = re.findall(regex, body)
 
-    matches = []
-    for i in range(len(op_matches)):
-        matches.append(op_matches[i])
-        matches.append(cl_matches[i])
+    # print("matches = {}".format(matches))
 
-    if body and len(matches) > 1:
-        for i, pair in enumerate(pairs(matches)):
-            body = body.replace(pair[0], start_tag, 1)
-            body = body.replace(pair[1], end_tag, 1)
+    for i, match in enumerate(matches):
+        if i > 50:
+            break
+        body = body.replace(
+            "{0}{1}{2}".format(match[0], match[1], match[2]),
+            '{}{}{}'.format(op, match[1], cl),
+            1)
 
     return body
 
 
 def replace_ascii(text):
     list_replacements = []
-    for each_find in re.finditer(r"(?i)\[aa](.*?)\[\/aa]", text, flags=re.DOTALL):
+    for each_find in re.finditer(r"(?s)(?i)\[aa](.*?)\[\/aa]", text):
         list_replacements.append({
             "ID": get_random_alphanumeric_string(
                 30, with_punctuation=False, with_spaces=False),
@@ -433,7 +441,7 @@ def replace_ascii(text):
 
 def replace_ascii_small(text):
     list_replacements = []
-    for each_find in re.finditer(r"(?i)\[aa\-s](.*?)\[\/aa\-s]", text, flags=re.DOTALL):
+    for each_find in re.finditer(r"(?s)(?i)\[aa\-s](.*?)\[\/aa\-s]", text):
         list_replacements.append({
             "ID": get_random_alphanumeric_string(
                 30, with_punctuation=False, with_spaces=False),
@@ -445,7 +453,7 @@ def replace_ascii_small(text):
 
 def replace_ascii_xsmall(text):
     list_replacements = []
-    for each_find in re.finditer(r"(?i)\[aa\-xs](.*?)\[\/aa\-xs]", text, flags=re.DOTALL):
+    for each_find in re.finditer(r"(?s)(?i)\[aa\-xs](.*?)\[\/aa\-xs]", text):
         list_replacements.append({
             "ID": get_random_alphanumeric_string(
                 30, with_punctuation=False, with_spaces=False),
@@ -459,8 +467,8 @@ def replace_candy(body):
     open_tag_1 = '<span style="color: blue;">'
     open_tag_2 = '<span style="color: red;">'
     close_tag = '</span>'
-    regex = r'\[\bcandy\b\](.*?)\[\/\bcandy\b\]'
-    matches_full = re.finditer(regex, body, flags=re.DOTALL)
+    regex = r"(?i)\[\bcandy\b\](.*?)\[\/\bcandy\b\]"
+    matches_full = re.finditer(regex, body)
 
     for each_find in matches_full:
         candied = ""
@@ -476,26 +484,29 @@ def replace_candy(body):
 
 
 def replace_colors(body):
-    op_matches = re.findall(r"((\[color=)(\(#(?:[0-9a-fA-F]{3}){1,2})\)\])", body)
-    cl_matches = re.findall(r"\[\/color\]", body)
-    color_codes = re.findall(r"#(?:[0-9a-fA-F]{3}){1,2}", body)
-    op_matches, cl_matches = eliminate_buddy(op_matches, cl_matches)
+    matches = re.findall(r"(?s)(?i)(\[color=\((\#[A-Fa-f0-9]{6}|\#[A-Fa-f0-9]{3})\)\])(.*?)(\[\/color\])", body)
 
-    start_tag = []
-    for i in color_codes:
-        start_tag.append('<span style="color:{};">'.format(i))
+    for i, match in enumerate(matches):
+        if i > 50:
+            break
+        body = body.replace(
+            "{0}{1}[/color]".format(match[0], match[2]),
+            '<span style="color:{color};">{text}</span>'.format(color=match[1], text=match[2]),
+            1)
 
-    end_tag = "</span>"
+    return body
 
-    matches = []
-    for i in range(len(op_matches)):
-        matches.append(op_matches[i][0])
-        matches.append(cl_matches[i])
 
-    if body and len(matches) > 1:
-        for i, pair in enumerate(pairs(matches)):
-            body = body.replace(pair[0], start_tag[i], 1)
-            body = body.replace(pair[1], end_tag, 1)
+def replace_rot(body):
+    matches = re.findall(r"(?i)(\[rot=(360|3[0-5][0-9]{1}|[0-2]?[0-9]{1,2})])(.?){1}\[\/rot]", body)
+
+    for i, match in enumerate(matches, 1):
+        if i > 50:
+            break
+        body = body.replace(
+            "{0}{1}[/rot]".format(match[0], match[2]),
+            '<span style="transform: rotate({deg}deg); -webkit-transform: rotate({deg}deg); display: inline-block;">{char}</span>'.format(deg=match[1], char=match[2]),
+            1)
 
     return body
 
@@ -614,11 +625,11 @@ def process_replacements(body, seed, message_id):
     body = replace_green_pink_text(body)
     body = replace_colors(body)
     body = replace_candy(body)
+    body = replace_rot(body)
 
     # Simple replacements
     body = replacements_simple.replace_8ball(body, seed)
     body = replacements_simple.replace_card_pulls(body, seed)
-    body = replacements_simple.replace_countdown(body)
     body = replacements_simple.replace_dice_rolls(body, seed)
     body = replacements_simple.replace_flip_flop(body, seed)
     body = replacements_simple.replace_iching(body, seed)
@@ -639,7 +650,7 @@ def process_replacements(body, seed, message_id):
     body = replace_pair(body, """<sub style="font-size: smaller;">""", "</sub>", "\%\%")
     body = replace_pair(body, "<strong>", "</strong>", "@@")
     body = replace_pair(body, "<i>", "</i>", "~~")
-    body = replace_pair(body, "<u>", "</u>", "__")
+    body = replace_pair(body, '<span style="text-decoration: underline;">', "</span>", "__")
     body = replace_pair(body, "<s>", "</s>", "\+\+")
     body = replace_pair(body, '<span class="replace-small">', '</span>', "--")
     body = replace_pair(body, '<span class="replace-big">', '</span>', "##")
@@ -652,42 +663,45 @@ def process_replacements(body, seed, message_id):
     body = replace_pair(body, '<span class="replace-shadow">', '</span>', "\^s")
     body = replace_pair(body, '<span class="replace-spoiler">', '</span>', "\*\*")
 
-    body = replace_two_regex(
+    body = replace_regex(
         body,
-        r'\[\bmeme\b\]',r'\[\/\bmeme\b\]',
+        r"(?s)(?i)(\[meme\])(.*?)(\[\/meme\])",
         '<span style="background: linear-gradient(to right, red, orange, yellow, green, blue, indigo, violet); '
         '-webkit-background-clip: text; -webkit-text-fill-color: transparent;">',
         "</span>")
-    body = replace_two_regex(
+    body = replace_regex(
         body,
-        r'\[\bautism\b\]', r'\[\/\bautism\b\]',
+        r"(?s)(?i)(\[autism\])(.*?)(\[\/autism\])",
         '<span class="animated">',
         "</span>")
-    body = replace_two_regex(
+    body = replace_regex(
         body,
-        r'\[\bflash\b\]', r'\[\/\bflash\b\]',
+        r"(?s)(?i)(\[flash\])(.*?)(\[\/flash\])",
         '<span class="replace-blinking">',
         "</span>")
-    body = replace_two_regex(
+    body = replace_regex(
         body,
-        r'\[\bcenter\b\]', r'\[\/\bcenter\b\]',
+        r"(?s)(?i)(\[center\])(.*?)(\[\/center\])",
         '<div style="text-align: center;">',
         "</div>")
-    body = replace_two_regex(
+    body = replace_regex(
         body,
-        r'\[\bback\b\]', r'\[\/\bback\b\]',
+        r"(?s)(?i)(\[back\])(.*?)(\[\/back\])",
         '<bdo dir="rtl">',
         "</bdo>")
-    body = replace_two_regex(
+    body = replace_regex(
         body,
-        r'\[\bcaps\b\]', r'\[\/\bcaps\b\]',
+        r"(?s)(?i)(\[cap\])(.*?)(\[\/cap\])",
         '<span style="font-variant: small-caps;">',
         "</span>")
-    body = replace_two_regex(
+    body = replace_regex(
         body,
-        r'\[\bkern\b\]', r'\[\/\bkern\b\]',
+        r"(?s)(?i)(\[kern\])(.*?)(\[\/kern\])",
         '<span style="letter-spacing: 5px;">',
         "</span>")
+
+    # Replacements with JS that need to come after text formatting replacements
+    body = replacements_simple.replace_countdown(body)
 
     #
     # Code that needs to occur after text style formatting

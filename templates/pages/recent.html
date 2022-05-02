@@ -1,41 +1,17 @@
 {% extends "layout.html" %}
 
 {% set total_pages = (msg_count / settings.results_per_page_recent)|round(0, "ceil")|int %}
-{% set global_admin, allow_msg = allowed_access(check_is_global_admin=True) %}
+{% set global_admin, allow_msg = allowed_access("is_global_admin") %}
 
 {% block title %}Recent Posts{% if recent_info["single_board"] %} - /{{recent_info["board_label"]}}/{% endif %} - {% endblock %}
 
 {% block head %}
     <script>
-        $(window).scroll(function() {
-            var height = $(window).scrollTop();
-            if (height > 100) {
-                $('#back2Top').fadeIn();
-                $('#back2Bottom').fadeOut();
-            } else {
-                $('#back2Bottom').fadeIn();
-                $('#back2Top').fadeOut();
-            }
-        });
-
-        $(document).ready(function() {
-            $("#back2Top").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: 0}, "slow");
-                return false;
-            });
-            $("#back2Bottom").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: $(document).height()}, "slow");
-                return false;
-            });
-        });
-
         function toggle(source) {
             var inputs = document.getElementsByTagName("input");
             for (let x=0; x<inputs.length; x++){
                 if (inputs[x].type == "checkbox" &&
-                        inputs[x].name.indexOf("deletebulk_") == 0) {
+                        inputs[x].name.indexOf("selectbulk_") == 0) {
                     inputs[x].checked = source.checked;
                 }
             }
@@ -48,7 +24,7 @@
         }
 
         tr:nth-child(odd) {
-            background-color: {{themes[settings.theme].posthighlight}};
+            background-color: {{themes[get_theme()].posthighlight}};
         }
 
         .wrap {
@@ -62,14 +38,12 @@
 {% endblock %}
 
 {% block body %}
-    <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
-    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
     <br/>
 
-    {% if status_msg["status_title"] == "Error" %}
+    {% if status_msg["status_title"] %}
         {% include '/elements/status.html' %}
     {% endif %}
 
@@ -77,108 +51,103 @@
     <h1 class="title themed bold" style="text-align: center">Recent Posts{% if recent_info["single_board"] %} - <a class="link" style="font-size: 1em" href="/board/{{recent_info['board_address']}}/1">/{{recent_info["board_label"]}}/ - {{recent_info["board_description"]}}</a>{% endif %}</h1>
 
     {% if recent_results %}
-        <div class="themed" style="padding: 1em 0;">{{msg_count}} Results{% if total_pages > 1 %}, {{total_pages}} Pages{% endif %}</div>
-        <form action="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{recent_page}}" method="post">
-        <table class="table themed" style="margin-left: auto; margin-right: auto;">
-            <tr>
-                {% if global_admin %}
-                <td><input type="checkbox" onClick="toggle(this)"/></td>
-                {% endif %}
-                <td>Post ID</td>
-                <td>Sent</td>
-                <td>Age</td>
-                <td>OP</td>
-                <td>Sticky</td>
-                <td>Lock</td>
-                <td>Anchor</td>
-                <td>Sage</td>
-                <td title="Posted with your Identity address">Ident</td>
-                {% if not recent_info["single_board"] %}<td>Board</td>{% endif %}
-                <td>Subject</td>
-            </tr>
+    <div class="themed" style="padding: 1em 0;">{{msg_count}} Results{% if total_pages > 1 %}, {{total_pages}} Pages{% endif %}</div>
+
+    {% include '/elements/footer_recent_pages.html' %}
+
+    <form action="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{recent_page}}" method="post">
+    <table class="table themed" style="margin-left: auto; margin-right: auto;">
+        <tr>
+            {% if global_admin %}
+            <td><input type="checkbox" onClick="toggle(this)"/></td>
+            {% endif %}
+            <td>Age</td>
+            <td>OP</td>
+            <td>Sticky</td>
+            <td>Lock</td>
+            <td>Anchor</td>
+            {% if not recent_info["single_board"] %}<td>Board</td>{% endif %}
+            <td>Subject</td>
+        </tr>
         {% for each_msg in recent_results %}
             {% if each_msg.thread and each_msg.thread.chan %}
 
             {% set thread_options = get_thread_options(each_msg.thread.thread_hash) %}
-            <tr>
-                {% if global_admin %}
-                <td><input type="checkbox" id="deletebulk_{{each_msg.message_id}}" name="deletebulk_{{each_msg.message_id}}" value="y"></td>
-                {% endif %}
-                <td>{{get_reply_link_html(each_msg, external_thread=True, link_text=each_msg.post_id, extra_style='font-family:monospace')|safe}}</td>
-                <td style="font-family: monospace">{{timestamp_to_date(each_msg.timestamp_sent)}}</td>
-                <td>{{display_time(now - each_msg.timestamp_sent)}}</td>
-                <td style="text-align: center">{% if each_msg.is_op %}X{% endif %}</td>
-                <td style="text-align: center">
-                {% if thread_options["sticky"] %}
-                    <img style="position: relative; top: 3px; height: 15px" title="Locked{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
-                    {%- if thread_options['sticky_local'] and not thread_options['sticky_remote'] -%}
-                        pin_green.png
-                    {%- elif not thread_options['sticky_local'] and thread_options['sticky_remote'] -%}
-                        pin_red.png
-                    {%- else -%}
-                        pin_green_red.png
-                    {%- endif -%}
-                    ">
-                {% endif %}
-                </td>
-                <td style="text-align: center">
-                {% if thread_options["lock"] %}
-                    <img style="position: relative; top: 3px; height: 15px" title="Locked{% if thread_options['lock_local'] %} (Local){% endif %}{% if thread_options['lock_remote'] %} (Remote){% endif %}" src="/static/
-                    {%- if thread_options['lock_local'] and not thread_options['lock_remote'] -%}
-                        lock_green.png
-                    {%- elif not thread_options['lock_local'] and thread_options['lock_remote'] -%}
-                        lock_red.png
-                    {%- else -%}
-                        lock_green_red.png
-                    {%- endif -%}
-                    ">
-                {% endif %}
-                </td>
-                <td style="text-align: center">
-                {% if thread_options["anchor"] %}
-                    <img style="position: relative; top: 3px; height: 15px" title="Anchored{% if thread_options['anchor_local'] %} (Local){% endif %}{% if thread_options['anchor_remote'] %} (Remote){% endif %}" src="/static/
-                    {%- if thread_options['anchor_local'] and not thread_options['anchor_remote'] -%}
-                        anchor_green.png
-                    {%- elif not thread_options['anchor_local'] and thread_options['anchor_remote'] -%}
-                        anchor_red.png
-                    {%- else -%}
-                        anchor_green_red.png
-                    {%- endif -%}
-                    ">
-                {% endif %}
-                </td>
-                <td style="text-align: center">{% if each_msg.sage %}<img style="position: relative; height: 15px" title="Sage" src="/static/leaf.png">{% endif %}</td>
-                <td style="text-align: center">{% if each_msg.address_from in identities %}<span title="{{get_user_name(each_msg.address_from, '0', full_address=True)}}">X</span>{% endif %}</td>
-                {% if not recent_info["single_board"] %}<td><a class="link" title="{{each_msg.thread.chan.description|safe}}" href="/board/{{each_msg.thread.chan.address}}/1">/{{each_msg.thread.chan.label|safe}}/</a></td>{% endif %}
-                <td><a class="link" href="/thread/{{each_msg.thread.chan.address}}/{{each_msg.thread.thread_hash[-12:]}}">{{each_msg.thread.subject|safe}}</a></td>
-            </tr>
+        <tr>
+            {% if global_admin %}<td></td>{% endif %}
+            <td>{{display_time(now - each_msg.timestamp_sent)}}</td>
+            <td style="text-align: center">{% if each_msg.is_op %}OP{% endif %}</td>
+            <td style="text-align: center">
+            {% if thread_options["sticky"] %}
+                <img style="position: relative; top: 3px; height: 15px" title="Sticky{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
+                {%- if thread_options['sticky_local'] and not thread_options['sticky_remote'] -%}
+                    pin_green.png
+                {%- elif not thread_options['sticky_local'] and thread_options['sticky_remote'] -%}
+                    pin_red.png
+                {%- else -%}
+                    pin_green_red.png
+                {%- endif -%}
+                ">
+            {% endif %}
+            </td>
+            <td style="text-align: center">
+            {% if thread_options["lock"] %}
+                <img style="position: relative; top: 3px; height: 15px" title="Locked{% if thread_options['lock_local'] %} (Local){% endif %}{% if thread_options['lock_remote'] %} (Remote){% endif %}" src="/static/
+                {%- if thread_options['lock_local'] and not thread_options['lock_remote'] -%}
+                    lock_green.png
+                {%- elif not thread_options['lock_local'] and thread_options['lock_remote'] -%}
+                    lock_red.png
+                {%- else -%}
+                    lock_green_red.png
+                {%- endif -%}
+                ">
+            {% endif %}
+            </td>
+            <td style="text-align: center">
+            {% if thread_options["anchor"] %}
+                <img style="position: relative; top: 3px; height: 15px" title="Anchored{% if thread_options['anchor_local'] %} (Local){% endif %}{% if thread_options['anchor_remote'] %} (Remote){% endif %}" src="/static/
+                {%- if thread_options['anchor_local'] and not thread_options['anchor_remote'] -%}
+                    anchor_green.png
+                {%- elif not thread_options['anchor_local'] and thread_options['anchor_remote'] -%}
+                    anchor_red.png
+                {%- else -%}
+                    anchor_green_red.png
+                {%- endif -%}
+                ">
+            {% endif %}
+            </td>
+            {% if not recent_info["single_board"] %}<td><a class="link" title="{{each_msg.thread.chan.description|safe}}" href="/board/{{each_msg.thread.chan.address}}/1">/{{each_msg.thread.chan.label|safe}}/</a></td>{% endif %}
+            <td>
+            {% set op_msg = table_messages.query.filter(and_(table_messages.thread_id == each_msg.thread.id, table_messages.is_op.is_(True))).first() %}
+            {% if not each_msg.is_op and op_msg %}
+                {{generate_reply_link_and_popup_html(op_msg, board_view=True, external_thread=True, link_text=each_msg.thread.subject)|safe}}
             {% else %}
-            <tr>
-                <td style="font-family: monospace">{{each_msg.post_id}}</td>
-                <td style="font-family: monospace">{{timestamp_to_date(each_msg.timestamp_sent)}}</td>
-                <td>{% if each_msg.is_op %}X{% endif %}</td>
-                <td></td>
-                {% if not recent_info["single_board"] %}<td></td>{% endif %}
-                <td></td>
-            </tr>
+                <a class="link" href="/thread/{{each_msg.thread.chan.address}}/{{each_msg.thread.thread_hash[-12:]}}">{{each_msg.thread.subject|safe}}</a>
+            {% endif %}
+            </td>
+        </tr>
+        <tr>
+            {% if global_admin %}
+            <td><input type="checkbox" id="selectbulk_{{each_msg.message_id}}" name="selectbulk_{{each_msg.message_id}}" value="y"></td>
+            {% endif %}
+            <td colspan="{% if not recent_info['single_board'] %}7{% else %}6{% endif %}">{{generate_post_html(each_msg.message_id, board_view=True)|safe}}</td>
+        </tr>
             {% endif %}
         {% endfor %}
-        </table>
+    </table>
 
         {% if global_admin %}
-        <div style="padding: 1em 0">
-            <input type="submit" name="bulk_delete_threads" value="Delete Threads and Posts" onclick="return confirm('Are you sure you want to delete these?')"/>
-        </div>
+    <div style="padding: 1em 0">
+        <input type="submit" name="bulk_delete_threads" value="Delete Selected Posts/Threads" onclick="return confirm('Are you sure you want to delete these?')"/>
+    </div>
         {% endif %}
 
-        </form>
+    </form>
     {% elif search_string %}
         No Posts Found
     {% endif %}
-    </div>
+</div>
 
     {% include '/elements/footer_recent_pages.html' %}
-    {% include '/elements/footer_links.html' %}
-    <div style="padding-top: 1em"></div>
-</div>
+<div style="padding-top: 1em"></div>
 {% endblock %}

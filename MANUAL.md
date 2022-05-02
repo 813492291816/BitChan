@@ -36,9 +36,17 @@
   - [Export](#export){.link}
   - [Post Attachment Upload Sites](#post-attachment-upload-sites){.link}
   - [Custom Flags](#custom-flags){.link}
-  - [Hidden Onion Service](#hidden-onion-service){.link}
+  - [Hidden Tor Onion Service](#hidden-onion-service){.link}
+  - [Hidden I2P Service](#hidden-i2p-service){.link}
 - [Kiosk Mode](#kiosk-mode){.link}
 - [Status](#status){.link}
+- [Stats](#stats){.link}
+- [Mod Log](#mod-log){.link}
+- [BC Log](#bc-log){.link}
+- [Options](#options){.link}
+  - [CSS Tab](#css-tab){.link}
+  - [JS Tab](#js-tab){.link}
+  - [Options Tab](#options-tab){.link}
 - [Bug](#bug){.link}
 - [Donate](#donate){.link}
 - [Developer Information](#developer-information){.link}
@@ -84,11 +92,11 @@ There could be a few reasons for this. The most common is that the Bitmessage ne
 
 ## Why are there no threads/posts that appear immediately after joining a board?
 
-You will not see any activity on a recently joined board, assuming it has had recent activity, unless 'resync' was selected when joining it. Resync forces Bitmessage to scan its block for old messages and BitChan will display them is any are found. If this option is not used only posts received after joining will be seen. NOTE: resync can only display activity which have unexpired time to live (TTL). Expired activity is automatically purged from the Bitmessage network and so cannot be recovered.
+You will not see any activity on a recently joined board, assuming it has had recent activity, unless 'resync' was selected when joining it. Resync forces Bitmessage to scan its block for old messages and BitChan will display them if any are found. If this option is not used only posts received after joining will be seen. NOTE: resync can only display activity which have unexpired time to live (TTL). Expired activity is automatically purged from the Bitmessage network and so cannot be recovered.
 
 ## Will my posts and attachments live forever?
 
-BitChan utilizes Bitmessage to communicate via messages. Each of these messages has a user-set time to live (TTL), which is the duration it will be propagated on the Bitmessage network. If a user makes a post on a board at time X with a TTL of 28 days (the maximum allowed), any other user running BitChan and is also member of that board will receive that post between time X and X + 28 days. If the user doesn't have BitChan running since before X (or has it running but hasn't joined the board), and doesn't start BitChan until after X + 28 days (or has it running but doesn't join the board until after this period), the user will not receive the post.
+BitChan utilizes Bitmessage to communicate via messages. Each of these messages has a user-set time to live (TTL), which is the duration it will be propagated on the Bitmessage network. If a user makes a post on a board at time X with a TTL of 28 days (the maximum allowed), any other user running BitChan and who is also member of that board will receive that post between time X and X + 28 days. If the user doesn't have BitChan running since before X (or has it running but hasn't joined the board), and doesn't start BitChan until after X + 28 days (or has it running but doesn't join the board until after this period), the user will not receive the post.
 
 ## As the Owner of a board, what will happen to my board if I don't keep BitChan running?
 
@@ -112,17 +120,18 @@ For both boards and lists, there can be Owner, Admin, and User addresses specifi
 
 Owners of private boards and lists will see an [Owner Options](#owner-options){.link} menu at the top of the page, where they can modify the parameters of the board or list. Additionally, when an Owner or Admin selects the dropdown menu next to a user's address or post ID, there will be additional options available to them. See the table, below, for what actions are available to each access level. Additionally, some actions may be restricted based on other settings of the board or list.
 
-Ability | Owner | Admin | User
---- | --- | --- | ---
-Modify Access Addresses | X | | |
-Set Custom Banner Image | X | | |
-Set Custom CSS | X | | |
-Set Word Replacements | X | | |
-Global Post/Thread Delete | X | X | |
-Ban Address | X | X | |
-Delete from List | X | X | |
-Post | X | X | X |
-Add to List |  X | X | X |
+Ability | Board Owner | Board Admin | Janitor | User
+--- |---|---|---|---
+Modify Access Addresses | X |   |   | |
+Set Custom Banner Image | X |   |   | |
+Set Custom CSS | X |   |   | |
+Set Word Replacements | X |   |   | |
+Global Post/Thread Delete | X | X |   | |
+Local Kiosk Post/Thread Delete |   |   | X | |
+Ban Address | X | X |   | |
+Delete from List | X | X |   | |
+Post | X | X | X | X |
+Add to List | X | X | X | X |
 
 ***Note: Be careful when banning an address, as there's no restriction to prevent you from banning your own address, and there is currently no ability to remove a ban. Consider adding addresses to the Restricted Address list instead, as this can be changed at a future point in time.***
 
@@ -192,6 +201,14 @@ This dropdown lets you select the image to insert the steganographic comment. Th
 
 Enter any text you desire to hide in your image with steganography. Some images may not work due to limitations of the software or a characteristic of the particular image. You should receive an error if it's unable to be performed. This only works for JPG attachments.
 
+***Password to Delete***
+
+A password can be supplied with a post to be able to delete the post at a later time. This password will initially be hashed with SHA512 and the hash sent with the post. At a later time, a request can be made to delete the post, which will send the unhashed, plain text password to all BitChan instances. These BitChan instances will hash the plain text password and compare it to the stored password hash for the post. If the hashes match, the post will be deleted. Because plain text passwords are sent with the request to delete the post (and for all intents and purposes, should be considered compromised because it has become publicly visible to all users), there are a few points to consider when choosing a password to use:
+
+ 1. Do not use a password that you would like to remain private (e.g. a password also used for bank account credentials).
+ 2. Do not use the same password for multiple posts, because one a request to delete a post is made, that password is visible to users (as those users can use that password to delete your other posts).
+ 3. Do write down your posts and passwords because the password will not be automatically saved for later retrieval.
+
 ## Text Modifications
 
 There are several strings that will format text or execute functions in messages. These range from changing to color of text to generating random values from dice rolls.
@@ -222,11 +239,11 @@ The file types below have native support in most modern web browsers:
 
 ## Steganography
 
-Steganography is used to insert text messages into images attached to posts. A passphrase is used to PGP-encrypt the message being inserted into the image. You can use the default passphrase or set your own when creating or joining a board, or after board creation in the Board Information dropdown. If not using the default passphrase, be aware that any posts that contain an image with a message encrypted using the default passphrase will not be able to be decrypted/read. That is, messages encrypted with a passphrase that's different than the one currently set to decrypt with will not be able to be read. Therefore, if using a non-default passphrase, others must also be using the same non-default passphrase if you want to communicate with them. If you're being invited to a board with a non-default Steg Passphrase, you will typically be provided a non-default Steg Passphrase when you are provided the Board Passphrase used to join the board. 
+Steganography is used to insert text messages into images attached to posts. A passphrase is used to PGP-encrypt the message being inserted into the image. You can use the default passphrase or set your own when creating or joining a board, or after board creation in the Board Information dropdown. If not using the default passphrase, be aware that any posts that contain an image with a message encrypted using the default passphrase will not be able to be decrypted/read. That is, messages encrypted with a passphrase that's different from the one currently set to decrypt with will not be able to be read. Therefore, if using a non-default passphrase, others must also be using the same non-default passphrase if you want to communicate with them. If you're being invited to a board with a non-default Steg Passphrase, you will typically be provided a non-default Steg Passphrase when you are provided the Board Passphrase used to join the board. 
 
 # Post Header
 
-The post header is what appears at the top of every post. It contains useful information such as an identicon, label, the author's arrow dropdown menu, date and time, post ID, post number, sage icon, pinned thread icon, locked thread icon and the post's arrow drop down menu, all of which are described below.
+The post header is what appears at the top of every post. It contains useful information such as an identicon, label, the post's arrow drop down menu, date and time, post ID, post number, sage icon, pinned thread icon, locked thread icon and the author's arrow dropdown menu, all of which are described below.
 
 ## Identicon
 
@@ -236,9 +253,9 @@ Every ID used to post has a unique icon associated with it, aka an identicon. Th
 
 A post's label will read 'Anonymous' when the author is using the board's ID. Otherwise, it will either be last 9 characters of the Bitmessage ID or, if the ID is in your Address Book or Identities list, it will be the label that you have entered.
 
-## Author Arrow Dropdown Menu
+## Post Arrow Dropdown Menu
 
-If the post is made with an ID other than the board's ID there will be an arrow dropdown menu. The options contained therein are described below.
+Every post will have an arrow dropdown menu. The options contain therein are described below.
 
 ### ID
 
@@ -274,7 +291,7 @@ The post ID is the unique 9 character string generated when a post is received. 
 
 ## Post Number
 
-This number tracks your local post count per board. Each new post increments the post number by one. This count is not necessarily the same for everyone. This is due the fact that you or others may be blocking certain posts or have missed posts due to time to live (TTL) expirations. The decentralized nature of Bitmessage makes it impossible to synchronize post numbers across the entire network.
+This number tracks your local post count per board. Each new post increments the post number by one. BitChan post numbers work differently than centralized IBs. Due to the nature of a decentralized network, different installs of BitChan can have different posts per board (e.g. the result of joining a board at different times, locally deleting different threads/posts, etc.), the post numbers may not be the same. Since it's insecure to allow any single BitChan instance to designate a number for a post (although Post IDs are the same across all BitChan installs because they are determined by Bitmessage), the numbers you see represent the post order of a board for a particular BitChan install and won't necessarily align with what is seen on another BitChan install. Additionally, if posts are deleted, or posts are received out of order, the post numbers will be recalculated and adjusted to reflect the current state of the board, so there will never be gaps in post numbers.
 
 ## Sage
 
@@ -288,9 +305,9 @@ If a thread has been pinned the original post will contain a pushpin in the post
 
 If a thread has been locked the original post will contain a lock icon in the post header. If the thread has been locally locked the lock will be green, if remotely locked it will be red, and if both it will be half green and half red.
 
-## Post Arrow Dropdown Menu
+## Author Arrow Dropdown Menu
 
-Every post will have an arrow dropdown menu. The options contain therein are described below.
+If the post is made with an ID other than the board's ID there will be an arrow dropdown menu. The options contained therein are described below.
 
 ### This Post's Short Cross-link
 
@@ -328,13 +345,17 @@ If you control an ID with Board Owner permissions then, for any post on that boa
 
 If you control an ID with Board Owner permissions then, for any post on that board, you will see the option to delete that post and add a comment that everyone will see. Otherwise, you can locally delete any post and add a comment of your choice. The option to locally delete any post and add a comment exists regardless of the permission level.
 
+### Delete Post Using Password
+
+If you previously created a post and provided a Password to Delete, you may use this option to delete the post for all users. You must provide the same password that was originally provided. This password will be sent as plain text, and once this message propagates on the network and is received, BitChan will hash the password and compare it to the password hash that was originally saved when the post was made. If the hashes match, the post will be deleted.
+
 # Threads
 
-Threads are collections of posts under a single subject that are displayed sequentially in the order in which they were sent. The creation of a thread is based on the hash of a post that identifies itself as an OP. Any post that identifies itself as an OP is placed into its own new thread. Any post that identifies itself as a reply and references the hash of a non-existent OP/thread is placed under an OP place holder. This prevents OP hijacking and other issues that can arise from messages being received out of order or otherwise attempting to disrupt a thread by containing inauthentic metadata.
+Threads are collections of posts under a single subject that are displayed sequentially in the order in which they were sent. The creation of a thread is based on the hash of a post that identifies itself as an OP. Any post that identifies itself as an OP is placed into its own new thread. Any post that identifies itself as a reply and references the hash of a non-existent OP/thread is placed under an OP placeholder. This prevents OP hijacking and other issues that can arise from messages being received out of order or otherwise attempting to disrupt a thread by containing inauthentic metadata.
 
 # Thread Cards
 
-Thread cards summarize threads and provide information about them at a glance. This information includes the age of the last post, posts per month (PPM), the thread subject, the original post (or at least part of it), the last three posts (at least part of them if they exist), total posts in the thread, total attachments in the thread, attachment to post ratio (A:P), and the date of the original post. Next to each post there is \[O\] which shows a popup of the post when the mouse hovers over it.
+Thread cards summarize threads and provide information about them at a glance. This information includes the age of the last post, posts per month (PPM), the thread subject, the original post (or at least part of it), the last three posts (at least part of them if they exist), total posts in the thread, total attachments in the thread, attachment to post ratio (A:P), the date of the original post and a last 100 posts link if that many exist. Next to each post there is \[O\] which shows a popup of the post when the mouse hovers over it.
 
 ## Homepage Board Preview
 
@@ -350,7 +371,7 @@ Each board has a catalog which shows thread cards for all threads on the board i
 
 # Recent
 
-The recent page shows a list for all posts in chronological order (most recent first) regardless of the board or thread from which they originate. Each item in the list displays the post ID, sent time, age of the post, whether it is an original post or not, if it was saged or not, if you control the identity which sent the post or not, the board the post is on and the subject of the thread the post appears on. Hovering over the post ID will cause a popup of the post to appear.
+The recent page shows a list for all posts in chronological order (most recent first) regardless of the board or thread from which they originate. Each item in the list displays the post ID, sent time, age of the post, whether it is an original post or not, if it was saged or not, if you control the identity which sent the post or not, the board the post is on and the subject of the thread the post appears on.
 
 # Search
 
@@ -364,7 +385,7 @@ BitChan allows anyone to create and moderate boards and lists. Your board/list c
 - For any reason
 - About anything
 
-To create a board or list simply click the **Create or Join** link at the bottom of the page and select your desired option:
+To create a board or list simply click the **Create or Join** link in the sticky menu at the top and select your desired option:
 
 - Create Public Board
 - Create Private Board
@@ -417,7 +438,7 @@ Require that all posts originate from an address that is not the board or list a
 
 ### Allow Lists to Store PGP Passphrases
 
-When enabled, any board or list added to this list will also send the currently-set PGP passphrases (Message PGP passphrase for Lists and Message, Attachment, and Steg PGP passphrases for Boards). This allows a list to contain boards/lists with non-default PGP passphrases set and easily share them without having to supply the PGP passphrases separately from the list. When the user clicks Join from the list, the custom PGP passphrases (when the board/list was added to the list) are populated for that board/list on the following join page. If a list Owner wants to change the PGP passphrases associated with a board/list already on the list, just remove the board/list from the list, change the board/list PGP passphraess, and add the board/list again and the list will now contain the board/list with the new PSP passphrases. 
+When enabled, any board or list added to this list will also send the currently-set PGP passphrases (Message PGP passphrase for Lists and Message, Attachment, and Steg PGP passphrases for Boards). This allows a list to contain boards/lists with non-default PGP passphrases set and easily share them without having to supply the PGP passphrases separately from the list. When the user clicks Join from the list, the custom PGP passphrases (when the board/list was added to the list) are populated for that board/list on the following join page. If a list Owner wants to change the PGP passphrases associated with a board/list already on the list, just remove the board/list from the list, change the board/list PGP passphrases, and add the board/list again and the list will now contain the board/list with the new PSP passphrases. 
 
 ## Creating Public Boards and Lists
 
@@ -552,6 +573,7 @@ The theme can be changed to affect the text style on pages. The following themes
 - Dark: a dark color theme
 - Classic: A red theme, similar to Yotsuba
 - Frosty: A blue theme, similar to Yousuba B
+- Console: Another dark theme
 
 ### Max Home Page Updates
 
@@ -569,11 +591,11 @@ Because compressed/encrypted files can be of a size significantly less than the 
 
 Permit connecting (through tor) to verify post attachment size. When a post arrives that indicates it has attachments on an external upload site, it also indicates what the size is. If this message was tampered with, it could indicate a smaller size than it actually is, which could trigger your auto-download to kick in, when in fact it could be incredibly large. File size checking will verify the file size before attempting an auto-download. If you allow file size checking, BitChan would recognize its true size, update the size displayed to the user and not auto-download if it's above the auto-download limit. At that point the user can decide to click the download button or not.
 
-If you suspect that someone might want to log your tor IP by forcing you to request a file size from an external host, then you can disable this. Of course, if your **Auto-Download Max Size** is above 0 then you may be tricked into downloading a massive file. These are some of the challenges and trade-offs of dealing with a zero-trust distributed network.
+If you suspect that someone might want to log your tor IP by forcing you to request a file size from an external host, then you can disable this. Of course, if your **Auto-Download Max Size** is above 0 then you may be tricked into downloading a massive file. These are some challenges and trade-offs of dealing with a zero-trust distributed network.
 
 ### Allow connecting to get book quotes
 
-Permit connecting (through tor) to get random book quotes for #stich and #godsong in posts. The #stitch and #godsong functions require connecting to websites and thus go outside the Bitmessage network. enable this option to prevent connecting the websites associate with resolving these functions. If enabled, posts which contain these functions will not resolve, and you cannot resolve them after the fact without leaving the board, rejoining and resyncing your database. However, doing this will cause any messages which you had which are now past their TTL to be lost.
+Permit connecting (through tor) to get random book quotes for #stich and #godsong in posts. The #stitch and #godsong functions require connecting to websites and thus go outside the Bitmessage network. Enable this option to prevent connecting the websites associate with resolving these functions. If enabled, posts which contain these functions will not resolve, and you cannot resolve them after the fact without leaving the board, rejoining and resyncing your database. However, doing this will cause any messages which you had which are now past their TTL to be lost.
 
 ### Allow connecting to NTP to sync time
 
@@ -621,11 +643,11 @@ This is the message that will appear on the home page. HTML is allowed.
 
 ### Template HEAD HTML
 
-This is HTML that will be inserted into the template's <HEAD>. Useful for easily adding CSS or Javascript that gets applied to all pages.
+This is HTML that will be inserted into the template's \<HEAD\>. Useful for easily adding CSS or Javascript that gets applied to all pages.
 
 ### Template BODY HTML
 
-This is HTML that will be inserted into the template's <BODY>. Useful for applying certain styles to all pages when HTML needs to be inserted in the <BODY> of all pages, such as an image overlay that you want to be displayed on every page.
+This is HTML that will be inserted into the template's \<BODY\>. Useful for applying certain styles to all pages when HTML needs to be inserted in the \<BODY\> of all pages, such as an image overlay that you want to be displayed on every page.
 
 ## Kiosk Mode Settings
 
@@ -730,11 +752,33 @@ When composing a message, custom flags will appear at the top of the flag dropdo
 
 ## Hidden Onion Service
 
-Hidden onion services (v3) can be enabled to allow connecting to a .onion site using tor. If enabling a random address, a random onion address will be generated and displayed. You can also provide a zip file containing credentials for hosting a custom onion address. This can be beneficial if you want to disable HTTP access yet still allow access to your server. See the README for more information about the benefits of setting up a hidden onion service on a virtual private server.
+A hidden tor onion services (v3) can be enabled to allow connecting to your BitChan install via an .onion address using tor browser. If enabling a random address, a random onion address will be generated and displayed. You can also provide a zip file containing credentials for hosting a custom onion address that you previously generated. This can be beneficial if you want to enable Kiosk Mode to allow anonymous access without exposing your IP address. See the README for more information about the benefits of setting up a hidden onion service on a virtual private server.
+
+## Hidden I2P Service
+
+A hidden I2P service can be used to create a tunnel to your BitChan install via an .i2p address over the I2P network. This can be beneficial if you want to enable Kiosk Mode to allow anonymous access without exposing your IP address.
+
+Follow these instructions to set up an I2P tunnel to allow access to your BitChan install:
+
+1. Open a browser to http://172.28.1.6:7657 and complete the setup wizard.
+2. Open the Hidden Service Manager page at http://172.28.1.6:7657/i2ptunnelmgr
+3. Select HTTP for New hidden service, then click Create.
+4. Enter a Name/Description, then set Host to 172.28.1.1, Port to 8000, and check Auto Start Tunnel.
+5. Set Website Hostname to an address that ends in .i2p (e.g. mysite.i2p).
+6. Expand Inbound connection limits, Max concurrent connections, and POST limits, and set all options to 0 to disable (they only cause problems, and BitChan already handles rate-limiting).
+7. Click Create.
+8. After being brought back to the Hidden Service Manager, click Start to start your tunnel.
+9. After the tunnel has started and peers have connected, your BitChan install will be accessible at the .i2p address provided. You will need to use the link with the helper address (e.g. http://mysite.i2p/?i2paddresshelper=qwertyuioplkjhgfdsazxcvbnmnbvcxzasdfghjklpoiuytrewqw.b32.i2p) unless you register your address with a jump server.
+
+Additionally, you can use 172.28.1.6:4444 as an HTTP proxy in your browser to connect to I2P sites.
+
+To improve performance, you can set UDP and TCP ports under Settings/Network, which when set up properly, the Network status will change from Firewalled to OK.
+
+Warning: If you expose port 7999 of the I2P service in docker-compose.yaml and your server is publicly-accessible, be sure to add a user and password under Settings/UI, then restart, to ensure there is no unauthorized use.
 
 # Kiosk Mode
 
-a Kiosk Mode has been created that institutes a login and permission system to allow administration as well as anonymous posting, among other features. Admins can log in and perform any action. Non-logged in users can be allowed to only view or make posts. You can also allow non-logged in users to only view and provide one or more guest logins that permit posting. There are several more Kiosk Mode options outlined in BitChan/config.py and detailed in the manual. When used in conjunction with the integrated hidden onion service configuration, you can provide secure and anonymous access to your BitChan instance, so neither the host nor the clients can obtain any identifying information about each other.
+A Kiosk Mode has been created that institutes a login and permission system to allow administration as well as anonymous posting, among other features. Admins can log in and perform any action. Non-logged in users can be allowed to only view or make posts. You can also allow non-logged in users to only view and provide one or more guest logins that permit posting. There are several more Kiosk Mode options outlined in BitChan/config.py and detailed in the manual. When used in conjunction with the integrated hidden onion service configuration, you can provide secure and anonymous access to your BitChan instance, so neither the host nor the clients can obtain any identifying information about each other.
 
 # Status
 
@@ -795,6 +839,34 @@ This indicates if Tor has established a circuit.
 ### Tor Circuits
 
 Clicking this dropdown will allow you to examine the current Tor circuit that BitChan is using.
+
+# Stats
+
+This page displays global statistics. The number of total posts, thread and total attachment size are shown as well of charts which tabulate various activity metrics.
+
+# Mod Log
+
+This page logs board/list creation events, list alterations and administration events. You can filter the results to display remote moderation and failed moderation attempts.
+
+# BC Log
+
+This page displays output from the BitChan docker volume logs.
+
+# Options
+
+Clicking this link will show a popup allowing custom user CSS and JavaScript as well as additional options described below.
+
+## CSS Tab
+
+Enter custom CSS here. The CSS is added to a cookie.
+
+## JS Tab
+
+Enter custom JavaScript here. The JavaScript is added to a cookie.
+
+## Options Tab
+
+Locally change your theme here.
 
 # Bug
 

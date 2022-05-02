@@ -1,0 +1,15 @@
+<section>
+    <details>
+    <summary>Board Debug Details</summary>
+    <table>
+        <tbody>
+        {% for i in range(debug_board_columns|length) %}
+            <tr>
+                <td class="themed">{{debug_board_columns[i]}}</td>
+                <td class="themed">{{debug_board_data[i]}}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </details>
+</section>

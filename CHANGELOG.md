@@ -1,4 +1,61 @@
-## 1.0.0
+## 1.1.0 (2022/05/02)
+
+Users with BitChan < 0.11.0 can not upgrade and will need to follow the instructions listed in the README to clean and install BitChan. Users with Bitchan >= 0.11.0 that wish to upgrade need to pull the new code, delete a volume, then build, as follows:
+
+```
+cd BitChan/docker
+sudo docker-compose down
+torsocks git pull
+docker volume rm docker_nginx
+docker volume rm docker_tor_etc
+sudo torsocks docker-compose pull
+sudo torsocks docker-compose up --build -d --remove-orphans
+```
+
+ - Fix remote file exploit bug
+ - Fix locks not being respected by the frontend
+ - Fix update of board/thread timestamp when post/thread is deleted
+ - Fix adding to mod log when deleting post/thread from recent/search pages
+ - Fix being able to post to nonexistent thread
+ - Fix database lock issues when processing many posts
+ - Fix deleting post with password
+ - Add I2P support (for uploads, downloads, and hidden service)
+ - Add I2P upload sites (bunkerfiles.i2p, 0xff.i2p)
+ - Add reply popup
+ - Add Ajax loading of new posts on thread pages
+ - Add ability to unlist board or list (hiding its existence from public view when in kiosk mode)
+ - Add "Last x Posts" thread view
+ - Add option for automatic session-banning if verification requests exceed rate-limit
+ - Add Boards and List pages
+ - Add Time To Post (TTP) countdown if kiosk and post refractory period enabled
+ - Add Game Bot (first games: chess and tic-tac-toe)
+ - Add ability for users (in kiosk mode) to set CSS/JS/Theme and other options, and export/import options
+ - Add ability to locally-restore remotely-deleted posts/threads
+ - Add tor hidden onion for incoming Bitmessage connections and enable Bitmessage incoming connections over tor v3 hidden onion
+ - Add ability to regenerate onion address for incoming Bitmessage connections
+ - Add ability to set a password when posting that can be used to delete the post later
+ - Add kiosk permissions: Janitor (can locally delete posts/threads from kiosk)
+ - Add redirection to the proper page after verifying, rather than the home page (Referrer-Policy set to same-origin)
+ - Add ability to filter mod log
+ - Switch from using XML-RPC to JSON-RPC
+ - Set post images to lazyload
+ - Discard posts received for deleted threads
+ - Move storage of post captcha from session to database
+ - Update tor to 0.4.6.7 (blocks connections to v2 onion addresses)
+
+
+## 1.0.0 (2021/10/31)
+
+Users with BitChan < 0.11.0 can not upgrade and will need to follow the instructions listed in the README to clean and install BitChan. Users with Bitchan >= 0.11.0 can merely pull the new code, delete several volumes, and rebuild to upgrade to 1.0.0:
+
+```
+cd BitChan/docker
+sudo docker-compose down
+git pull
+docker volume rm docker_nginx
+docker volume rm docker_tor_etc
+sudo docker-compose up --build -d
+```
 
  - fix install issues
  - fix leaving boards/lists
@@ -39,7 +96,7 @@
  - add ability to pin/lock threads
 
 
-## 0.11.1
+## 0.11.1 (2021/03/07)
 
 This is a bugfix release. Users with BitChan < 0.11.0 will need to follow the instructions listed in the 0.11.0 changelog notes, below, to upgrade to this version. Users with Bitchan 0.11.0 can merely pull the new code and rebuild to upgrade to 0.11.1:
 
@@ -53,7 +110,7 @@ sudo docker-compose up --build -d
  - fix creating posts with attachments greater than 5 MB
 
 
-## 0.11.0
+## 0.11.0 (2021/03/06)
 
 This beta release fixes bugs and implements new features. Due to numerous database incompatibilities with v0.10.0 and lower, you will need to delete all bitchan and bitmessage user data (volumes) to upgrade to this version. It is recommended to export your information before upgrading, which will provide you with the passphrases used to join boards, lists, and recreate your identities, and the addresses to repopulate your address book. Once BitChan becomes more stable and leaves beta, alembic will be used to update the database when upgrading, which will permit migrating to a new version without having to delete user data.
 
@@ -109,7 +166,7 @@ sudo docker-compose up --build -d
  - add check if \[identity\] address is your own identity
  - remove forumfiles and uplovd upload sites (no longer working)
 
-## 0.10.0
+## 0.10.0 (2020/12/05)
 
 This beta release fixes bugs and implements new features. Due to numerous database incompatibilities with v0.9.0, you will need to delete all bitchan and bitmessage user data (volumes) to upgrade to this version. It is recommended to back up any information before upgrading, which will provide you with the passphrases used to join boards, lists, and recreate your identities, and the addresses to repopulate your address book. Once BitChan becomes more stable and leaves beta, alembic will be used to update the database schema when upgrading, which will permit migrating to a new version without having to delete user data.
 
@@ -166,6 +223,6 @@ sudo docker-compose up --build -d
  - change web server to port 8000 (http://172.28.1.1:8000)
  - changes to user interface and styles
 
-## 0.9.0
+## 0.9.0 (2020/11/15)
 
 Initial beta release

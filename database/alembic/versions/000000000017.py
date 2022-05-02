@@ -14,10 +14,7 @@ branch_labels = None
 depends_on = None
 
 HOME_MESSAGE = """<div class="bold" style="text-align: center;">
-  BitChan is a decentralized anonymous imageboard built on top of <a class="link" target="_blank" href="https://github.com/Bitmessage/PyBitmessage">Bitmessage</a> with <a class="link" target="_blank" href="https://www.torproject.org">Tor</a> and <a class="link" target="_blank" href="https://gnupg.org">GnuPG</a>.
-</div>
-<div style="padding-top: 1em;">
-  This is a beta release of BitChan. Some features are only partially implemented and there are likely to be bugs. Please report any issues or bugs you find with a <a class="link" href="/bug_report">Bug Report</a>. Also watch the official <a class="link" href="/board/BM-2cVZdtgUe7uq7LbWx12W2btJybAphF3VxG/1">BitChan-Dev Board</a> for announcements, the <a class="link" href="/list/BM-2cUYu7r41Bbnox4P8gEVtdnZGLnisgG7Yu">BitChan List</a> for other boards and lists that may appear for discussion and other purposes, and the <a class="link" href="https://www.github.com/813492291816/BitChan">BitChan GitHub page</a> for updates to the code.
+  BitChan is a decentralized anonymous imageboard built on top of <a class="link" target="_blank" href="https://github.com/Bitmessage/PyBitmessage">Bitmessage</a> with <a class="link" target="_blank" href="https://www.torproject.org">Tor</a> and <a class="link" target="_blank" href="https://gnupg.org">GnuPG</a>. Learn more in the <a class="link" href="/help">manual</a>.
 </div>"""
 
 

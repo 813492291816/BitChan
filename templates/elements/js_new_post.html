@@ -1,0 +1,180 @@
+var new_post_timer = null;
+var new_post_amount = 60000;
+var new_post_counter = 60000;
+var new_post_count = 0;
+var new_post_count_prefix = "";
+var original_title = document.title;
+
+<!-- Make list of posts that initially load on page -->
+var thread_post_ids = [
+{%- if not message_replies.count() and message_op -%}
+    "{{message_op.post_id}}",
+{%- endif -%}
+
+{%- for each_message in message_replies -%}
+    "{{each_message.post_id}}",
+{%- endfor -%}
+];
+
+function set_countdown_timer(reset=false) {
+    if (reset) {
+        console.log("Resetting post countdown to 60 sec");
+        new_post_amount = 60000;
+    }
+    else {
+        console.log("Doubling post countdown timer seconds");
+        new_post_amount *= 2;
+        if (new_post_amount > 7200000) {
+            console.log("Countdown seconds over 7200 seconds, setting to 7200 seconds");
+            new_post_amount = 7200000;
+        }
+    }
+    new_post_counter = new_post_amount;
+}
+
+function del_post(post_id) {
+    if (thread_post_ids.indexOf(post_id) >= 0) {
+        thread_post_ids.splice(thread_post_ids.indexOf(post_id), 1);
+    }
+
+    let el = document.getElementById(post_id);
+    if (el) el.parentNode.removeChild(el);
+}
+
+function ref_post(post_id, post_html) {
+    console.log("Checking if post " + post_id + " exists on page to refresh...");
+    let el = document.getElementById(post_id);
+    if (el) {
+        console.log("Post " + post_id + " exists on page. Refreshing...");
+        el.innerHTML = post_html;
+    }
+}
+
+function add_post(post_id_prev, post_id_new, post_html) {
+    if (thread_post_ids.indexOf(post_id_new) >= 0) return;
+
+    console.log("Got post " + post_id_new);
+    var new_div = document.createElement("div");
+    new_div.className = "post plaque new-post";
+    new_div.id = post_id_new;
+    new_div.innerHTML = post_html;
+    var div = document.getElementById(post_id_prev);
+    if (div) {
+        div.parentNode.insertBefore(new_div, div.nextSibling);
+    <!--    new_div.insertAdjacentHTML("beforebegin", "<br/>");-->
+        console.log("Added post " + post_id_new);
+    }
+
+    if (thread_post_ids.indexOf(post_id_prev) >= 0) {
+        thread_post_ids.splice(thread_post_ids.indexOf(post_id_prev) + 1, 0, post_id_new);
+    }
+
+    new_post_count += 1;
+    document.title = "(" + new_post_count + ") " + original_title;
+}
+
+function get_new_posts() {
+    console.log("Checking for new posts");
+    const url = '/new_posts/{{thread.thread_hash_short}}/' + thread_post_ids.join("_");
+    $.ajax({
+        url: url,
+        dataType: 'json',
+        success: function(post_id_resp) {
+            new_post_count_prefix = "";
+            if (post_id_resp["add"].length) set_countdown_timer(true);
+            else set_countdown_timer();
+
+            for (let i in post_id_resp["add"]) {
+                add_post(post_id_resp["add"][i][0], post_id_resp["add"][i][1], post_id_resp["add"][i][2]);
+            }
+            for (let i in post_id_resp["del"]) {
+                del_post(post_id_resp["del"][i]);
+            }
+            for (let i in post_id_resp["ref"]) {
+                ref_post(post_id_resp["ref"][i][0], post_id_resp["ref"][i][1]);
+            }
+
+            start_new_post_timer();
+        },
+        error: function(xhr, status, error) {
+            set_countdown_timer();
+            console.log("Error looking for new posts: " + xhr.status + ", " + xhr.statusText + ", " + xhr.responseText);
+            if (xhr.status === 0) new_post_count_prefix = "Could Not Connect: ";
+            else if (xhr.status === 401) new_post_count_prefix = "Reverification Required: ";
+            start_new_post_timer();
+        }
+    })
+}
+
+function start_new_post_timer() {
+    if (new_post_timer === null) {
+        console.log("Starting new post-check timer countdown");
+        new_post_timer = setInterval(function() {
+            if (new_post_counter/1000 > 0) {
+                document.getElementById("new-post-update").innerHTML = new_post_count_prefix + parseInt(new_post_counter/1000);
+                new_post_counter -= 1000;
+            }
+            else {
+                document.getElementById("new-post-update").innerHTML = "Updating...";
+                console.log("clearInterval and setting new_post_timer to null");
+                clearInterval(new_post_timer);
+                new_post_timer = null;
+                get_new_posts()
+            }
+        }, 1000);
+    }
+    else {
+        console.log("new_post_timer is not null, do nothing");
+    }
+}
+
+function reset_new_post_counter() {
+    document.getElementById("new-post-update").innerHTML = "Updating...";
+    console.log("Resetting timer to 30 seconds")
+    new_post_amount = 30000;
+    new_post_counter = 0;
+}
+
+$(document).ready(function() {
+    start_new_post_timer();
+});
+
+<!--Remove new-post class when scroll reaches the bottom of the page-->
+
+function getScrollXY() {
+    var scrOfX = 0, scrOfY = 0;
+    if( typeof( window.pageYOffset ) == 'number' ) {
+        //Netscape compliant
+        scrOfY = window.pageYOffset;
+        scrOfX = window.pageXOffset;
+    } else if( document.body && ( document.body.scrollLeft || document.body.scrollTop ) ) {
+        //DOM compliant
+        scrOfY = document.body.scrollTop;
+        scrOfX = document.body.scrollLeft;
+    } else if( document.documentElement && ( document.documentElement.scrollLeft || document.documentElement.scrollTop ) ) {
+        //IE6 standards compliant mode
+        scrOfY = document.documentElement.scrollTop;
+        scrOfX = document.documentElement.scrollLeft;
+    }
+    return [ scrOfX, scrOfY ];
+}
+
+function getDocHeight() {
+    var D = document;
+    return Math.max(
+        D.body.scrollHeight, D.documentElement.scrollHeight,
+        D.body.offsetHeight, D.documentElement.offsetHeight,
+        D.body.clientHeight, D.documentElement.clientHeight
+    );
+}
+
+document.addEventListener("scroll", function (event) {
+    if (getDocHeight() == getScrollXY()[1] + window.innerHeight) {
+        const boxes = document.querySelectorAll('.new-post');
+        boxes.forEach(box => {
+            box.classList.remove('new-post');
+        });
+        new_post_count = 0;
+        document.title = original_title;
+    }
+});

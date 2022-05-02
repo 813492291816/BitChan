@@ -1,5 +1,8 @@
 {% extends "layout.html" %}
 
+{% set global_admin, _ = allowed_access("is_global_admin") %}
+{% set janitor, _ = allowed_access("is_janitor") %}
+
 {% block title %}Delete Post with Comment - {% endblock %}
 
 {% block body %}
@@ -17,21 +20,23 @@
                 <h1 class="title themed bold">Delete Post with Comment</h1>
 
                 <div style="padding-bottom: 1em">
-                    {% if local_delete %}
+    {% if local_delete %}
                     This will delete this post only for you and replace the content with the message below. The new comment will appear as "ORIGINAL COMMENT DELETED. REASON: " with the comment below following that text.
-                    {% else %}
+    {% else %}
                     This will delete this post for every user of the board and replace the content with the message below. The new comment will appear as "ORIGINAL COMMENT DELETED. REASON: " with the comment.
-                    {% endif %}
+    {% endif %}
                 </div>
 
+    {% if global_admin %}
                 <div style="padding-bottom: 1em">
                     From
                     <select name="address">
-                    {% for each_address in from_list %}
+        {% for each_address in from_list %}
                       <option value="{{each_address}}">{{from_list[each_address]}}</option>
-                    {% endfor %}
+        {% endfor %}
                     </select>
                 </div>
+    {% endif %}
 
                 <div style="padding-bottom: 1em">
                     <textarea rows="8" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" name="delete_comment"></textarea>
@@ -46,6 +51,5 @@
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

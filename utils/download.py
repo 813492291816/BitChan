@@ -36,8 +36,10 @@ from utils.files import extract_zip
 from utils.files import generate_thumbnail
 from utils.files import human_readable_size
 from utils.general import get_random_alphanumeric_string
-from utils.shared import regenerate_thread_card_and_popup
+from utils.i2p import get_i2p_session
+from utils.shared import regenerate_card_popup_post_html
 from utils.steg import check_steg
+from utils.tor import get_tor_session
 
 DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 
@@ -93,10 +95,11 @@ def report_downloaded_amount(message_id, download_path, file_size):
                         while timer < time.time():
                             timer += 3
                         downloaded_size = os.path.getsize(download_path)
-                        message.file_progress = "{}/{} downloaded ({:.1f} %)".format(
+                        message.file_progress = "{} / {} downloaded ({:.1f} %)".format(
                             human_readable_size(downloaded_size),
                             human_readable_size(file_size),
                             (downloaded_size / file_size) * 100)
+                        message.regenerate_post_html = True
                         new_session.commit()
                     time.sleep(1)
     except:
@@ -154,14 +157,15 @@ def allow_download(message_id):
                     message.file_sha256_hashes_match = file_sha256_hashes_match
                     message.media_info = json.dumps(media_info)
                     message.message_steg = json.dumps(message_steg)
-
-                    regenerate_thread_card_and_popup(
-                        thread_hash=message.thread.thread_hash,
-                        message_id=message_id)
+                    new_session.commit()
                 else:
                     message.file_progress = file_progress
+                    message.regenerate_post_html = True
+                    new_session.commit()
 
-                new_session.commit()
+                regenerate_card_popup_post_html(
+                    thread_hash=message.thread.thread_hash,
+                    message_id=message_id)
 
     except Exception as e:
         logger.error("{}: Error allowing download: {}".format(message_id[-config.ID_LENGTH:].upper(), e))
@@ -173,7 +177,7 @@ def allow_download(message_id):
             new_session.commit()
 
 
-def download_with_resume(message_id, url, file_path, hash=None, timeout=15):
+def download_with_resume(message_id, url, file_path, proxy_type="tor", hash=None, timeout=15):
     """
     Performs a HTTP(S) download that can be restarted if prematurely terminated.
     The HTTP server must support byte ranges.
@@ -195,7 +199,17 @@ def download_with_resume(message_id, url, file_path, hash=None, timeout=15):
         logger.info('{}: Starting download'.format(message_id[-config.ID_LENGTH:].upper()))
     file_size = -1
     try:
-        file_size = int(requests.head(
+        if proxy_type == "tor":
+            session = get_tor_session()
+            proxies = config.TOR_PROXIES
+        elif proxy_type == "i2p":
+            session = get_i2p_session()
+            proxies = config.I2P_PROXIES
+        else:
+            logger.error("Unknown proxy type: {}".format(proxy_type))
+            return
+
+        file_size = int(session.head(
             url,
             headers={'User-Agent': generate_user_agent()}).headers['Content-length'])
         logger.debug('{}: File size is {}'.format(message_id[-config.ID_LENGTH:].upper(), file_size))
@@ -213,7 +227,7 @@ def download_with_resume(message_id, url, file_path, hash=None, timeout=15):
         }
         r = requests.get(
             url,
-            proxies=config.TOR_PROXIES,
+            proxies=proxies,
             headers=headers,
             stream=True,
             timeout=timeout)
@@ -303,6 +317,7 @@ def download_and_extract(
             file_progress = "Current settings prohibit automatically downloading unencrypted attachments."
             if message:
                 message.file_progress = "Current settings prohibit automatically downloading unencrypted attachments."
+                message.regenerate_post_html = True
                 new_session.commit()
             return (file_download_successful,
                     file_size,
@@ -325,6 +340,7 @@ def download_and_extract(
             file_progress = "Unknown upload site detected. Add upload site and manually start download."
             if message:
                 message.file_progress = file_progress
+                message.regenerate_post_html = True
                 new_session.commit()
             return (file_download_successful,
                     file_size,
@@ -344,6 +360,7 @@ def download_and_extract(
             file_progress = "Configuration doesn't allow getting file size. Manual override required."
             if message:
                 message.file_progress = file_progress
+                message.regenerate_post_html = True
                 new_session.commit()
             return (file_download_successful,
                     file_size,
@@ -383,6 +400,7 @@ def download_and_extract(
                 Messages.message_id == message_id).first()
             if message:
                 message.file_progress = "Could not find download URL. Try again."
+                message.regenerate_post_html = True
                 new_session.commit()
         return (file_download_successful,
                 file_size,
@@ -399,7 +417,12 @@ def download_and_extract(
             logger.info("{}: Getting file size".format(message_id[-config.ID_LENGTH:].upper()))
             try:
                 if resume_start_download:
-                    headers = requests.head(
+                    if ".i2p" in file_url:
+                        session = get_i2p_session()
+                    else:
+                        session = get_tor_session()
+
+                    headers = session.head(
                         download_url,
                         headers={'User-Agent': generate_user_agent()}).headers
                     logger.info("{}: Headers: {}".format(message_id[-config.ID_LENGTH:].upper(), headers))
@@ -422,7 +445,12 @@ def download_and_extract(
                             break
 
                         # Check file size and auto-download if less than user-set size
-                        headers = requests.head(
+                        if ".i2p" in file_url:
+                            session = get_i2p_session()
+                        else:
+                            session = get_tor_session()
+
+                        headers = session.head(
                             download_url,
                             headers={'User-Agent': generate_user_agent()}).headers
                         logger.info("{}: Headers: {}".format(message_id[-config.ID_LENGTH:].upper(), headers))
@@ -464,6 +492,7 @@ def download_and_extract(
                     Messages.message_id == message_id).first()
                 if message:
                     message.file_progress = "Configuration doesn't allow auto-downloading of this file. Manual override required."
+                    message.regenerate_post_html = True
                     new_session.commit()
             return (file_download_successful,
                     file_size,
@@ -480,13 +509,23 @@ def download_and_extract(
 
         for _ in range(config.DOWNLOAD_ATTEMPTS):
             try:
-                download_with_resume(message_id, download_url, download_path)
+                if ".i2p" in file_url:
+                    download_with_resume(message_id, download_url, download_path, proxy_type="i2p")
+                else:
+                    download_with_resume(message_id, download_url, download_path)
                 if file_size == os.path.getsize(download_path):
                     break
-                logger.error("{}: File size does not match what's expected".format(message_id[-config.ID_LENGTH:].upper()))
+                logger.error(
+                    "{}: File size does not match what's expected. "
+                    "File size: {} bytes, expected: {} bytes".format(
+                        message_id[-config.ID_LENGTH:].upper(),
+                        os.path.getsize(download_path),
+                        file_size))
             except IOError:
+                file_progress = "Could not download"
                 logger.error("{}: Could not download".format(message_id[-config.ID_LENGTH:].upper()))
             except Exception as err:
+                file_progress = "Exception downloading: {}".format(err)
                 logger.error("{}: Exception downloading: {}".format(message_id[-config.ID_LENGTH:].upper(), err))
             time.sleep(60)
 
@@ -513,14 +552,15 @@ def download_and_extract(
             logger.info("{}: File successfully downloaded".format(message_id[-config.ID_LENGTH:].upper()))
             file_download_successful = True
         elif downloaded is None:
-            logger.error("{}: Could not download file after {} attempts".format(
-                message_id[-config.ID_LENGTH:].upper(), config.DOWNLOAD_ATTEMPTS))
+            file_progress = "Could not download file after {} attempts".format(
+                config.DOWNLOAD_ATTEMPTS)
+            logger.error(file_progress)
             with session_scope(DB_PATH) as new_session:
                 message = new_session.query(Messages).filter(
                     Messages.message_id == message_id).first()
                 if message:
-                    message.file_progress = "Could not download file after {} attempts".format(
-                        config.DOWNLOAD_ATTEMPTS)
+                    message.file_progress = file_progress
+                    message.regenerate_post_html = True
                     new_session.commit()
             file_download_successful = False
 
@@ -535,12 +575,12 @@ def download_and_extract(
             # compare SHA256 hashes
             if file_sha256_hash:
                 if not validate_file(download_path, file_sha256_hash):
-                    logger.info(
-                        "{}: File SHA256 hash ({}) does not match provided SHA256"
-                        " hash ({}). Deleting.".format(
-                            message_id[-config.ID_LENGTH:].upper(),
-                            generate_hash(download_path),
-                            file_sha256_hash))
+                    file_progress = "{}: File SHA256 hash ({}) does not match provided SHA256 " \
+                                    "hash ({}). Deleting.".format(
+                                        message_id[-config.ID_LENGTH:].upper(),
+                                        generate_hash(download_path),
+                                        file_sha256_hash)
+                    logger.info(file_progress)
                     file_sha256_hashes_match = False
                     file_download_successful = False
                     delete_file(download_path)
@@ -571,6 +611,7 @@ def download_and_extract(
                         Messages.message_id == message_id).first()
                     if message:
                         message.file_progress = "Decrypting file"
+                        message.regenerate_post_html = True
                         new_session.commit()
 
                 try:
@@ -589,6 +630,7 @@ def download_and_extract(
                                 Messages.message_id == message_id).first()
                             if message:
                                 message.file_progress = "Issue decrypting attachment. Check log."
+                                message.regenerate_post_html = True
                                 new_session.commit()
                             file_download_successful = False
                             return (file_download_successful,
@@ -610,6 +652,7 @@ def download_and_extract(
                         Messages.message_id == message_id).first()
                     if message:
                         message.file_progress = "Error decrypting attachment. Check log."
+                        message.regenerate_post_html = True
                         new_session.commit()
 
             # Get the number of files in the zip archive
@@ -622,6 +665,7 @@ def download_and_extract(
                     if message:
                         message.file_progress = "Error checking zip: {}".format(
                             message_id[-config.ID_LENGTH:].upper(), err)
+                        message.regenerate_post_html = True
                         new_session.commit()
                 logger.error("{}: Error checking zip: {}".format(
                     message_id[-config.ID_LENGTH:].upper(), err))
@@ -672,6 +716,7 @@ def download_and_extract(
                                 Messages.message_id == message_id).first()
                             if message:
                                 message.file_progress = "Attachment extraction size greater than allowed"
+                                message.regenerate_post_html = True
                                 new_session.commit()
 
             if can_extract:
@@ -702,6 +747,7 @@ def download_and_extract(
                         Messages.message_id == message_id).first()
                     if message:
                         message.file_progress = "Attachment processing successful"
+                        message.regenerate_post_html = True
                         new_session.commit()
 
         delete_file(download_path)
@@ -763,6 +809,7 @@ def process_attachments(message_id, extract_path):
 
                         if message:
                             message.file_progress = "Generating image thumbnail"
+                            message.regenerate_post_html = True
                             new_session.commit()
 
                     logger.info("{}: Generating thumbnail".format(
@@ -784,6 +831,7 @@ def process_attachments(message_id, extract_path):
                                 Messages.message_id == message_id).first()
                             if message:
                                 message.file_progress = "Calculating image dimensions"
+                                message.regenerate_post_html = True
                                 new_session.commit()
                         logger.info("{}: Determining image dimensions".format(message_id[-config.ID_LENGTH:].upper()))
                         Image.MAX_IMAGE_PIXELS = 500000000
@@ -801,6 +849,7 @@ def process_attachments(message_id, extract_path):
                                 Messages.message_id == message_id).first()
                             if message:
                                 message.file_progress = "Calculating video dimensions"
+                                message.regenerate_post_html = True
                                 new_session.commit()
                         logger.info("{}: Determining video dimensions".format(message_id[-config.ID_LENGTH:].upper()))
                         vid = cv2.VideoCapture(fp)
@@ -816,6 +865,13 @@ def process_attachments(message_id, extract_path):
                     media_info[f]["height"] = media_height
                 if media_width:
                     media_info[f]["width"] = media_width
+
+                # Calculate width and height percentages to determine thumbnail dimensions
+                if media_height and media_width and media_height < media_width:
+                    media_info[f]["thumb_percent_height"] = media_height / media_width
+                else:
+                    media_info[f]["thumb_percent_height"] = 1
+
                 media_info[f]["size"] = attachment_size
                 media_info[f]["extension"] = file_extension
 

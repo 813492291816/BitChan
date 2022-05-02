@@ -1,5 +1,8 @@
 {% extends "layout.html" %}
 
+{% set global_admin, _ = allowed_access("is_global_admin") %}
+{% set janitor, _ = allowed_access("is_janitor") %}
+
 {% block title %}Confirm Action - {% endblock %}
 
 {% block body %}
@@ -58,11 +61,11 @@
                 Confirm blocking the address {{block_address}}{% if block_address in address_labels %} ({{address_labels[block_address]}}){% endif %}?
             </div>
             <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
-                {% if block_type == "single_board" %}
+            {% if block_type == "single_board" %}
                 This will delete posts from this address only on <a class="link" href="/board/{{chan.address}}/1">/{{replace_lt_gt(chan.label)|safe}}/</a>, now and into the future, and affects only your instance of BitChan. Blocking is permanent and irreversible.
-                {% elif block_type == "global" %}
+            {% elif block_type == "global" %}
                 This will delete posts from this address on ALL boards, now and into the future, and affects only your instance of BitChan. Blocking is permanent and irreversible.
-                {% endif %}
+            {% endif %}
             </div>
             <div style="padding-top: 1em; text-align: center;">
                 <input type="submit" name="confirm" value="Confirm"/>
@@ -78,26 +81,26 @@
             <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
                 <div style="padding-bottom: 1em">
                     This will delete all posts associated with this address from <a class="link" href="/board/{{chan_address}}/1">/{{replace_lt_gt(chan.label)|safe}}/</a> for everyone, including you, and prevent any future posts from appearing. Banning is permanent and irreversible.
-                    {% if action == "board_ban_silent" %}
+            {% if action == "board_ban_silent" %}
                     <br/>This will be a silent ban and will not appear in the Mod Log.
-                    {% elif action == "board_ban_public" %}
+            {% elif action == "board_ban_public" %}
                     <br/>This will be a public ban and will appear in the Mod Log. If you wish to add a reason, enter it in the box below.
-                    {% endif %}
+            {% endif %}
                 </div>
-                <div style="padding-bottom: 1em">
+                <div class="themed bold" style="padding-bottom: 1em">
                     From
                     <select name="address">
-                    {% for each_address in from_list %}
+            {% for each_address in from_list %}
                       <option value="{{each_address}}">{{from_list[each_address]}}</option>
-                    {% endfor %}
+            {% endfor %}
                     </select>
                 </div>
-                {% if action == "board_ban_public" %}
+            {% if action == "board_ban_public" %}
                 <div style="padding-bottom: 1em">
                     Reason
                     <input name="text" type="text"/>
                 </div>
-                {% endif %}
+            {% endif %}
             </div>
             <div style="padding-top: 1em; text-align: center;">
                 <input type="submit" name="confirm" value="Confirm"/>
@@ -127,12 +130,12 @@
             <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
                 This will {% if action == "thread_sticky_remote" %}stick this thread{% else %}prevent this thread from sticking{% endif %} at the top of the board, for everyone.
             </div>
-            <div style="padding-bottom: 1.5em">
+            <div class="themed bold" style="padding-bottom: 1.5em">
                 From
                 <select name="address">
-                {% for each_address in from_list %}
+            {% for each_address in from_list %}
                   <option value="{{each_address}}">{{from_list[each_address]}}</option>
-                {% endfor %}
+            {% endfor %}
                 </select>
             </div>
             <div style="padding-top: 1em; text-align: center;">
@@ -148,11 +151,11 @@
             </div>
             <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
                 This will
-                {% if action == "thread_lock_local" %}
+            {% if action == "thread_lock_local" %}
                 lock this thread from receiving new posts,
-                {% else %}
+            {% else %}
                 unlock this thread and allow it to receive new posts,
-                {% endif %}
+            {% endif %}
                 only for you.
             </div>
             <div style="padding-top: 1em; text-align: center;">
@@ -168,19 +171,19 @@
             </div>
             <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
                 This will
-                {% if action == "thread_lock_remote" %}
+            {% if action == "thread_lock_remote" %}
                 lock this thread from receiving new posts,
-                {% else %}
+            {% else %}
                 unlock this thread and allow it to receive new posts,
-                {% endif %}
+            {% endif %}
                 for everyone.
             </div>
-            <div style="padding-bottom: 1.5em">
+            <div class="themed bold" style="padding-bottom: 1.5em">
                 From
                 <select name="address">
-                {% for each_address in from_list %}
+            {% for each_address in from_list %}
                   <option value="{{each_address}}">{{from_list[each_address]}}</option>
-                {% endfor %}
+            {% endfor %}
                 </select>
             </div>
             <div style="padding-top: 1em; text-align: center;">
@@ -196,11 +199,11 @@
             </div>
             <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
                 This will
-                {% if action == "thread_anchor_local" %}
+            {% if action == "thread_anchor_local" %}
                 anchor this thread from receiving new posts,
-                {% else %}
+            {% else %}
                 unanchor this thread and allow it to receive new posts,
-                {% endif %}
+            {% endif %}
                 only for you.
             </div>
             <div style="padding-top: 1em; text-align: center;">
@@ -216,18 +219,44 @@
             </div>
             <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
                 This will
-                {% if action == "thread_anchor_remote" %}
+            {% if action == "thread_anchor_remote" %}
                 anchor this thread from receiving new posts
-                {% else %}
+            {% else %}
                 unanchor this thread and allow it to receive new posts,
-                {% endif %}
+            {% endif %}
                 for everyone.
             </div>
-            <div style="padding-bottom: 1.5em">
+            <div class="themed bold" style="padding-bottom: 1.5em">
+                From
+                <select name="address">
+            {% for each_address in from_list %}
+                  <option value="{{each_address}}">{{from_list[each_address]}}</option>
+            {% endfor %}
+                </select>
+            </div>
+            <div style="padding-top: 1em; text-align: center;">
+                <input type="submit" name="confirm" value="Confirm"/>
+            </div>
+        </form>
+
+        {% elif action == "delete_post_with_password" %}
+
+        <form method="post" enctype="multipart/form-data" action="/delete_post_with_password/{{current_chan}}/{{message_id}}/{{thread_id}}">
+            <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
+                Confirm deleting {{generate_reply_link_and_popup_html(message, board_view=True, external_thread=True, link_text=message.post_id, extra_style='font-family:monospace')|safe}} of thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash_short}}">{{replace_lt_gt(thread.subject)|safe}}</a> for everyone?
+            </div>
+            <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
+                This will delete the post for everyone and requires the password that was submitted when the post was made. Any from address can be used.
+            </div>
+            <div class="themed bold" style="padding-bottom: 1em">
+                Password to Delete
+                <input name="text" type="password"/>
+            </div>
+            <div class="themed bold" style="padding-bottom: 1.5em">
                 From
                 <select name="address">
                 {% for each_address in from_list %}
-                  <option value="{{each_address}}">{{from_list[each_address]}}</option>
+                  <option value="{{each_address}}"{% if message and each_address == message.address_from %} selected{% endif %}>{{from_list[each_address]}}</option>
                 {% endfor %}
                 </select>
             </div>
@@ -243,47 +272,56 @@
 
         <form method="post" enctype="multipart/form-data" action="/delete_thread_post/{{current_chan}}/{{message_id}}/{{thread_id}}/{{action}}">
             <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
-                Confirm deleting this
-                {% if action == "delete_post" -%}
-                post for just you
-                {%- elif action == "delete_post_all" -%}
-                post for everyone
-                {%- elif action == "delete_thread" -%}
-                thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash_short}}">{{replace_lt_gt(thread.subject)|safe}}</a> for just you
-                {%- elif action == "delete_thread_all" -%}
-                thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash_short}}">{{replace_lt_gt(thread.subject)|safe}}</a> for everyone
-                {%- endif -%}
-                ?
-            </div>
-            <div class="themed bold" style="padding-top: 0.5em; text-align: center;">
-                {% if action in ["delete_post", "delete_post_all"] %}
-                Post ID {{get_post_id(message_id)}}
-                <br/>From thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash_short}}">{{replace_lt_gt(thread.subject)|safe}}</a><br/>
-                {% endif %}
-                From
-                {% if chan.access == "public" %}
+                Confirm deleting
+
+            {% if action in ["delete_post" ,"delete_thread"] -%}
+                (for just you)
+            {%- elif action in ["delete_post_all", "delete_thread_all"] -%}
+                (for everyone)
+            {% endif %}
+
+            {% if action in ["delete_post", "delete_post_all"] %}
+                post {{generate_reply_link_and_popup_html(message, board_view=True, external_thread=True, link_text=message.post_id, extra_style='font-family:monospace')|safe}} of thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash_short}}">{{replace_lt_gt(thread.subject)|safe}}</a> on
+            {% endif %}
+
+            {%- if action in ["delete_thread", "delete_thread_all"] -%}
+                thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash_short}}">{{replace_lt_gt(thread.subject)|safe}}</a> on
+            {%- endif -%}
+
+            {% if chan.access == "public" %}
                 Public
-                {% elif chan.access == "private" %}
+            {% elif chan.access == "private" %}
                 Private
-                {% endif %}
-                Board <a class="link" href="/board/{{chan.address}}/1">/{{replace_lt_gt(chan.label)|safe}}/ - {{replace_lt_gt(chan.description)|safe}}</a>
+            {% endif %}
+                Board <a class="link" href="/board/{{chan.address}}/1">/{{replace_lt_gt(chan.label)|safe}}/ - {{replace_lt_gt(chan.description)|safe}}</a>.
             </div>
             <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
-                {% if action == "delete_post" -%}
-                This will not delete the post for anyone but you. Deletion is only reversible if you leave the board and rejoin it. However, any expired posts will be irrecoverable.
-                {%- elif action == "delete_post_all" -%}
+            {% if action == "delete_post" -%}
+                {% if janitor %}
+                    Janitors can only hide posts locally. Admins will be able to restore a hidden post.
+                {% else %}
+                    This will not delete the post for anyone but you. Deletion is only reversible if you leave the board and rejoin it. However, any expired posts will be irrecoverable.
+                {% endif %}
+
+            {%- elif action == "delete_thread" -%}
+                {% if janitor %}
+                    Janitors can only hide threads locally. Admins will be able to restore a hidden thread.
+                {% else %}
+                    This will not delete the thread for anyone but you. Deletion is only reversible if you leave the board and rejoin it. However, any expired posts will be irrecoverable.
+                {% endif %}
+
+            {%- elif action == "delete_post_all" -%}
                 This will delete the post for everyone including you. Deletion is permanent and irreversible.
                 <br/>The actual deletion will not occur until the command has propagated in the network. Give it several minutes to take effect.
-                {%- elif action == "delete_thread" -%}
-                This will not delete the thread for anyone but you. Deletion is only reversible if you leave the board and rejoin it. However, any expired posts will be irrecoverable.
-                {%- elif action == "delete_thread_all" -%}
+
+            {%- elif action == "delete_thread_all" -%}
                 This will delete the thread for everyone including you. Deletion is permanent and irreversible.
                 <br/>The actual deletion will not occur until the command has propagated in the network. Give it several minutes to take effect.
-                {%- endif -%}
+            {%- endif -%}
             </div>
 
             {% if action in ["delete_post_all", "delete_thread_all"] %}
-            <div style="padding-bottom: 1.5em; text-align: center;">
+            <div class="themed bold" style="padding-bottom: 1.5em; text-align: center;">
                 From
                 <select name="address">
                 {% for each_address in from_list %}
@@ -292,6 +330,34 @@
                 </select>
             </div>
             {% endif %}
+
+            <div style="padding-top: 1em; text-align: center;">
+                <input type="submit" name="confirm" value="Confirm"/>
+            </div>
+        </form>
+
+        {% elif action in ["restore_post", "restore_thread"] %}
+
+        <form method="post" enctype="multipart/form-data" action="/restore_thread_post/{{current_chan}}/{{message_id}}/{{thread_id}}/{{action}}">
+            <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
+                Confirm restoring
+
+            {% if action == "restore_post" %}
+                post {{generate_reply_link_and_popup_html(message, board_view=True, external_thread=True, link_text=message.post_id, extra_style='font-family:monospace')|safe}} of thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash_short}}">{{replace_lt_gt(thread.subject)|safe}}</a> on
+            {%- elif action == "restore_thread" -%}
+                thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash_short}}">{{replace_lt_gt(thread.subject)|safe}}</a> on
+            {%- endif -%}
+
+            {% if chan.access == "public" %}
+                Public
+            {% elif chan.access == "private" %}
+                Private
+            {% endif %}
+                Board <a class="link" href="/board/{{chan.address}}/1">/{{replace_lt_gt(chan.label)|safe}}/ - {{replace_lt_gt(chan.description)|safe}}</a>.
+            </div>
+            <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
+                This will restore the post or thread locally, only for you.
+            </div>
 
             <div style="padding-top: 1em; text-align: center;">
                 <input type="submit" name="confirm" value="Confirm"/>

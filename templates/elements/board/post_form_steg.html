@@ -30,7 +30,7 @@
 					<td class="form themed bold">Subject</td>
 					<td colspan="2">
 						<span class="subject bold">{{thread.subject|safe}}</span>
-						<input style="display:none;" name="subject" value="{{thread.subject}}" />
+						<input type="hidden" name="subject" value="{{thread.subject}}"/>
 						<input type="hidden" name="board_id" value="{{board['current_chan'].address}}"/>
 						<input type="hidden" name="thread_id" value="{{thread.thread_hash}}"/>
 						<input type="hidden" name="op_sha256_hash" value="{{thread.op_sha256_hash}}"/>

@@ -24,7 +24,7 @@
             <div style="width: 100%; padding-bottom: 2em;">
                 <table class="table" style="margin-left: auto; margin-right: auto;">
                     <tr>
-                        <td colspan=2 style="text-align: center; padding-bottom: 1em">
+                        <td colspan=2 style="text-align: center; padding-bottom: 0.5em">
                             <h1 class="title themed bold">BitChan Status</h1>
                         </td>
                     </tr>
@@ -62,10 +62,23 @@
                     </tr>
                 </table>
 
-                <table class="table" style="margin-left: auto; margin-right: auto;">
+                {% if df %}
+                <table class="table" style="margin-left: auto; margin-right: auto; padding-top: 2em">
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-bottom: 0.5em;">
+                            <h1 class="title themed bold">Command: df</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="font-family: monospace; white-space: pre;">{{df|safe}}</td>
+                    </tr>
+                </table>
+                {% endif %}
+
+                <table class="table" style="margin-left: auto; margin-right: auto; padding-top: 2em">
                     <tr>
                         <td colspan=3 style="text-align: center">
-                            <h3>Post Upload Progress</h3>
+                            <h1 class="title themed bold">Post Upload Progress</h1>
                         </td>
                     </tr>
     {% if upload_progress %}
@@ -118,18 +131,34 @@
                         <td>Sync Complete</td>
                         <td>{{bitmessage.bm_sync_complete()}}</td>
                     </tr>
+                    <tr>
+                        <td>messages.dat size</td>
+                        <td>{{bm_messages_size}}</td>
+                    </tr>
                 </table>
 
                 <table class="table themed" style="margin-left: auto; margin-right: auto;">
                     <tr>
-                        <td colspan=2 style="text-align: center; padding-top: 2em; padding-bottom: 1em">
+                        <td colspan=2 style="text-align: center; padding-top: 2em;">
                             <h1 class="title themed bold">Tor Status</h1>
                         </td>
                     </tr>
                     <tr>
+                        <td colspan=2 style="text-align: center; padding-bottom: 0.5em;">Hidden Onion Services</td>
+                    </tr>
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-bottom: 0.5em; word-break: break-word;">Bitmessage Address: {% if tor_enabled_bm %}<span class="replace-spoiler">{{tor_address_bm}}</span>{% else %}Disabled{% endif %}</td>
+                    </tr>
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-bottom: 0.5em; word-break: break-word;">BitChan Address (Random): {% if tor_enabled_rand and tor_address_rand %}<a class="link replace-spoiler" href="http://{{tor_address_rand}}">http://{{tor_address_rand}}</a>{% else %}Disabled{% endif %}</td>
+                    </tr>
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-bottom: 2em; word-break: break-word;">BitChan Address (Custom): {% if tor_enabled_cus and tor_address_cus %}<a class="link replace-spoiler" href="http://{{tor_address_cus}}">http://{{tor_address_cus}}</a>{% else %}Disabled{% endif %}</td>
+                    </tr>
+                    <tr>
                         <td colspan=2 style="text-align: center;">
                             <form method="post">
-                                <input type="submit" name="tor_newnym" value="Request New BitChan Tor Identity"/>
+                                <input type="submit" name="tor_newnym" value="Request New Tor Identity"/>
                             </form>
                         </td>
                     </tr>
@@ -183,6 +212,5 @@
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

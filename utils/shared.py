@@ -20,6 +20,10 @@ logger = logging.getLogger('bitchan.shared')
 DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 
 
+def get_post_id(message_id):
+    return message_id[-config.ID_LENGTH:].upper()
+
+
 def diff_list_added_removed(list1, list2):
     set1 = set(list1)
     set2 = set(list2)
@@ -34,7 +38,9 @@ def add_mod_log_entry(
         message_id=None,
         user_from=None,
         board_address=None,
-        thread_hash=None):
+        thread_hash=None,
+        success=True,
+        hidden=False):
     with session_scope(DB_PATH) as new_session:
         log_entry = ModLog()
         log_entry.description = description
@@ -58,6 +64,9 @@ def add_mod_log_entry(
 
         if thread_hash:
             log_entry.thread_hash = thread_hash
+
+        log_entry.success = success
+        log_entry.hidden = hidden
 
         new_session.add(log_entry)
         new_session.commit()
@@ -174,29 +183,97 @@ def post_has_image(message_id):
                     return True
 
 
-def regenerate_thread_card_and_popup(thread_hash=None, message_id=None):
+def regenerate_ref_to_from_post(message_id, delete_message=False):
+    """Regenerate posts referencing to and from restored post"""
     with session_scope(DB_PATH) as new_session:
+        message = new_session.query(Messages).filter(
+            Messages.message_id == message_id).first()
+        if message:
+            post_ids_replied_to = message.post_ids_replied_to
+            post_ids_replying_to_msg = message.post_ids_replying_to_msg
+
+            if delete_message:
+                # Delete message from database
+                new_session.delete(message)
+                new_session.commit()
+
+            for post_ids_json in [post_ids_replied_to,
+                                  post_ids_replying_to_msg]:
+                post_ids = json.loads(post_ids_json)
+                for post_id in post_ids:
+                    post = Messages.query.filter(
+                        Messages.post_id == post_id).first()
+                    if post:
+                        regenerate_card_popup_post_html(
+                            message_id=post.message_id)
+
+
+def regenerate_card_popup_post_html(
+        thread_hash=None,
+        message_id=None,
+        all_posts_of_board_address=None,
+        regenerate_post_html=True,
+        regenerate_popup_html=True,
+        regenerate_cards=True):
+
+    with session_scope(DB_PATH) as new_session:
+        # Regenerate OP post of thread
         if thread_hash:
             thread = new_session.query(Threads).filter(
                 Threads.thread_hash == thread_hash).first()
+
             if thread:
                 message = new_session.query(Messages).filter(and_(
                     Messages.thread_id == thread.id,
                     Messages.is_op.is_(True))).first()
                 if message:
-                    message.regenerate_popup_html = True
+                    if regenerate_popup_html:
+                        message.regenerate_popup_html = True
+                    if regenerate_post_html:
+                        message.regenerate_post_html = True
 
+            if thread and regenerate_cards:
                 card_test = new_session.query(PostCards).filter(
                     PostCards.thread_id == thread_hash).first()
                 if card_test:
                     card_test.regenerate = True
 
-                if message or card_test:
-                    new_session.commit()
-
+        # Regenerate specific post
         if message_id:
             message = new_session.query(Messages).filter(
                 Messages.message_id == message_id).first()
             if message:
-                message.regenerate_popup_html = True
-                new_session.commit()
+                if regenerate_popup_html:
+                    message.regenerate_popup_html = True
+                if regenerate_post_html:
+                    message.regenerate_post_html = True
+
+                if message.thread and regenerate_cards:
+                    card_test = new_session.query(PostCards).filter(
+                        PostCards.thread_id == message.thread.thread_hash).first()
+                    if card_test:
+                        card_test.regenerate = True
+
+        # Regenerate all posts of a board
+        if all_posts_of_board_address:
+            board = new_session.query(Chan).filter(
+                Chan.address == all_posts_of_board_address).first()
+
+            for thread in board.threads:
+                thread = new_session.query(Threads).filter(
+                    Threads.thread_hash == thread.thread_hash).first()
+                if thread:
+                    for message in thread.messages:
+                        if regenerate_popup_html:
+                            message.regenerate_popup_html = True
+                        if regenerate_post_html:
+                            message.regenerate_post_html = True
+
+            if regenerate_cards:
+                for thread in board.threads:
+                    card_test = new_session.query(PostCards).filter(
+                        PostCards.thread_id == thread.thread_hash).first()
+                    if card_test:
+                        card_test.regenerate = True
+
+        new_session.commit()

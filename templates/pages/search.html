@@ -1,41 +1,17 @@
 {% extends "layout.html" %}
 
-{% set total_pages = (search_count / settings.results_per_page_search)|round(0, "ceil")|int %}
-{% set global_admin, allow_msg = allowed_access(check_is_global_admin=True) %}
+{% set total_pages = (result_count / settings.results_per_page_search)|round(0, "ceil")|int %}
+{% set global_admin, allow_msg = allowed_access("is_global_admin") %}
 
 {% block title %}Search - {% endblock %}
 
 {% block head %}
     <script>
-        $(window).scroll(function() {
-            var height = $(window).scrollTop();
-            if (height > 100) {
-                $('#back2Top').fadeIn();
-                $('#back2Bottom').fadeOut();
-            } else {
-                $('#back2Bottom').fadeIn();
-                $('#back2Top').fadeOut();
-            }
-        });
-
-        $(document).ready(function() {
-            $("#back2Top").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: 0}, "slow");
-                return false;
-            });
-            $("#back2Bottom").click(function(event) {
-                event.preventDefault();
-                $("html, body").animate({scrollTop: $(document).height()}, "slow");
-                return false;
-            });
-        });
-
         function toggle(source) {
             var inputs = document.getElementsByTagName("input");
             for (let x=0; x<inputs.length; x++){
                 if (inputs[x].type == "checkbox" &&
-                        inputs[x].name.indexOf("deletebulk_") == 0) {
+                        inputs[x].name.indexOf("selectbulk_") == 0) {
                     inputs[x].checked = source.checked;
                 }
             }
@@ -48,7 +24,7 @@
         }
 
         tr:nth-child(odd) {
-            background-color: {{themes[settings.theme].posthighlight}};
+            background-color: {{themes[get_theme()].posthighlight}};
         }
 
         .wrap {
@@ -62,28 +38,39 @@
 {% endblock %}
 
 {% block body %}
-    <a id="back2Top" title="Back to top" style="display: none" href="#">&GreaterGreater;</a>
-    <a id="back2Bottom" title="Go to Bottom" href="#">&GreaterGreater;</a>
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
     <br/>
 
-    {% if status_msg["status_title"] == "Error" %}
+    {% if status_msg["status_title"] %}
         {% include '/elements/status.html' %}
     {% endif %}
 
 <div class='wrap'>
     <h1 class="title themed bold" style="text-align: center">Search</h1>
 
-    <form method="post">
-        <input type="text" id="search" name="search" value="{{search_string}}"/>
-        <input type="submit" name="submit" value="Search"/>
-    </form>
+    <div class="themed" style="text-align: center; padding-bottom: 0.5em">
+        <form method="post">
+            <select name="search_type">
+                <option value="posts"{% if search_type == 'posts' %} selected{% endif %}>Posts</option>
+                <option value="threads"{% if search_type == 'threads' %} selected{% endif %}>Threads</option>
+            </select>
+            <input type="text" id="search" name="search" value="{{search_string}}"/>
+            OP <input type="checkbox" id="filter_op" name="filter_op" value="y"{% if filter_op %} checked{% endif %}>
+        {% if global_admin %}
+            Hidden <input type="checkbox" id="filter_hidden" name="filter_hidden" value="y"{% if filter_hidden %} checked{% endif %}>
+        {% endif %}
+            <input type="submit" name="submit" value="Search"/>
+        </form>
+    </div>
 
-    {% if search_results %}
-    <div class="themed" style="padding: 1em 0;">{{search_count}} Results{% if total_pages > 1 %}, {{total_pages}} Pages{% endif %}</div>
-    <form action="/search/{{search_string_b64}}/{{search_page}}" method="post">
+    {% if search_results or thread_results %}
+    {% if total_pages > 1 %}<div class="themed" style="padding: 1em 0;">{{total_pages}} Pages</div>{% endif %}
+    <form action="/search/{{search_string_b64}}/{{current_page}}" method="post">
+
+        {% if search_type == "posts" and search_results %}
+        <div class="themed" style="padding: 1em 0;">{{result_count}} Posts</div>
     <table class="table themed" style="margin-left: auto; margin-right: auto;">
         <tr>
             {% if global_admin %}
@@ -101,21 +88,23 @@
             <td>Board</td>
             <td>Subject</td>
         </tr>
-        {% for each_msg in search_results %}
-            {% if each_msg.thread and each_msg.thread.chan %}
+            {% for each_msg in search_results %}
+                {% if each_msg.thread and each_msg.thread.chan %}
 
-            {% set thread_options = get_thread_options(each_msg.thread.thread_hash) %}
+                    {% set thread_options = get_thread_options(each_msg.thread.thread_hash) %}
         <tr>
-            {% if global_admin %}
-            <td><input type="checkbox" id="deletebulk_{{each_msg.message_id}}" name="deletebulk_{{each_msg.message_id}}" value="y"></td>
-            {% endif %}
-            <td>{{get_reply_link_html( each_msg, external_thread=True, link_text=each_msg.post_id, extra_style='font-family:monospace')|safe}}</td>
+                    {% if global_admin %}
+            <td><input type="checkbox" id="selectbulk_{{each_msg.message_id}}" name="selectbulk_{{each_msg.message_id}}" value="y"></td>
+                    {% endif %}
+            <td>
+                {{generate_reply_link_and_popup_html(each_msg, board_view=True, external_thread=True, link_text=each_msg.post_id, extra_style='font-family:monospace', moderating=global_admin)|safe}}
+            </td>
             <td style="font-family: monospace">{{timestamp_to_date(each_msg.timestamp_sent)}}</td>
             <td>{{display_time(now - each_msg.timestamp_sent)}}</td>
             <td style="text-align: center">{% if each_msg.is_op %}X{% endif %}</td>
             <td style="text-align: center">
-            {% if thread_options["sticky"] %}
-                <img style="position: relative; top: 3px; height: 15px" title="Locked{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
+                    {% if thread_options["sticky"] %}
+                <img style="position: relative; top: 3px; height: 15px" title="Sticky{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
                 {%- if thread_options['sticky_local'] and not thread_options['sticky_remote'] -%}
                     pin_green.png
                 {%- elif not thread_options['sticky_local'] and thread_options['sticky_remote'] -%}
@@ -124,10 +113,10 @@
                     pin_green_red.png
                 {%- endif -%}
                 ">
-            {% endif %}
+                    {% endif %}
             </td>
             <td style="text-align: center">
-            {% if thread_options["lock"] %}
+                    {% if thread_options["lock"] %}
                 <img style="position: relative; top: 3px; height: 15px" title="Locked{% if thread_options['lock_local'] %} (Local){% endif %}{% if thread_options['lock_remote'] %} (Remote){% endif %}" src="/static/
                 {%- if thread_options['lock_local'] and not thread_options['lock_remote'] -%}
                     lock_green.png
@@ -137,10 +126,10 @@
                     lock_green_red.png
                 {%- endif -%}
                 ">
-            {% endif %}
+                    {% endif %}
             </td>
             <td style="text-align: center">
-            {% if thread_options["anchor"] %}
+                    {% if thread_options["anchor"] %}
                 <img style="position: relative; top: 3px; height: 15px" title="Anchored{% if thread_options['anchor_local'] %} (Local){% endif %}{% if thread_options['anchor_remote'] %} (Remote){% endif %}" src="/static/
                 {%- if thread_options['anchor_local'] and not thread_options['anchor_remote'] -%}
                     anchor_green.png
@@ -150,14 +139,14 @@
                     anchor_green_red.png
                 {%- endif -%}
                 ">
-            {% endif %}
+                    {% endif %}
             </td>
             <td style="text-align: center">{% if each_msg.sage %}<img style="position: relative; height: 15px" title="Sage" src="/static/leaf.png">{% endif %}</td>
             <td style="text-align: center">{% if each_msg.address_from in identities %}<span title="{{get_user_name(each_msg.address_from, '0', full_address=True)}}">X</span>{% endif %}</td>
             <td><a class="link" title="{{each_msg.thread.chan.description|safe}}" href="/board/{{each_msg.thread.chan.address}}/1">/{{each_msg.thread.chan.label|safe}}/</a></td>
-            <td>{{each_msg.thread.subject|safe}}</td>
+            <td><a class="link" href="/thread/{{each_msg.thread.chan.address}}/{{each_msg.thread.thread_hash[-12:]}}">{{each_msg.thread.subject|safe}}</a></td>
         </tr>
-            {% else %}
+                    {% else %}
         <tr>
             <td style="font-family: monospace">{{each_msg.post_id}}</td>
             <td style="font-family: monospace">{{timestamp_to_date(each_msg.timestamp_sent)}}</td>
@@ -166,26 +155,108 @@
             <td></td>
             <td></td>
         </tr>
-            {% endif %}
-        {% endfor %}
+                {% endif %}
+            {% endfor %}
     </table>
+        {% elif search_type == "posts" and not search_results %}
+    <div class="themed bold">No Posts Found</div>
+    <div style="padding-top: 2em"></div>
+        {% endif %}
+
+        {% if search_type == "threads" and thread_results %}
+    <div class="themed" style="padding: 1em 0;">{{result_count}} Threads</div>
+    <table class="table themed" style="margin-left: auto; margin-right: auto;">
+        <tr>
+            {% if global_admin %}
+            <td><input type="checkbox" onClick="toggle(this)"/></td>
+            {% endif %}
+            <td>Thread Hash</td>
+            <td>Last Post</td>
+            <td>Age</td>
+            <td>Sticky</td>
+            <td>Lock</td>
+            <td>Anchor</td>
+            <td>Board</td>
+            <td>Subject</td>
+        </tr>
+            {% for each_thread in thread_results %}
+                {% set thread_options = get_thread_options(each_thread.thread_hash) %}
+        <tr>
+                {% if global_admin %}
+            <td><input type="checkbox" id="selectbulk_{{each_thread.thread_hash}}" name="selectbulk_{{each_thread.thread_hash}}" value="y"></td>
+                {% endif %}
+            <td style="font-family:monospace">{{each_thread.thread_hash_short}}</td>
+            <td style="font-family: monospace">{{timestamp_to_date(each_thread.timestamp_sent)}}</td>
+            <td>{{display_time(now - each_thread.timestamp_sent)}}</td>
+            <td style="text-align: center">
+                {% if thread_options["sticky"] %}
+                <img style="position: relative; top: 3px; height: 15px" title="Sticky{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
+                {%- if thread_options['sticky_local'] and not thread_options['sticky_remote'] -%}
+                    pin_green.png
+                {%- elif not thread_options['sticky_local'] and thread_options['sticky_remote'] -%}
+                    pin_red.png
+                {%- else -%}
+                    pin_green_red.png
+                {%- endif -%}
+                ">
+                {% endif %}
+            </td>
+            <td style="text-align: center">
+                    {% if thread_options["lock"] %}
+                <img style="position: relative; top: 3px; height: 15px" title="Locked{% if thread_options['lock_local'] %} (Local){% endif %}{% if thread_options['lock_remote'] %} (Remote){% endif %}" src="/static/
+                {%- if thread_options['lock_local'] and not thread_options['lock_remote'] -%}
+                    lock_green.png
+                {%- elif not thread_options['lock_local'] and thread_options['lock_remote'] -%}
+                    lock_red.png
+                {%- else -%}
+                    lock_green_red.png
+                {%- endif -%}
+                ">
+                {% endif %}
+            </td>
+            <td style="text-align: center">
+                    {% if thread_options["anchor"] %}
+                <img style="position: relative; top: 3px; height: 15px" title="Anchored{% if thread_options['anchor_local'] %} (Local){% endif %}{% if thread_options['anchor_remote'] %} (Remote){% endif %}" src="/static/
+                {%- if thread_options['anchor_local'] and not thread_options['anchor_remote'] -%}
+                    anchor_green.png
+                {%- elif not thread_options['anchor_local'] and thread_options['anchor_remote'] -%}
+                    anchor_red.png
+                {%- else -%}
+                    anchor_green_red.png
+                {%- endif -%}
+                ">
+                {% endif %}
+            </td>
+            <td><a class="link" title="{{each_thread.chan.description|safe}}" href="/board/{{each_thread.chan.address}}/1">/{{each_thread.chan.label|safe}}/</a></td>
+            <td>{{generate_reply_link_and_popup_html(None, external_thread=True, link_text=each_thread.subject, moderating=global_admin, use_thread_id=each_thread.id)|safe}}</td>
+        </tr>
+            {% endfor %}
+    </table>
+        {% elif search_type == "threads" and not thread_results %}
+    <div class="themed bold">No Threads Found</div>
+    <div style="padding-top: 2em"></div>
+        {% endif %}
 
         {% if global_admin %}
     <div style="padding: 1em 0">
-        <input type="submit" name="bulk_delete_threads" value="Delete Threads and Posts" onclick="return confirm('Are you sure you want to delete these?')"/>
+            {% if search_type == "posts" %}
+        <input type="submit" name="bulk_restore_posts" value="Restore Selected Posts" onclick="return confirm('Are you sure you want to restore these?')"/>
+        <input type="submit" name="bulk_delete" value="Delete Selected Posts" onclick="return confirm('Are you sure you want to delete these?')"/>
+            {% endif %}
+            {% if search_type == "threads" %}
+        <input type="submit" name="bulk_restore_threads" value="Restore Selected Threads" onclick="return confirm('Are you sure you want to restore these?')"/>
+        <input type="submit" name="bulk_delete" value="Delete Selected Threads" onclick="return confirm('Are you sure you want to delete these?')"/>
+            {% endif %}
     </div>
         {% endif %}
 
     </form>
-    {% elif search_string %}
-        No Posts Found
-        <div style="padding-top: 2em"></div>
+
     {% else %}
         <div style="padding-top: 2em"></div>
     {% endif %}
 
     {% include '/elements/footer_search_pages.html' %}
-    {% include '/elements/footer_links.html' %}
     <div style="padding-top: 1em"></div>
 </div>
 {% endblock %}

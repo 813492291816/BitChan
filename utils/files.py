@@ -7,7 +7,7 @@ import time
 import zipfile
 from contextlib import closing
 from zipfile import ZipFile
-
+from filelock import Timeout
 import filelock
 from PIL import Image
 from PIL import ImageFile
@@ -220,6 +220,8 @@ def delete_message_files(message_id):
 
 
 def human_readable_size(size, decimal_places=1):
+    if size is None:
+        return "None"
     for unit in ['B', 'KB', 'MB', 'GB', 'TB', 'PB']:
         if size < 1024.0 or unit == 'PiB':
             break
@@ -227,6 +229,18 @@ def human_readable_size(size, decimal_places=1):
     if unit in ["B"]:
         decimal_places = 0
     return f"{size:.{decimal_places}f} {unit}"
+
+
+def get_directory_size(start_path):
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(start_path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            # skip if it is symbolic link
+            if not os.path.islink(fp):
+                total_size += os.path.getsize(fp)
+
+    return total_size
 
 
 def generate_thumbnail(message_id, image, thumb, extension):
@@ -251,41 +265,48 @@ def generate_thumbnail(message_id, image, thumb, extension):
 
 
 class LF:
-    def __init__(self):
+    def __init__(self, log_info=False):
         self.is_lock = {}
         self.fl = {}
+        if not os.path.exists("/var/lock"):
+            os.mkdir("/var/lock")
+
+        if log_info:
+            self.log = logger.info
+        else:
+            self.log = logger.debug
 
     def lock_acquire(self, lf, to):
-        logging.getLogger("filelock").setLevel(logging.WARNING)
         self.fl[lf] = filelock.FileLock(lf, timeout=1)
         self.is_lock[lf] = False
         timer = time.time() + to
-        logger.debug("lock {} acquiring (try {} sec)".format(lf, to))
+        self.log("lock {} acquiring (try {} sec)".format(lf, to))
         while time.time() < timer:
             try:
-                self.fl[lf].acquire()
+                self.fl[lf].acquire(timeout=1)
                 sec = time.time() - (timer - to)
-                logger.debug("lock {} acquired in {:.4f} sec".format(lf, sec))
+                self.log("lock {} acquired in {:.4f} sec".format(lf, sec))
                 self.is_lock[lf] = True
                 break
-            except:
+            except Exception as err:
+                self.log("lock {} exception: {}".format(lf, err))
                 pass
 
         if not self.is_lock[lf]:
-            logger.debug("No lock in {:.1f} sec. breaking.".format(to))
+            self.log("No lock in {:.1f} sec. breaking.".format(to))
             self.lock_release(lf)
         else:
             return True
 
-    def lock_locked(self, lf):
+    def lock_locked(self, lf, log_info=False):
         if lf not in self.is_lock:
-            logger.error("error lf unknown {}".format(lf))
+            self.log("error lf unknown {}".format(lf))
             return False
         return self.is_lock[lf]
 
-    def lock_release(self, lf):
+    def lock_release(self, lf, log_info=False):
         try:
-            logger.debug("releasing {}".format(lf))
+            self.log("releasing {}".format(lf))
             self.fl[lf].release(force=True)
             os.remove(lf)
         except Exception:

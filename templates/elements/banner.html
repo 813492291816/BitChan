@@ -1,9 +1,9 @@
 <center>
     <a href="/">
 {%- if board and "current_chan" in board and board["current_chan"] -%}
-    <img class="banner clickable" src="/banner/{{board['current_chan'].address}}"/>
+    <img class="banner clickable" src="/banner/{{board['current_chan'].address}}?{{get_theme()}}"/>
 {%- else -%}
-    <img class="banner clickable" src="/banner/0"/>
+    <img class="banner clickable" src="/banner/0?{{get_theme()}}"/>
 {%- endif -%}
     </a>
 </center>

@@ -70,7 +70,7 @@
         <tr>
           <td class="form themed bold">Comment</td>
           <td colspan="2">
-            <textarea rows="7" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="body{% if is_reply %}_reply{% endif %}" name="body">{% if "comment" in form_populate and form_populate["comment"] %}{{form_populate["comment"]}}{% endif %}</textarea>
+            <textarea rows="7" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="post_body{% if is_reply %}_reply{% endif %}" name="body">{% if "comment" in form_populate and form_populate["comment"] %}{{form_populate["comment"]}}{% endif %}</textarea>
             <section>
               <details>
                 <summary>Post Formatting</summary>

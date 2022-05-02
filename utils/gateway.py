@@ -125,9 +125,6 @@ def delete_and_replace_comment(message_id, new_comment, from_address=None, local
                 message.file_download_successful = None
             new_session.commit()
 
-            regenerate_card_popup_post_html(message_id=message_id)
-            regenerate_ref_to_from_post(message_id)
-
             if not only_hide:
                 # Delete all files associated with message
                 delete_message_files(message_id)
@@ -147,6 +144,9 @@ def delete_and_replace_comment(message_id, new_comment, from_address=None, local
                 board_address=message.thread.chan.address,
                 thread_hash=message.thread.thread_hash,
                 hidden=True)
+
+    regenerate_card_popup_post_html(message_id=message_id)
+    regenerate_ref_to_from_post(message_id)
 
 
 def log_age_and_expiration(message_id, time_now, time_sent, time_expires):

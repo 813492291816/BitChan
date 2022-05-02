@@ -76,8 +76,6 @@ def delete_post(message_id, only_hide=False):
                 message.regenerate_popup_html = True
                 message.regenerate_post_html = True
                 new_session.commit()
-
-                regenerate_ref_to_from_post(message_id)
                 return
 
             # Delete all files associated with message
@@ -95,13 +93,16 @@ def delete_post(message_id, only_hide=False):
             if chan:
                 chan.regenerate_numbers = True
 
-            regenerate_ref_to_from_post(message_id, delete_message=True)
-
             # Update thread timestamp
             update_thread_timestamp(thread_hash)
 
             # Update board timestamp
             update_board_timestamp(chan_address)
+
+    if only_hide:
+        regenerate_ref_to_from_post(message_id)
+    else:
+        regenerate_ref_to_from_post(message_id, delete_message=True)
 
 
 def restore_post(message_id):
@@ -123,7 +124,7 @@ def restore_post(message_id):
             message.regenerate_post_html = True
             new_session.commit()
 
-            regenerate_ref_to_from_post(message_id)
+    regenerate_ref_to_from_post(message_id)
 
 
 def restore_thread(thread_id):

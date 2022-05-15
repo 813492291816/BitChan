@@ -21,6 +21,7 @@ from utils.general import get_random_alphanumeric_string
 from utils.general import pairs
 from utils.general import process_passphrase
 from utils.generate_popup import generate_reply_link_and_popup_html
+from utils.shared import regenerate_card_popup_post_html
 
 DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 
@@ -320,6 +321,18 @@ def format_body(message_id, body, truncate, is_board_view):
                 name_str = ""
                 self_post = False
                 if message:
+                    # Ensure post references are correct
+                    if this_message.post_id not in message.post_ids_replying_to_msg:
+                        try:
+                            post_ids_replying_to_msg = json.loads(message.post_ids_replying_to_msg)
+                        except:
+                            post_ids_replying_to_msg = []
+                        post_ids_replying_to_msg.append(this_message.post_id)
+                        message.post_ids_replying_to_msg = json.dumps(post_ids_replying_to_msg)
+                        message.save()
+
+                        regenerate_card_popup_post_html(message_id=message.message_id)
+
                     identity = Identity.query.filter(
                         Identity.address == message.address_from).first()
                     if not name_str and identity and identity.label:

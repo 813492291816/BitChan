@@ -59,7 +59,7 @@ DIR_BITCHAN_TAR=$(realpath ~)
 TAR_DIR="${DIR_BITCHAN_TAR}/bitchan-${NOW}.tar.gz"
 TAR="bitchan-${NOW}.tar.gz"
 
-if ! tar --exclude='.idea' --exclude='.git' --exclude='env' -zcf "${TAR_DIR}" -C "${DIR_BITCHAN_PARENT}" ./bitchan ; then
+if ! tar --exclude='.idea' --exclude='.git' --exclude='env' --exclude='test' --exclude='tests' -zcf "${TAR_DIR}" -C "${DIR_BITCHAN_PARENT}" ./bitchan ; then
    echo "Could not archive BitChan directory"
    exit
 fi
@@ -75,7 +75,8 @@ CMD1="mv ~/bitchan ~/bitchan-${NOW} &&
 tar zxf ${TAR} &&
 cp ~/bitchan-${NOW}/credentials.py ~/bitchan/ &&
 cp ~/bitchan-${NOW}/docker/docker-compose.yml ~/bitchan/docker/ &&
-cp ~/bitchan-${NOW}/docker/tor/torrc ~/bitchan/docker/tor/"
+cp ~/bitchan-${NOW}/docker/tor/torrc ~/bitchan/docker/tor/ &&
+cp ~/bitchan-${NOW}/docker/i2pd/* ~/bitchan/docker/i2pd/"
 
 RESULTS1=$(sshpass -p ${password} torsocks ssh "${2}@${3}" ${CMD1} 2>&1)
 echo $RESULTS1

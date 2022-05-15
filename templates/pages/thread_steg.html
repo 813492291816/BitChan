@@ -81,7 +81,7 @@ Board
         }
 
         function reply_link_to_comment(text_reply) {
-            let myField = document.getElementById('body_reply_popup');
+            let myField = document.getElementById('post_body_reply_popup');
             if (myField.selectionStart || myField.selectionStart == '0') {
                 var startPos = myField.selectionStart;
                 var endPos = myField.selectionEnd;
@@ -222,7 +222,8 @@ Board
 
     <div style="padding-top: 1em">
         <center>
-            <span style="text-decoration: none; font-size: 18px;" class="themed">[</span><a class="link" style="text-decoration: none; font-size: 18px;" href="#popup_reply">Reply</a><span style="text-decoration: none; font-size: 18px;" class="themed">]</span>
+            <span style="text-decoration: none; font-size: 18px;" class="themed">[</span><a class="link" style="text-decoration: none; font-size: 18px;" href="#popup_reply">Reply</a><span style="text-decoration: none; font-size: 18px;" class="themed">]
+            [<a id="toggle_images" class="link" style="text-decoration: none; font-size: 18px;" href="">Toggle Images</a>]</span>
         </center>
     </div>
 

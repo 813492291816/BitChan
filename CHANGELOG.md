@@ -1,3 +1,23 @@
+## 1.1.1 (2022/05/15)
+
+```
+cd BitChan/docker
+sudo docker-compose down
+torsocks git pull
+docker volume rm docker_nginx docker_tor docker_tor_etc docker_i2p docker_i2psnark
+sudo torsocks docker-compose pull
+sudo torsocks docker-compose up --build -d --remove-orphans
+```
+
+ - Fix IP binding of I2P
+ - Fix building on ARM
+ - Fix populating reply box with highlighted text and post ID
+ - Fix applying proper formatting tags to post test when composing
+ - Fix generating reply links when posts are received out of order
+ - Compile tor instead of using pre-compiled binaries
+ - Switch from using i2p to i2pd
+ - Add ability to expand all images of a thread
+
 ## 1.1.0 (2022/05/02)
 
 Users with BitChan < 0.11.0 can not upgrade and will need to follow the instructions listed in the README to clean and install BitChan. Users with Bitchan >= 0.11.0 that wish to upgrade need to pull the new code, delete a volume, then build, as follows:
@@ -6,8 +26,7 @@ Users with BitChan < 0.11.0 can not upgrade and will need to follow the instruct
 cd BitChan/docker
 sudo docker-compose down
 torsocks git pull
-docker volume rm docker_nginx
-docker volume rm docker_tor_etc
+docker volume rm docker_nginx docker_tor docker_tor_etc
 sudo torsocks docker-compose pull
 sudo torsocks docker-compose up --build -d --remove-orphans
 ```

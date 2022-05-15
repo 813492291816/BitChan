@@ -1,5 +1,16 @@
 expanded_files = {};
 
+function toggle_all_pics() {
+    $('#body .pic').trigger('click');
+}
+
+$(function() {
+    $("#toggle_images").click(function(e) {
+        e.preventDefault();
+        toggle_all_pics();
+    });
+});
+
 $(function() {
     $('#body').on('click', '.pic', function() {
         post_id = $(this).attr('id').split('_')[1];

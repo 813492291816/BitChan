@@ -760,21 +760,19 @@ A hidden I2P service can be used to create a tunnel to your BitChan install via 
 
 Follow these instructions to set up an I2P tunnel to allow access to your BitChan install:
 
-1. Open a browser to http://172.28.1.6:7657 and complete the setup wizard.
-2. Open the Hidden Service Manager page at http://172.28.1.6:7657/i2ptunnelmgr
-3. Select HTTP for New hidden service, then click Create.
-4. Enter a Name/Description, then set Host to 172.28.1.1, Port to 8000, and check Auto Start Tunnel.
-5. Set Website Hostname to an address that ends in .i2p (e.g. mysite.i2p).
-6. Expand Inbound connection limits, Max concurrent connections, and POST limits, and set all options to 0 to disable (they only cause problems, and BitChan already handles rate-limiting).
-7. Click Create.
-8. After being brought back to the Hidden Service Manager, click Start to start your tunnel.
-9. After the tunnel has started and peers have connected, your BitChan install will be accessible at the .i2p address provided. You will need to use the link with the helper address (e.g. http://mysite.i2p/?i2paddresshelper=qwertyuioplkjhgfdsazxcvbnmnbvcxzasdfghjklpoiuytrewqw.b32.i2p) unless you register your address with a jump server.
+1. Bring the docker containers down with `cd BitChan/docker && sudo docker-compose down`
+2. Delete the I2P volume to allow reconfiguring the tunnels and i2pd config files: `sudo docker volume rm docker_i2pd`
+3. Open Bitchan/docker/i2pd/Dockerfile and uncomment the COPY line that copies tunnels.conf to the i2pd volume.
+4. If you have a tunnel private key file, you can uncomment the COPY line that copies that key file to the i2pd volume. Make sure the file name is correct in Dockerfile and tunnels.conf, and place that file in BitChan/docker/i2pd/ prior to building.
+5. If you need to access the webconsole of a remote computer, either uncomment the port section of the i2pd container in docker-compose.yml, exposing port 7999 to the internet, or set up an SSH tunnel to access port 7070 at 172.28.1.6.
+6. Build and bring the containers back up: `cd BitChan/docker && sudo make daemon`
+7. Open a browser to http://172.28.1.6:7070 (or http://PublicIPAddress:7999) to open the i2pd webconsole to view your I2P Tunnels and determine your .i2p address.
+8. After the tunnel has started and peers have connected, your BitChan install will be accessible at that .i2p address.
+9. You can register a short i2p address with a jump server, otherwise you can give out the b32 address for people to connect to.
 
 Additionally, you can use 172.28.1.6:4444 as an HTTP proxy in your browser to connect to I2P sites.
 
-To improve performance, you can set UDP and TCP ports under Settings/Network, which when set up properly, the Network status will change from Firewalled to OK.
-
-Warning: If you expose port 7999 of the I2P service in docker-compose.yaml and your server is publicly-accessible, be sure to add a user and password under Settings/UI, then restart, to ensure there is no unauthorized use.
+Warning: If you expose port 7999 of the I2P service in docker-compose.yaml and your server is publicly-accessible, be sure to comment this port back and rebuild the containers to prevent potential unauthorized access.
 
 # Kiosk Mode
 

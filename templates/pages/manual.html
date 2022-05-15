@@ -534,19 +534,18 @@ BitChan Manual
 <p>A hidden I2P service can be used to create a tunnel to your BitChan install via an .i2p address over the I2P network. This can be beneficial if you want to enable Kiosk Mode to allow anonymous access without exposing your IP address.</p>
 <p>Follow these instructions to set up an I2P tunnel to allow access to your BitChan install:</p>
 <ol type="1">
-<li>Open a browser to http://172.28.1.6:7657 and complete the setup wizard.</li>
-<li>Open the Hidden Service Manager page at http://172.28.1.6:7657/i2ptunnelmgr</li>
-<li>Select HTTP for New hidden service, then click Create.</li>
-<li>Enter a Name/Description, then set Host to 172.28.1.1, Port to 8000, and check Auto Start Tunnel.</li>
-<li>Set Website Hostname to an address that ends in .i2p (e.g. mysite.i2p).</li>
-<li>Expand Inbound connection limits, Max concurrent connections, and POST limits, and set all options to 0 to disable (they only cause problems, and BitChan already handles rate-limiting).</li>
-<li>Click Create.</li>
-<li>After being brought back to the Hidden Service Manager, click Start to start your tunnel.</li>
-<li>After the tunnel has started and peers have connected, your BitChan install will be accessible at the .i2p address provided. You will need to use the link with the helper address (e.g. http://mysite.i2p/?i2paddresshelper=qwertyuioplkjhgfdsazxcvbnmnbvcxzasdfghjklpoiuytrewqw.b32.i2p) unless you register your address with a jump server.</li>
+<li>Bring the docker containers down with <code>cd BitChan/docker &amp;&amp; sudo docker-compose down</code></li>
+<li>Delete the I2P volume to allow reconfiguring the tunnels and i2pd config files: <code>sudo docker volume rm docker_i2pd</code></li>
+<li>Open Bitchan/docker/i2pd/Dockerfile and uncomment the COPY line that copies tunnels.conf to the i2pd volume.</li>
+<li>If you have a tunnel private key file, you can uncomment the COPY line that copies that key file to the i2pd volume. Make sure the file name is correct in Dockerfile and tunnels.conf, and place that file in BitChan/docker/i2pd/ prior to building.</li>
+<li>If you need to access the webconsole of a remote computer, either uncomment the port section of the i2pd container in docker-compose.yml, exposing port 7999 to the internet, or set up an SSH tunnel to access port 7070 at 172.28.1.6.</li>
+<li>Build and bring the containers back up: <code>cd BitChan/docker &amp;&amp; sudo make daemon</code></li>
+<li>Open a browser to http://172.28.1.6:7070 (or http://PublicIPAddress:7999) to open the i2pd webconsole to view your I2P Tunnels and determine your .i2p address.</li>
+<li>After the tunnel has started and peers have connected, your BitChan install will be accessible at that .i2p address.</li>
+<li>You can register a short i2p address with a jump server, otherwise you can give out the b32 address for people to connect to.</li>
 </ol>
 <p>Additionally, you can use 172.28.1.6:4444 as an HTTP proxy in your browser to connect to I2P sites.</p>
-<p>To improve performance, you can set UDP and TCP ports under Settings/Network, which when set up properly, the Network status will change from Firewalled to OK.</p>
-<p>Warning: If you expose port 7999 of the I2P service in docker-compose.yaml and your server is publicly-accessible, be sure to add a user and password under Settings/UI, then restart, to ensure there is no unauthorized use.</p>
+<p>Warning: If you expose port 7999 of the I2P service in docker-compose.yaml and your server is publicly-accessible, be sure to comment this port back and rebuild the containers to prevent potential unauthorized access.</p>
 <h1 id="kiosk-mode">Kiosk Mode</h1>
 <p>A Kiosk Mode has been created that institutes a login and permission system to allow administration as well as anonymous posting, among other features. Admins can log in and perform any action. Non-logged in users can be allowed to only view or make posts. You can also allow non-logged in users to only view and provide one or more guest logins that permit posting. There are several more Kiosk Mode options outlined in BitChan/config.py and detailed in the manual. When used in conjunction with the integrated hidden onion service configuration, you can provide secure and anonymous access to your BitChan instance, so neither the host nor the clients can obtain any identifying information about each other.</p>
 <h1 id="status">Status</h1>

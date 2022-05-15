@@ -6,7 +6,7 @@ from logging import handlers
 
 logger = logging.getLogger('bitchan.config')
 
-VERSION_BITCHAN = "1.1.0"
+VERSION_BITCHAN = "1.1.1"
 VERSION_ALEMBIC = '000000000063'
 VERSION_MSG = "1.0.0"
 VERSION_MIN_MSG = "1.0.0"

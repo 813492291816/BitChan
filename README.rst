@@ -2,9 +2,9 @@
 BitChan
 =======
 
-Version: 1.1.0
+Version: 1.1.1
 
-BitChan is a decentralized anonymous imageboard inspired by `BitBoard <https://github.com/michrob/bitboard>`__ and built on top of `Bitmessage <https://bitmessage.org>`__ with `Tor <https://www.torproject.org>`__ and `GnuPG <https://gnupg.org>`__.
+BitChan is a decentralized anonymous imageboard inspired by `BitBoard <https://github.com/michrob/bitboard>`__ and built on top of `Bitmessage <https://bitmessage.org>`__ with `Tor <https://www.torproject.org>`__, `I2P <https://geti2p.net>`__, and `GnuPG <https://gnupg.org>`__.
 
 Try it out at http://bitchanr4b64govofzjthtu6qc4ytrbuwbgynapkjileajpycioikxad.onion (an anonymous donor has paid for a BitChan instance to be set up on a VPS in `Kiosk Mode <https://github.com/813492291816/BitChan/blob/master/MANUAL.md#kiosk-mode>`__). This is only accessible with `Tor Browser <https://www.torproject.org>`__.
 
@@ -132,106 +132,116 @@ These are the general steps to install and set up tor, nginx, PyBitmessage, and 
 
 Create directories for user data
 
-```bash
-sudo mkdir -p /usr/local/bitmessage
-sudo mkdir -p /usr/local/bitchan
-sudo mkdir -p /usr/local/bitchan/log
-sudo mkdir -p /usr/local/bitchan/downloaded_files
-chown -R user.user /usr/local/bitmessage
-chown -R user.user /usr/local/bitchan
-```
+.. code::
+
+    sudo mkdir -p /usr/local/bitmessage
+    sudo mkdir -p /usr/local/bitchan
+    sudo mkdir -p /usr/local/bitchan/log
+    sudo mkdir -p /usr/local/bitchan/downloaded_files
+    chown -R user.user /usr/local/bitmessage
+    chown -R user.user /usr/local/bitchan
+
 
 Install apt dependencies
 
-```bash
-sudo apt-get update
-sudo apt-get install -yq --no-install-suggests --no-install-recommends curl secure-delete \\
-    gnupg2 build-essential ffmpeg libsm6 libxext6 docker.io python3-dev python3-opencv \\
-    python3-setuptools python3-distutils python3-pip netbase libjpeg-dev zlib1g-dev \\
-    python-msgpack dh-python python-all-dev build-essential libssl-dev python-stdeb \\
-    fakeroot python-pip libcap-dev nano sed git nginx tor
-```
+.. code::
+
+    sudo apt-get update
+    sudo apt-get install -yq --no-install-suggests --no-install-recommends curl secure-delete \\
+        gnupg2 build-essential ffmpeg libsm6 libxext6 docker.io python3-dev python3-opencv \\
+        python3-setuptools python3-distutils python3-pip netbase libjpeg-dev zlib1g-dev \\
+        python-msgpack dh-python python-all-dev build-essential libssl-dev python-stdeb \\
+        fakeroot python-pip libcap-dev nano sed git nginx tor
+
 
 Create Python2 and Python3 virtual environments
 
-```bash
-virtualenv -p python2 /home/user/venv2
-virtualenv -p python3 /home/user/venv3
-```
+.. code::
+
+    python2 -m virtualenv /home/user/venv2
+    python3 -m virtualenv /home/user/venv3
+
 
 Clone PyBitmessage and install pip2 dependencies
 
-```bash
-cd /home/user
-git clone https://github.com/Bitmessage/PyBitmessage
-cd PyBitmessage
-/home/user/venv2/bin/pip install -r requirements.txt
-sudo /home/user/venv2/bin/python2 setup.py install
-```
+.. code::
+
+    cd /home/user
+    git clone https://github.com/Bitmessage/PyBitmessage
+    cd PyBitmessage
+    /home/user/venv2/bin/pip install -r requirements.txt
+    sudo /home/user/venv2/bin/python2 setup.py install
+
 
 Setup PyBitmessage keys.dat
 
-```bash
-export BITMESSAGE_HOME="/usr/local/bitmessage"
-/usr/local/bin/pybitmessage -h
-sed -i '/apivariant/d' /usr/local/bitmessage/keys.dat \\
-    && sed -i 's/socksproxytype.*/socksproxytype = SOCKS5/' /usr/local/bitmessage/keys.dat \\
-    && sed -i 's/sockshostname.*/sockshostname = localhost/' /usr/local/bitmessage/keys.dat \\
-    && sed -i 's/socksport.*/socksport = 9050/' /usr/local/bitmessage/keys.dat \\
-    && echo "apienabled = true" >> /usr/local/bitmessage/keys.dat \\
-    && echo "apiport = 8445" >> /usr/local/bitmessage/keys.dat \\
-    && echo "apiinterface = 0.0.0.0" >> /usr/local/bitmessage/keys.dat \\
-    && echo "apiusername = bitchan" >> /usr/local/bitmessage/keys.dat \\
-    && echo "apipassword = $(tr -dc a-zA-Z0-9 < /dev/urandom | head -c32 && echo)" >> /usr/local/bitmessage/keys.dat
-```
+.. code::
+
+    export BITMESSAGE_HOME="/usr/local/bitmessage"
+    /usr/local/bin/pybitmessage -h
+    sed -i '/apivariant/d' /usr/local/bitmessage/keys.dat \\
+        && sed -i 's/socksproxytype.*/socksproxytype = SOCKS5/' /usr/local/bitmessage/keys.dat \\
+        && sed -i 's/sockshostname.*/sockshostname = localhost/' /usr/local/bitmessage/keys.dat \\
+        && sed -i 's/socksport.*/socksport = 9050/' /usr/local/bitmessage/keys.dat \\
+        && echo "apienabled = true" >> /usr/local/bitmessage/keys.dat \\
+        && echo "apiport = 8445" >> /usr/local/bitmessage/keys.dat \\
+        && echo "apiinterface = 0.0.0.0" >> /usr/local/bitmessage/keys.dat \\
+        && echo "apiusername = bitchan" >> /usr/local/bitmessage/keys.dat \\
+        && echo "apipassword = $(tr -dc a-zA-Z0-9 < /dev/urandom | head -c32 && echo)" >> /usr/local/bitmessage/keys.dat
+
 
 Clone BitChan and install pip3 dependencies
 
-```bash
-cd /home/user
-git clone https://github.com/813492291816/BitChan
-cd BitChan
-/home/user/venv3/bin/pip install -r requirements.txt
-```
+.. code::
+
+    cd /home/user
+    git clone https://github.com/813492291816/BitChan
+    cd BitChan
+    /home/user/venv3/bin/pip install -r requirements.txt
+
 
 edit /home/user/BitChan/config.py and change BM_HOST and TOR_HOST to "localhost"
 
 Setup nginx
 
-```bash
-sudo rm /etc/nginx/nginx.conf
-sudo cp /home/user/BitChan/docker/nginx/nginx.conf /etc/nginx/
-sudo rm /etc/nginx/conf.d/default.conf
-sudo cp /home/user/BitChan/docker/nginx/project.conf /etc/nginx/conf.d/
-sudo service nginx restart
-```
+.. code::
+
+    sudo rm /etc/nginx/nginx.conf
+    sudo cp /home/user/BitChan/docker/nginx/nginx.conf /etc/nginx/
+    sudo rm /etc/nginx/conf.d/default.conf
+    sudo cp /home/user/BitChan/docker/nginx/project.conf /etc/nginx/conf.d/
+    sudo service nginx restart
+
 
 Setup tor
 
-```bash
-sudo echo "HashedControlPassword $(tor --quiet --hash-password torpass1234)" >> /etc/tor/torrc
-sudo service tor restart
-```
+.. code::
+    sudo echo "HashedControlPassword $(tor --quiet --hash-password torpass1234)" >> /etc/tor/torrc
+    sudo service tor restart
+
 
 Start Bitmessage
 
-```bash
-export BITMESSAGE_HOME="/usr/local/bitmessage"
-/usr/local/bin/pybitmessage -d
-```
+.. code::
+
+    export BITMESSAGE_HOME="/usr/local/bitmessage"
+    /usr/local/bin/pybitmessage -d
+
 
 Start BitChan Backend
 
-```bash
-/home/user/venv3/python /home/user/BitChan/bitchan_daemon.py
-```
+.. code::
+
+    /home/user/venv3/python /home/user/BitChan/bitchan_daemon.py
+
 
 Start BitChan Frontend
 
-```bash
-cd /home/user/BitChan
-/home/user/venv3/gunicorn --workers 1 --threads 4 --timeout 1800 --bind unix:/var/run/bitchan.sock bitchan_flask:app
-```
+.. code::
+
+    cd /home/user/BitChan
+    /home/user/venv3/gunicorn --workers 1 --threads 4 --timeout 1800 --bind unix:/var/run/bitchan.sock bitchan_flask:app
+
 
 Open http://127.0.0.1:8000 in your browser.
 
@@ -256,7 +266,7 @@ Backup and Restore BitChan
 
 You can save the state of Bitmessage and BitChan and restore it on another machine. This will preserve everything exactly as it was, including boards, lists, threads, messages, attachments, address book, identities, etc. With BitChan running, execute the following commands.
 
- - Create backup and transfer to your local machine:
+Create backup and transfer to your local machine:
 
 .. code::
 
@@ -267,7 +277,7 @@ You can save the state of Bitmessage and BitChan and restore it on another machi
     sudo docker exec -it bitchan_flask rm -rf /home/bitchan/bitchan_backup-usr_bitchan.tar /home/bitchan/bitchan_backup-usr_bitmessage.tar /home/2021_07_01_bitchan-backup.tar
 
 
- - Transfer backup to remote machine that has BitChan installed:
+Transfer backup to remote machine that has BitChan installed:
 
 .. code::
 
@@ -278,7 +288,7 @@ You can save the state of Bitmessage and BitChan and restore it on another machi
     sudo docker exec -it bitchan_flask rm -rf /2021_07_01_bitchan-backup.tar /home/bitchan/bitchan_backup-usr_bitchan.tar /home/bitchan/bitchan_backup-usr_bitmessage.tar
 
 
- - Restart BitChan
+Restart BitChan
 
 .. code::
 

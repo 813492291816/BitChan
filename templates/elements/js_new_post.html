@@ -8,11 +8,11 @@ var original_title = document.title;
 <!-- Make list of posts that initially load on page -->
 var thread_post_ids = [
 {%- if not message_replies.count() and message_op -%}
-    "{{message_op.post_id}}",
+    "{{get_post_id_string(post_id=message_op.post_id)}}",
 {%- endif -%}
 
 {%- for each_message in message_replies -%}
-    "{{each_message.post_id}}",
+    "{{get_post_id_string(post_id=each_message.post_id)}}",
 {%- endfor -%}
 ];
 
@@ -33,27 +33,46 @@ function set_countdown_timer(reset=false) {
 }
 
 function del_post(post_id) {
-    if (thread_post_ids.indexOf(post_id) >= 0) {
-        thread_post_ids.splice(thread_post_ids.indexOf(post_id), 1);
+    console.log("Remove post: " + post_id);
+
+    // Find the post ID string to delete from the array
+    const post_id_found = thread_post_ids.filter((post_ids) => post_ids.startsWith(post_id));
+    if (post_id_found.length) {
+        console.log("found: " + post_id_found);
+        thread_post_ids.splice(thread_post_ids.indexOf(post_id_found[0]), 1);
     }
 
+    // Delete the element with the post ID
     let el = document.getElementById(post_id);
     if (el) el.parentNode.removeChild(el);
 }
 
-function ref_post(post_id, post_html) {
+function ref_post(post_id, post_html, post_id_attach) {
+    console.log("Refresh post: " + post_id);
+
+    // Rename the post ID string in array to the correct string with potential attachment suffix
+    if (post_id_attach) {
+        const post_id_found = thread_post_ids.filter((post_ids) => post_ids.startsWith(post_id));
+        if (post_id_found.length && post_id_found[0] !== post_id_attach) {
+            console.log("Rename " + post_id_found[0] + " to " + post_id_attach);
+            thread_post_ids = thread_post_ids.map(str => str === post_id_found[0] ? post_id_attach : str)
+        }
+    }
+
     console.log("Checking if post " + post_id + " exists on page to refresh...");
-    let el = document.getElementById(post_id);
-    if (el) {
+    let post_ref = document.getElementById(post_id);
+    if (post_ref) {
         console.log("Post " + post_id + " exists on page. Refreshing...");
-        el.innerHTML = post_html;
+        post_ref.classList.add("ref-post");
+        post_ref.innerHTML = post_html;
     }
 }
 
-function add_post(post_id_prev, post_id_new, post_html) {
-    if (thread_post_ids.indexOf(post_id_new) >= 0) return;
+function add_post(post_id_prev, post_id_new, post_html, post_id_attach) {
+    const post_id_new_found = thread_post_ids.filter((post_ids) => post_ids.startsWith(post_id_new));
+    if (post_id_new_found.length) return;  // Post ID already present, don't add
 
-    console.log("Got post " + post_id_new);
+    console.log("Add post: " + post_id_new);
     var new_div = document.createElement("div");
     new_div.className = "post plaque new-post";
     new_div.id = post_id_new;
@@ -62,11 +81,17 @@ function add_post(post_id_prev, post_id_new, post_html) {
     if (div) {
         div.parentNode.insertBefore(new_div, div.nextSibling);
     <!--    new_div.insertAdjacentHTML("beforebegin", "<br/>");-->
-        console.log("Added post " + post_id_new);
+        console.log("Added new post " + post_id_new + " after post " + post_id_prev);
     }
 
-    if (thread_post_ids.indexOf(post_id_prev) >= 0) {
-        thread_post_ids.splice(thread_post_ids.indexOf(post_id_prev) + 1, 0, post_id_new);
+    // Add the post ID string to the array with the potential attachment suffix
+    const post_id_prev_found = thread_post_ids.filter((post_ids) => post_ids.startsWith(post_id_prev));
+    if (post_id_prev_found.length) {
+        if (post_id_attach) {
+            thread_post_ids.splice(thread_post_ids.indexOf(post_id_prev_found[0]) + 1, 0, post_id_attach);
+        } else {
+            thread_post_ids.splice(thread_post_ids.indexOf(post_id_prev_found[0]) + 1, 0, post_id_new);
+        }
     }
 
     new_post_count += 1;
@@ -85,15 +110,14 @@ function get_new_posts() {
             else set_countdown_timer();
 
             for (let i in post_id_resp["add"]) {
-                add_post(post_id_resp["add"][i][0], post_id_resp["add"][i][1], post_id_resp["add"][i][2]);
+                add_post(post_id_resp["add"][i][0], post_id_resp["add"][i][1], post_id_resp["add"][i][2], post_id_resp["add"][i][3]);
             }
             for (let i in post_id_resp["del"]) {
                 del_post(post_id_resp["del"][i]);
             }
             for (let i in post_id_resp["ref"]) {
-                ref_post(post_id_resp["ref"][i][0], post_id_resp["ref"][i][1]);
+                ref_post(post_id_resp["ref"][i][0], post_id_resp["ref"][i][1], post_id_resp["ref"][i][2]);
             }
-
             start_new_post_timer();
         },
         error: function(xhr, status, error) {
@@ -128,7 +152,21 @@ function start_new_post_timer() {
     }
 }
 
+function reset_new_posts() {
+    const ref_posts = document.querySelectorAll('.ref-post');
+    ref_posts.forEach(box => {
+        box.classList.remove('ref-post');
+    });
+    const new_posts = document.querySelectorAll('.new-post');
+    new_posts.forEach(box => {
+        box.classList.remove('new-post');
+    });
+    new_post_count = 0;
+    document.title = original_title;
+}
+
 function reset_new_post_counter() {
+    reset_new_posts();
     document.getElementById("new-post-update").innerHTML = "Updating...";
     console.log("Resetting timer to 30 seconds")
     new_post_amount = 30000;
@@ -169,12 +207,7 @@ function getDocHeight() {
 }
 
 document.addEventListener("scroll", function (event) {
-    if (getDocHeight() == getScrollXY()[1] + window.innerHeight) {
-        const boxes = document.querySelectorAll('.new-post');
-        boxes.forEach(box => {
-            box.classList.remove('new-post');
-        });
-        new_post_count = 0;
-        document.title = original_title;
+    if (window.innerHeight + window.pageYOffset >= document.body.offsetHeight) {
+        reset_new_posts();
     }
 });

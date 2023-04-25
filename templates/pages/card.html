@@ -8,18 +8,18 @@
                         {% if op_post %}
                         {{get_card_link_html(op_post, card_text='[O]', external_thread=True)|safe}} <a class="link" href="/thread/{{op_post.thread.chan.address}}/{{op_post.thread.thread_hash_short}}">{{op_post.thread.subject|safe}}</a><br/>
                         {% else %}
-                        [No OP]<br/>
+                        <a class="link" href="/thread/{{thread_info['thread'].chan.address}}/{{thread_info['thread'].thread_hash}}">[No OP]</a><br/>
                         {% endif %}
                         {% for each_message in thread_info["messages"] %}
-                            {% if each_message.hide %}
+                            {% if each_message and each_message.hide %}
                                 {% set msg_str = "[moderated: hidden]" %}
-                            {% elif each_message.delete_comment %}
+                            {% elif each_message and each_message.delete_comment %}
                                 {% set msg_str = clean_html(each_message.delete_comment) %}
-                            {% else %}
+                            {% elif each_message %}
                                 {% set msg_str = clean_html(each_message.message) %}
                             {% endif %}
 
-                            {% if loop.first %}
+                            {% if loop.first and each_message %}
 
                                 {% if msg_str|length > config.INDEX_CARDS_OP_TRUNCATE_CHARS %}
                                     {% set reply_is_truncated, reply_trunc_msg = truncate(msg_str, config.INDEX_CARDS_OP_TRUNCATE_CHARS, 1) %}
@@ -30,7 +30,7 @@
                             [No Text]
                                 {% endif %}
 
-                            {% elif not loop.first %}
+                            {% elif not loop.first and each_message %}
 
                         {{get_card_link_html(each_message, card_text='[O]', external_thread=True)|safe}}
                         <a class="link" href="/thread/{{each_message.thread.chan.address}}/{{each_message.thread.thread_hash_short}}#{{each_message.post_id}}">R:

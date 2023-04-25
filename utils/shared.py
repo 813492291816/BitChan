@@ -11,6 +11,7 @@ from database.models import Chan
 from database.models import Command
 from database.models import Messages
 from database.models import ModLog
+from database.models import GlobalSettings
 from database.models import PostCards
 from database.models import Threads
 from database.utils import session_scope
@@ -18,6 +19,38 @@ from database.utils import session_scope
 logger = logging.getLogger('bitchan.shared')
 
 DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
+
+
+def get_post_ttl(form_ttl=2419200):
+    """Determine post TTL"""
+    with session_scope(DB_PATH) as new_session:
+        settings = new_session.query(GlobalSettings).first()
+
+        if form_ttl < 3600:
+            form_ttl = 3600
+        elif form_ttl > 2419200:
+            form_ttl = 2419200
+
+        if not settings.enable_kiosk_mode:
+            return form_ttl
+
+        if settings.kiosk_ttl_option == "selectable_max_28_days":
+            ttl = form_ttl
+        elif settings.kiosk_ttl_option == "selectable_max_custom":
+            if form_ttl <= settings.kiosk_ttl_seconds:
+                ttl = form_ttl
+            else:
+                ttl = settings.kiosk_ttl_seconds
+        elif settings.kiosk_ttl_option == "forced_28_days":
+            ttl = 2419200
+        elif settings.kiosk_ttl_option == "forced_102_hours":
+            ttl = 367200
+        elif settings.kiosk_ttl_option == "forced_custom":
+            ttl = settings.kiosk_ttl_seconds
+        else:
+            ttl = 2419200
+
+    return ttl
 
 
 def get_post_id(message_id):
@@ -44,9 +77,12 @@ def add_mod_log_entry(
     with session_scope(DB_PATH) as new_session:
         log_entry = ModLog()
         log_entry.description = description
-
-        if message_id:
-            log_entry.message_id = message_id
+        log_entry.message_id = message_id
+        log_entry.user_from = user_from
+        log_entry.board_address = board_address
+        log_entry.thread_hash = thread_hash
+        log_entry.success = success
+        log_entry.hidden = hidden
 
         if timestamp:
             try:
@@ -56,18 +92,6 @@ def add_mod_log_entry(
         else:
             log_entry.timestamp = time.time()
 
-        if user_from:
-            log_entry.user_from = user_from
-
-        if board_address:
-            log_entry.board_address = board_address
-
-        if thread_hash:
-            log_entry.thread_hash = thread_hash
-
-        log_entry.success = success
-        log_entry.hidden = hidden
-
         new_session.add(log_entry)
         new_session.commit()
 
@@ -75,7 +99,7 @@ def add_mod_log_entry(
 def get_msg_expires_time(msg_id: str):
     try:
         conn = sqlite3.connect('file:{}?mode=ro'.format(
-            config.messages_dat), uri=True, check_same_thread=False)
+            config.BM_MESSAGES_DAT), uri=True, check_same_thread=False)
         conn.text_factory = bytes
         c = conn.cursor()
         c.execute('SELECT expirestime FROM inventory WHERE hash=?', (unhexlify(msg_id),))
@@ -84,7 +108,6 @@ def get_msg_expires_time(msg_id: str):
             return data[0][0]
     except Exception:
         logger.exception("except {}".format(msg_id))
-        return
 
 
 def is_access_same_as_db(options, chan_entry):
@@ -201,7 +224,7 @@ def regenerate_ref_to_from_post(message_id, delete_message=False):
                                   post_ids_replying_to_msg]:
                 post_ids = json.loads(post_ids_json)
                 for post_id in post_ids:
-                    post = Messages.query.filter(
+                    post = new_session.query(Messages).filter(
                         Messages.post_id == post_id).first()
                     if post:
                         regenerate_card_popup_post_html(

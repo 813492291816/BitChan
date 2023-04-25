@@ -1,13 +1,12 @@
-import json
 import logging
 import os
 from datetime import timedelta
-from logging import handlers
 
 logger = logging.getLogger('bitchan.config')
+DOCKER = os.environ.get('DOCKER', False) == 'TRUE'
 
-VERSION_BITCHAN = "1.1.1"
-VERSION_ALEMBIC = '000000000063'
+VERSION_BITCHAN = "1.2.0"
+VERSION_ALEMBIC = '000000000092'
 VERSION_MSG = "1.0.0"
 VERSION_MIN_MSG = "1.0.0"
 
@@ -16,33 +15,80 @@ LOG_LEVEL = logging.INFO
 #
 # Bitmessage
 #
-BM_HOST = "172.28.1.3"
+
+if DOCKER:
+    BM_HOST = "172.28.1.3"
+    BM_PATH = "/usr/local/bitmessage"
+else:
+    BM_HOST = "127.0.0.1"
+    BM_PATH = "/usr/local/bitchan/bitmessage"
+
+BM_MESSAGES_DAT = os.path.join(BM_PATH, "messages.dat")
+BM_KNOWNNODES_DAT = os.path.join(BM_PATH, "knownnodes.dat")
+BM_KEYS_DAT = os.path.join(BM_PATH, "keys.dat")
 BM_PORT = 8445
-BM_USERNAME = "bitchan"
+BM_USERNAME = ""
 BM_PASSWORD = ""
-messages_dat = "/usr/local/bitmessage/messages.dat"
-keys_dat = "/usr/local/bitmessage/keys.dat"
-with open(keys_dat) as f:
-    for line in f:
-        if "apipassword" in line:
-            BM_PASSWORD = line.split("=")[1].strip()
+
+if os.path.exists(BM_KEYS_DAT):
+    with open(BM_KEYS_DAT) as f:
+        for line in f:
+            if "apiusername" in line:
+                BM_USERNAME = line.split("=")[1].strip()
+
+if os.path.exists(BM_KEYS_DAT):
+    with open(BM_KEYS_DAT) as f:
+        for line in f:
+            if "apipassword" in line:
+                BM_PASSWORD = line.split("=")[1].strip()
+
+if DOCKER:
+    GPG_DIR = "/usr/local/gnupg"
+else:
+    GPG_DIR = "/usr/local/bitchan/gnupg"
 
 #
 # tor
 #
-TOR_HOST = "172.28.1.2"
-TOR_SOCKS_PORT = 9060
-TOR_CONTROL_PORT = 9061
-TOR_PASS = "torpass1234"  # also change tor password in docker-compose.yml
+
+if DOCKER:
+    TOR_HOST = "172.28.1.2"
+    TOR_PATH = "/usr/local/tor"
+else:
+    TOR_HOST = "127.0.0.1"
+    TOR_PATH = "/usr/local/bitchan/tor"
+
+TORRC = f"{TOR_PATH}/torrc"
+TOR_HS_BM = f"{TOR_PATH}/bm"
+TOR_HS_RAND = f"{TOR_PATH}/rand"
+TOR_HS_CUS = f"{TOR_PATH}/cus"
+TOR_CONTROL_PASS = f"{TOR_PATH}/torpass"
+
+TOR_PASS = ""
+if os.path.exists(TOR_CONTROL_PASS):
+    with open(TOR_CONTROL_PASS) as f:
+        TOR_PASS = f.read().strip()
+
+TOR_SOCKS_PORT = 9050
+TOR_CONTROL_PORT = 9051
 TOR_PROXIES = {
     "http": "socks5://{host}:{port}".format(host=TOR_HOST, port=TOR_SOCKS_PORT),
     "https": "socks5://{host}:{port}".format(host=TOR_HOST, port=TOR_SOCKS_PORT)
 }
 
 #
-# i2p
+# i2pd
 #
-I2P_HOST = "172.28.1.6"
+
+if DOCKER:
+    I2P_HOST = "172.28.1.6"
+    I2PD_PATH = "/home/i2pd/data"
+    I2PD_DATA_PATH = "/home/i2pd/data"
+else:
+    I2P_HOST = "127.0.0.1"
+    I2PD_PATH = "/usr/local/bitchan/i2pd"
+    I2PD_DATA_PATH = "/usr/local/bitchan/i2pd_data"
+
 I2P_SOCKS_PORT = 4444
 I2P_PROXIES = {
     "http": "http://{host}:{port}".format(host=I2P_HOST, port=I2P_SOCKS_PORT),
@@ -52,10 +98,23 @@ I2P_PROXIES = {
 #
 # BitChan
 #
+
 INSTALL_DIR = "/usr/local/bitchan"
+
+if DOCKER:
+    DAEMON_BIND_IP = "172.28.1.5"
+    CODE_DIR = "/home/bitchan"
+else:
+    DAEMON_BIND_IP = "127.0.0.1"
+    CODE_DIR = "/usr/local/bitchan/BitChan"
+
+BITCHAN_DIR = os.path.abspath(
+    os.path.dirname(os.path.realpath(__file__)))
 REFRESH_BOARD_INFO = 20
 REFRESH_CHECK_DOWNLOAD = 5
-REFRESH_ADDRESS_MSG = 20
+REFRESH_MSGS = 20
+REFRESH_ADDRESSES = 60
+REFRESH_STATS = 90
 REFRESH_CHECK_SYNC = 30
 REFRESH_THREAD_QUEUE = 5
 REFRESH_CHECK_LISTS = (60 * 60 * 6)  # 6 hours
@@ -65,6 +124,7 @@ REFRESH_EXPIRES_TIME = (60 * 10)  # 10 minutes
 REFRESH_DELETE_SENT = (60 * 10)  # 10 minutes
 REFRESH_REMOVE_DEL = (60 * 60 * 24)  # 1 day
 REFRESH_UNREAD_COUNT = 120
+REFRESH_WIPE = 120
 SESSION_TIMEOUT_DAYS = 30
 MAX_PROC_THREADS = 5
 API_CHECK_FREQ = 15
@@ -76,6 +136,7 @@ BM_TTL = 60 * 60 * 24 * 28  # 28 days
 BM_PAYLOAD_MAX_SIZE = 2 ** 18 - 500  # 261,644
 CLEAR_INVENTORY_WAIT = 60 * 10  # 10 minutes
 LIST_ADD_WAIT_TO_SEND_SEC = 60 * 5  # 5 minutes
+OP_RESEND_JSON_OBJ_SEC = 60 * 60 * 24 * 20  # 20 days
 ID_LENGTH = 9
 LABEL_LENGTH = 25
 DESCRIPTION_LENGTH = 128
@@ -122,7 +183,9 @@ ALEMBIC_POST = os.path.join(INSTALL_DIR, 'post_alembic_versions')
 DATABASE_BITCHAN = os.path.join(INSTALL_DIR, 'bitchan.db')
 FILE_DIRECTORY = os.path.join(INSTALL_DIR, "downloaded_files")
 LOG_DIRECTORY = os.path.join(INSTALL_DIR, "log")
-LOG_FILE = os.path.join(LOG_DIRECTORY, "bitchan.log")
+LOG_BACKEND_FILE = os.path.join(LOG_DIRECTORY, "bitchan_backend.log")
+LOG_FRONTEND_FILE = os.path.join(LOG_DIRECTORY, "bitchan_frontend.log")
+BAN_THUMB_DIRECTORY = os.path.join(INSTALL_DIR, "banned_thumbs")
 
 LOCKFILE_ADMIN_CMD = "/var/lock/bc_admin_cmd.lock"
 LOCKFILE_API = "/var/lock/bm_api.lock"
@@ -142,7 +205,6 @@ ADMIN_OPTIONS = [
     "word_replace",
     "css",
     "banner_base64",
-    "spoiler_base64",
     "long_description",
 ]
 
@@ -152,11 +214,11 @@ GAMES = {
 }
 
 DICT_UPLOAD_SERVERS = {
-    "pomf.cat": {
+    "desu.si": {
         "type": "curl",
         "subtype": None,
-        "uri": "https://pomf.cat/upload.php",
-        "download_prefix": "https://a.pomf.cat",
+        "uri": "https://desu.si/upload.php",
+        "download_prefix": None,
         "response": "JSON",
         "json_key": None,
         "direct_dl_url": True,
@@ -165,22 +227,7 @@ DICT_UPLOAD_SERVERS = {
         "http_headers": None,
         "proxy_type": "tor",
         "replace_download_domain": None,
-        "form_name": "pomf.cat (75 MB)"
-    },
-    "lyrhscn2hfe6mjn7jo3titioitfzcy7x23hhkksydin6ildsgxiq.b32.i2p": {
-        "type": "curl",
-        "subtype": "simple_upload",
-        "uri": 'http://lyrhscn2hfe6mjn7jo3titioitfzcy7x23hhkksydin6ildsgxiq.b32.i2p/upload',
-        "download_prefix": None,
-        "response": "JSON",
-        "json_key": 'direct_url',
-        "direct_dl_url": True,
-        "extra_curl_options": None,
-        "upload_word": None,
-        "http_headers": '["Accept: application/json"]',
-        "proxy_type": "i2p",
-        "replace_download_domain": None,
-        "form_name": "bunkerfiles.i2p (? MB, 12h expire)"
+        "form_name": "desu.si (5 GB, 24h expire)"
     },
     "apo53zid3xe7rewxjw7whdym2rmyowsj7jeoiwrl5zlmf7oqrxwq.b32.i2p": {
         "type": "curl",
@@ -212,25 +259,10 @@ DICT_UPLOAD_SERVERS = {
         "replace_download_domain": None,
         "form_name": "uguu.se (100 MB, 24h expire)"
     },
-    "femto.pw": {
+    "pomf.wtf": {
         "type": "curl",
         "subtype": None,
-        "uri": "https://v2.femto.pw/upload",
-        "download_prefix": "https://femto.pw",
-        "response": "JSON",
-        "json_key": None,
-        "direct_dl_url": True,
-        "extra_curl_options": None,
-        "upload_word": "upload",
-        "http_headers": None,
-        "proxy_type": "tor",
-        "replace_download_domain": None,
-        "form_name": "v2.femto.pw (8 GB)"
-    },
-    "youdieifyou.work": {
-        "type": "curl",
-        "subtype": None,
-        "uri": "https://youdieifyou.work/upload.php",
+        "uri": "https://pomf.wtf/upload.php",
         "download_prefix": None,
         "response": "JSON",
         "json_key": None,
@@ -240,18 +272,8 @@ DICT_UPLOAD_SERVERS = {
         "http_headers": None,
         "proxy_type": "tor",
         "replace_download_domain": None,
-        "form_name": "youdieifyou.work (128 MB)"
+        "form_name": "pomf.wtf (5 GB, ?h expire)"
     },
-    # "catbox.moe": {  # Some tor IPs are blocked, don't use. Here for posterity.
-    #     "type": "curl",
-    #     "uri": "https://catbox.moe/user/api.php",
-    #     "download_prefix": None,
-    #     "response": "str_url",
-    #     "direct_dl_url": True,
-    #     "extra_curl_options": "-F reqtype=fileupload",
-    #     "upload_word": "fileToUpload",
-    #     "form_name": "catbox.moe (200 MB)"
-    # },
     "anonfile": {
         "type": "anonfile",
         "subtype": None,
@@ -282,6 +304,65 @@ DICT_UPLOAD_SERVERS = {
         "replace_download_domain": None,
         "form_name": "bayfiles.com (20 GB)"
     }
+
+    # No longer exist, used for reference to settings
+
+    # "catbox.moe": {  # Some tor IPs are blocked
+    #     "type": "curl",
+    #     "uri": "https://catbox.moe/user/api.php",
+    #     "download_prefix": None,
+    #     "response": "str_url",
+    #     "direct_dl_url": True,
+    #     "extra_curl_options": "-F reqtype=fileupload",
+    #     "upload_word": "fileToUpload",
+    #     "form_name": "catbox.moe (200 MB)"
+    # },
+    # "femto.pw": {
+    #     "type": "curl",
+    #     "subtype": None,
+    #     "uri": "https://v2.femto.pw/upload",
+    #     "download_prefix": "https://femto.pw",
+    #     "response": "JSON",
+    #     "json_key": None,
+    #     "direct_dl_url": True,
+    #     "extra_curl_options": None,
+    #     "upload_word": "upload",
+    #     "http_headers": None,
+    #     "proxy_type": "tor",
+    #     "replace_download_domain": None,
+    #     "form_name": "v2.femto.pw (8 GB)"
+    # },
+    # "lyrhscn2hfe6mjn7jo3titioitfzcy7x23hhkksydin6ildsgxiq.b32.i2p": {
+    #     "type": "curl",
+    #     "subtype": "simple_upload",
+    #     "uri": 'http://lyrhscn2hfe6mjn7jo3titioitfzcy7x23hhkksydin6ildsgxiq.b32.i2p/upload',
+    #     "download_prefix": None,
+    #     "response": "JSON",
+    #     "json_key": 'direct_url',
+    #     "direct_dl_url": True,
+    #     "extra_curl_options": None,
+    #     "upload_word": None,
+    #     "http_headers": '["Accept: application/json"]',
+    #     "proxy_type": "i2p",
+    #     "replace_download_domain": None,
+    #     "form_name": "bunkerfiles.i2p (? MB, 12h expire)"
+    # },
+    # "youdieifyou.work": {
+    #     "type": "curl",
+    #     "subtype": None,
+    #     "uri": "https://youdieifyou.work/upload.php",
+    #     "download_prefix": None,
+    #     "response": "JSON",
+    #     "json_key": None,
+    #     "direct_dl_url": True,
+    #     "extra_curl_options": None,
+    #     "upload_word": "files[]",
+    #     "http_headers": None,
+    #     "proxy_type": "tor",
+    #     "replace_download_domain": None,
+    #     "form_name": "youdieifyou.work (128 MB)"
+    # },
+
 }
 UPLOAD_BANNED_EXT = ["exe", "scr", "cpl", "doc", "jar", "zip", "tar"]
 UPLOAD_ENCRYPTION_CIPHERS = [
@@ -373,6 +454,7 @@ THEMES_LIGHT = ["Classic", "Frosty"]
 #
 # Mailbox
 #
+
 MSGS_PER_PAGE = [
     (5, "5 per page"),
     (15, "15 per page"),
@@ -384,14 +466,13 @@ MSGS_PER_PAGE = [
 #
 # Misc.
 #
-DOCKER = os.environ.get('DOCKER', False) == 'TRUE'
 
 if DOCKER:
     PYRO_URI = 'PYRO:bitchan.pyro_server@bitchan_daemon:9099'
 else:
     PYRO_URI = 'PYRO:bitchan.pyro_server@127.0.0.1:9099'
 
-PATH_RUN = '/var/run'
+PATH_RUN = '/run'
 PATH_DAEMON_PID = os.path.join(PATH_RUN, 'bitchan.pid')
 
 directories = [LOG_DIRECTORY, FILE_DIRECTORY]
@@ -401,18 +482,6 @@ for each_directory in directories:
             os.makedirs(each_directory)
         except Exception:
             pass
-
-logging.basicConfig(
-    level=LOG_LEVEL,
-    format="[%(asctime)s] %(levelname)s/%(name)s: %(message)s",
-    handlers=[
-        handlers.RotatingFileHandler(
-            LOG_FILE, mode='a', maxBytes=5*1024*1024,
-            backupCount=1, encoding=None, delay=False
-        ),
-        logging.StreamHandler()
-    ]
-)
 
 
 class ProdConfig(object):
@@ -434,13 +503,17 @@ class ProdConfig(object):
     SESSION_TYPE = "filesystem"
     SESSION_PERMANENT = False
     PERMANENT_SESSION_LIFETIME = timedelta(days=30)
+    WTF_CSRF_TIME_LIMIT = 60*60*24 * 2  # expire in 2 days
 
     CAPTCHA_ENABLE = True
     CAPTCHA_LENGTH = 5
     CAPTCHA_WIDTH = 160
     CAPTCHA_HEIGHT = 50
-    CAPTCHA_FONTS = ['/home/bitchan/static/fonts/carbontype.ttf']
-    DB_PATH = 'sqlite:///{}'.format(DATABASE_BITCHAN)
+    if DOCKER:
+        CAPTCHA_FONTS = ['/home/bitchan/static/fonts/carbontype.ttf']
+    else:
+        CAPTCHA_FONTS = ['/usr/local/bitchan/BitChan/static/fonts/carbontype.ttf']
 
+    DB_PATH = 'sqlite:///{}'.format(DATABASE_BITCHAN)
     SQLALCHEMY_DATABASE_URI = 'sqlite:///{}'.format(DATABASE_BITCHAN)
     SQLALCHEMY_TRACK_MODIFICATIONS = False

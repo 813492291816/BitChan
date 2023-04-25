@@ -42,6 +42,9 @@
         {% include '/elements/board/post_header_options/sticky_thread_for_you.html' %}
 		{% include '/elements/board/post_header_options/lock_thread_for_you.html' %}
         {% include '/elements/board/post_header_options/anchor_thread_for_you.html' %}
+        {% if post.file_amount %}
+            {% include '/elements/board/post_header_options/attachment_options.html' %}
+        {% endif %}
         {% include '/elements/board/post_header_options/delete_thread_for_you.html' %}
         {% include '/elements/board/post_header_options/delete_post_for_you.html' %}
         {% include '/elements/board/post_header_options/delete_post_with_comment_for_you.html' %}
@@ -52,18 +55,23 @@
             {% include '/elements/board/post_header_options/lock_thread_for_everyone.html' %}
             {% include '/elements/board/post_header_options/anchor_thread_for_everyone.html' %}
             {% include '/elements/board/post_header_options/delete_thread_for_everyone.html' %}
+        {% elif secondary_access -%}
+            {% include '/elements/board/post_header_options/delete_thread_for_everyone.html' %}
         {%- endif %}
     {% else -%}
         {% if post.hide -%}
             {% include '/elements/board/post_header_options/restore_post.html' %}
         {%- endif %}
+        {% if post.file_amount %}
+            {% include '/elements/board/post_header_options/attachment_options.html' %}
+        {% endif %}
         {% include '/elements/board/post_header_options/delete_post_for_you.html' %}
         {% include '/elements/board/post_header_options/delete_post_with_comment_for_you.html' %}
         <tr class="menu-entry"><td></td></tr>
         {% include '/elements/board/post_header_options/delete_post_with_password.html' %}
     {%- endif %}
 
-    {% if primary_access -%}
+    {% if primary_access or secondary_access -%}
         {% include '/elements/board/post_header_options/delete_post_for_everyone.html' %}
         {% include '/elements/board/post_header_options/delete_post_with_comment_for_everyone.html' %}
     {%- endif %}
@@ -109,11 +117,7 @@
 {%- endif %}
 
 {%- if post.timestamp_sent -%}
-    {%- if post.expires_time -%}
-&nbsp;<span title="TTL Expires {{timestamp_to_date(post.expires_time)}}">{{timestamp_to_date(post.timestamp_sent)}}</span>
-    {%- else -%}
-&nbsp;{{timestamp_to_date(post.timestamp_sent)}}
-    {%- endif -%}
+&nbsp;<span title="Received {{timestamp_to_date(post.timestamp_received)}}{% if post.expires_time %}, TTL Expiration {{timestamp_to_date(post.expires_time)}}{% endif %}">{{timestamp_to_date(post.timestamp_sent)}}</span>
 {%- endif %}
 
 {%- if post.sage -%}
@@ -165,15 +169,15 @@
 &nbsp;[<a class="link" href="/thread/{{post.thread.chan.address}}/{{post.thread.thread_hash_short}}?last=100">Last 100</a>]
     {%- endif -%}
 {%- else -%}
-&nbsp;<a class="link" href="#popup_reply" onclick="javascript:reply_link_to_comment('{{post.post_id}}');">{{post.post_id}}</a>
+&nbsp;<a class="link" href="#popup_reply" title="Post ID" onclick="javascript:reply_link_to_comment('{{post.post_id}}');">{{post.post_id}}</a>
 {%- endif -%}
 
 {%- if post.post_number -%}
-&nbsp;/ <span title="Post Number">{{post.post_number}}</span>
+&nbsp;/ <span title="Board Post Number">{{post.post_number}}</span>
 {%- endif -%}
 
 {%- set reply_dict = get_post_replies_dict(post.message_id) -%}
-{%- if reply_dict -%}
+{%- if reply_dict and not post.thread.hide and not post.hide -%}
 &nbsp;<span style="font-size: 0.75em">
     {% for each_id, msg_data in reply_dict.items() %}
         {% if msg_data["message"] and msg_data["msg_location"] == "local_same_thread" %}

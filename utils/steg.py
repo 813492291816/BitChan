@@ -5,11 +5,10 @@ import os
 from io import BytesIO
 
 import gnupg
-from utils.stegano import lsb
 from utils.stegano.exifHeader import exifHeader
 
 import config
-from utils.encryption import decrypt_safe_size
+from utils.encryption_decrypt import decrypt_safe_size
 from utils.replacements import process_replacements
 
 logger = logging.getLogger('bitchan.steg')
@@ -22,11 +21,11 @@ def steg_encrypt(orig_img, steg_img, sec_msg, gpg_pass):
         if org_file_ext in ["jpg", "jpeg", "tiff"]:
             # PGP-encrypt steg message
             gpg = gnupg.GPG()
-            sec_msg = gpg.encrypt(
+            enc_msg = gpg.encrypt(
                 sec_msg, symmetric="AES256", passphrase=gpg_pass, recipients=None)
 
             # base64-encode encrypted steg message
-            msg_enc_b64enc = base64.b64encode(sec_msg.data).decode()
+            msg_enc_b64enc = base64.b64encode(enc_msg.data).decode()
 
             if org_file_ext in ["jpg", "jpeg", "tiff"]:
                 exifHeader.hide(orig_img, steg_img, secret_message=msg_enc_b64enc)
@@ -90,7 +89,7 @@ def check_steg(message_id, file_extension, passphrase=config.PGP_PASSPHRASE_STEG
             logger.info("{}: Found steg message in attached image".format(message_id[-config.ID_LENGTH:].upper()))
             message_steg = html.escape(steg_message)
             message_steg = process_replacements(
-                message_steg, "{}steg".format(message_id), message_id)
+                message_steg, "{}steg".format(message_id), message_id, steg=True)
             return message_steg
         except Exception as err:
             logger.error("Error processing replacements: {}".format(err))

@@ -50,17 +50,138 @@ Board
 
 {% block head %}
     <script>
-        function checkForm(form) {
-            form.submit_post.disabled = true;
-            form.submit_post.value = "Please wait...";
+        function refresh_captcha() {
+            $.getJSON("/captcha/post_captcha/0/1",
+                function(captcha, responseText, jqXHR) {
+                    if (jqXHR.status !== 204) {
+                        var captcha_update = document.getElementById('post_captcha');
+                        captcha_update.src = "data:image/png;base64, " + captcha['b64'];
+                        var page_id_update = document.getElementById('page_id');
+                        page_id_update.value = captcha['page_id'];
+                    }
+                    else {
+                        console.log("Captcha error: " + responseText);
+                    }
+                }
+            );
+        }
+
+        function send_post(form, form_data) {
+            $.ajax({
+                type: "GET",
+                url: "/csrf/{{thread.chan.address}}",
+                success: function (csrf_token) {
+
+                    form_data.set('csrf_token', csrf_token);
+
+                    $.ajax({
+                        type: "POST",
+                        enctype: 'multipart/form-data',
+                        url: "/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}?ref=1",
+                        data: form_data,
+                        processData: false,
+                        contentType: false,
+                        cache: false,
+                        timeout: 800000,
+                        success: function (data) {
+
+                            let output_str = '<a class="close_reply_return themed" href="#popup_reply" onclick="document.getElementById(\'reply_submit_output\').style.display = \'none\'">X</a><span style="word-break: break-all" class="themed';
+                            if ("status_title" in data) {
+                                if (data.status_title === "Success" || data.status_title === "Preview") {
+                                    output_str += ' success">Success: ';
+                                }
+                                else if (data.status_title === "Error") {
+                                    output_str += ' error">Error: ';
+                                }
+                                else {
+                                    output_str += '">Unknown Status: ';
+                                }
+                            }
+                            if ("status_message" in data) {
+                                output_str += data.status_message;
+                            }
+                            if ("preview" in data) {
+                                document.getElementById("post_preview").style.display = '';
+                                document.getElementById("post_preview_body").style.display = '';
+                                $("#reply_submit_preview").html(data.preview);
+                            }
+                            output_str += '</span>';
+                            $("#reply_submit_output").html(output_str);
+                            $("#reply_submit_output").css("display", "initial")
+                            $("#btn_preview_submit").prop("value", "Preview");
+                            $("#btn_preview_submit").prop("disabled", false);
+                            $("#btn_reply_submit").prop("value", "Post");
+                            $("#btn_reply_submit").prop("disabled", false);
+
+                            if ("status_title" in data && data.status_title === "Success" && !("preview" in data)) {
+                                form.reset();
+                                document.getElementById("post_preview").style.display = 'none';
+                                document.getElementById("post_preview_body").style.display = 'none';
+                            }
+
+                            refresh_captcha();
+
+                        },
+                        error: function (e) {
+
+                            $("#reply_submit_output").text('<span style="word-break: break-all" class="themed error">Error: ' + e.responseText + '</span>');
+                            $("#reply_submit_output").css("display", "initial")
+                            $("#btn_preview_submit").prop("value", "Preview");
+                            $("#btn_preview_submit").prop("disabled", false);
+                            $("#btn_reply_submit").prop("value", "Post");
+                            $("#btn_reply_submit").prop("disabled", false);
+                            refresh_captcha();
+
+                        }
+                    });
+
+                },
+                error: function (e) {
+
+                    $("#reply_submit_output").text('<span style="word-break: break-all" class="themed error">Error: Could not get CSRF Token</span>');
+                    $("#reply_submit_output").css("display", "initial")
+                    $("#btn_preview_submit").prop("value", "Preview");
+                    $("#btn_preview_submit").prop("disabled", false);
+                    $("#btn_reply_submit").prop("value", "Post");
+                    $("#btn_reply_submit").prop("disabled", false);
+                    refresh_captcha();
+
+                }
+            });
         }
 
         $(document).ready(function() {
+
+            $("#btn_preview_submit").click(function (event) {
+                event.preventDefault();
+                $("#reply_submit_output").html('');
+                var form = $('#reply_form')[0];
+                var form_data = new FormData(form);
+                $("#btn_preview_submit").prop("disabled", true);
+                $("#btn_reply_submit").prop("disabled", true);
+                $("#btn_preview_submit").prop("value", "Wait...");
+
+                form_data.append("preview_post", true);
+                send_post(form, form_data);
+            });
+
+            $("#btn_reply_submit").click(function (event) {
+                event.preventDefault();
+                $("#reply_submit_output").html('');
+                var form = $('#reply_form')[0];
+                var form_data = new FormData(form);
+                $("#btn_preview_submit").prop("disabled", true);
+                $("#btn_reply_submit").prop("disabled", true);
+                $("#btn_reply_submit").prop("value", "Wait...");
+
+                send_post(form, form_data);
+            });
+
             var post_update_init = document.getElementById('new-post-update-init');
-            post_update_init.innerHTML = '/ <button onclick="reset_new_post_counter()">Update</button> Next Update: '
+            post_update_init.innerHTML = '/ <button onclick="reset_new_post_counter()">Update</button> Next Update: ';
 
             var post_update = document.getElementById('new-post-update');
-            post_update.innerHTML = '...'
+            post_update.innerHTML = '...';
 
             var volume_set = document.getElementsByClassName("volume-75");
             if (volume_set.length > 0) {
@@ -68,6 +189,7 @@ Board
                     if (volume_set[i] !== undefined) volume_set[i].volume = 0.75;
                 }
             }
+
         });
 
         function randomString(id_field) {
@@ -154,6 +276,15 @@ Board
           user-select: none;
           font-size: 1em;
         }
+
+        .reply_return .close_reply_return {
+          padding: 5px;
+          font-size: 30px;
+          font-weight: bold;
+          text-decoration: none;
+          user-select: none;
+          font-size: 1em;
+        }
     </style>
 {% endblock %}
 
@@ -169,7 +300,7 @@ Board
 {% endblock %}
 
 {% block body %}
-    {% if thread and not is_private or (is_private and on_any_access_list) %}
+    {% if (thread and not is_private or (is_private and on_any_access_list)) and not thread.hide %}
     <div id="popup_reply" class="overlay" style="z-index: 2;">
         <div id="popup_content" class="themed popup_reply_bg popup_reply">
             <span class="themed">Replying to {{thread.subject|safe}}</span>
@@ -188,6 +319,10 @@ Board
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
     <br/>
+
+    {% if status_msg["status_message"] -%}
+        {% include '/elements/status.html' %}
+    {% endif %}
 
     <center>
         <span class="themed" style="font-size: 1.5em">
@@ -241,6 +376,11 @@ Board
 
     {%- set thread_options = get_thread_options(thread.thread_hash) %}
 
+    {% set post_order_asc = board["messages"].timestamp_sent.asc() %}
+    {% if settings.post_timestamp == 'received' %}
+        {% set post_order_asc = board["messages"].timestamp_received.asc() %}
+    {% endif %}
+
     {%- set steg_found = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_steg.isnot("{}")).count() -%}
@@ -255,7 +395,7 @@ Board
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
            .filter(board["messages"].message_steg.isnot("{}"))
-           .order_by(board["messages"].timestamp_sent.asc()) -%}
+           .order_by(post_order_asc) -%}
 
     {% if message_op_steg or message_replies_steg.count() -%}
     <div style="padding-top: 1em">
@@ -263,10 +403,6 @@ Board
             <h1 class="themed bold">Steganography Found</h1> <a class="link" href="/thread_steg/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">View Steg</a>
         </center>
     </div>
-    {% endif %}
-
-    {% if status_msg["status_message"] -%}
-        {% include '/elements/status.html' %}
     {% endif %}
 
     {% if ((not is_private or (is_private and on_any_access_list)) and (not thread_options['lock_remote'] and not thread_options['lock_local'])) or primary_access -%}
@@ -285,54 +421,86 @@ Board
     {%- set message_replies = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
-           .order_by(board["messages"].timestamp_sent.asc()) -%}
+           .order_by(post_order_asc) -%}
+
+    {% if message_op %}
+        {% set post = message_op %}
+        {% set text = post.message %}
+    {% endif %}
+
+    {% if thread.hide %}
+
+    <div class="thread" style="padding-bottom: 1em">
+        {% include '/elements/board/thread_hidden.html' %}
+    </div>
+
+    {% else %}
 
     <div class="thread">
-    {% set now = time.time() %}
-    {% if message_op -%}
-        {%- set post = message_op -%}
-        {%- set text = message_op.message -%}
-        {{generate_post_html(post.message_id)|safe}}
-    {% else -%}
-        {% include '/elements/board/op_missing.html' %}
-    {% endif %}
-
-    {% if settings.debug_posts -%}
-        {%- set debug_post_columns, debug_post_data = debug_info_post(post.message_id) -%}
-        {% if debug_post_columns and not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) -%}
-            {% include '/elements/board/debug_info_post.html' %}
-        {% endif %}
-    {% endif %}
-
-    {% if last and message_replies.count() > last -%}
-        <br/>
-        <span class="expand">{{message_replies.count()}} replies found. Showing last {{last}}.</span>
-        {% set message_replies = board["messages"].query
-           .filter(board["messages"].thread_id == thread.id)
-           .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
-           .order_by(board["messages"].timestamp_sent.desc())
-           .limit(last).from_self()
-           .order_by(board["messages"].timestamp_sent.asc()) %}
-    {% endif %}
-
-    {% for each_message in message_replies -%}
-        {%- set post = each_message -%}
-        {%- set text = each_message.message -%}
-        {%- set reply_steg = board["messages"].query
-           .filter(board["messages"].message_id == each_message.message_id)
-           .filter(board["messages"].message_steg.isnot("{}")).count() -%}
-        <div class="post plaque" id="{{post.post_id}}">
+        {% set now = time.time() %}
+        {% if message_op -%}
             {{generate_post_html(post.message_id)|safe}}
-        </div>
+        {% else -%}
+            {% include '/elements/board/op_missing.html' %}
+        {% endif %}
 
-        {% if settings.debug_posts -%}
+        {% if message_op and settings.debug_posts -%}
             {%- set debug_post_columns, debug_post_data = debug_info_post(post.message_id) -%}
             {% if debug_post_columns and not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) -%}
                 {% include '/elements/board/debug_info_post.html' %}
             {% endif %}
         {% endif %}
-    {% endfor %}
+
+        {% if last and message_replies.count() > last -%}
+            {% set post_order_desc = board["messages"].timestamp_sent.desc() %}
+            {% if settings.post_timestamp == 'received' %}
+                {% set post_order_desc = board["messages"].timestamp_received.desc() %}
+            {% endif %}
+
+        <br/>
+        <span class="expand">{{message_replies.count()}} replies found. Showing last {{last}}.</span>
+            {% set message_start = board["messages"].query
+               .filter(board["messages"].thread_id == thread.id)
+               .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
+               .order_by(post_order_desc)
+               .limit(last)
+               .all() %}
+
+            {% set message_replies = board["messages"].query
+               .filter(board["messages"].thread_id == thread.id)
+               .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
+               .filter(board["messages"].timestamp_sent >= message_start[-1].timestamp_sent)
+               .order_by(post_order_asc) %}
+
+            {% if settings.post_timestamp == 'received' %}
+                {% set message_replies = board["messages"].query
+                   .filter(board["messages"].thread_id == thread.id)
+                   .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
+                   .filter(board["messages"].timestamp_received >= message_start[-1].timestamp_received)
+                   .order_by(post_order_asc) %}
+            {% endif %}
+        {% endif %}
+
+        {% for each_message in message_replies -%}
+            {%- set post = each_message -%}
+            {%- set text = each_message.message -%}
+            {%- set reply_steg = board["messages"].query
+               .filter(board["messages"].message_id == each_message.message_id)
+               .filter(board["messages"].message_steg.isnot("{}")).count() -%}
+        <div class="post plaque" id="{{post.post_id}}">
+            {{generate_post_html(post.message_id)|safe}}
+        </div>
+
+            {% if settings.debug_posts -%}
+                {%- set debug_post_columns, debug_post_data = debug_info_post(post.message_id) -%}
+                {% if debug_post_columns and not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) -%}
+                    {% include '/elements/board/debug_info_post.html' %}
+                {% endif %}
+            {% endif %}
+        {% endfor %}
     </div>
+
+    {% endif %}
 
     <div class="themed" style="clear: both; text-align: left; padding-left: 1.5em;">
         <div class="themed">

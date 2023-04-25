@@ -1,0 +1,19 @@
+[Unit]
+Description=Bitmessage Daemon
+After=network.target
+
+[Service]
+User=bitchan
+Group=bitchan
+Type=forking
+Restart=on-failure
+KillMode=process
+WorkingDirectory=/usr/local/bitchan/bitmessage
+Environment="BITMESSAGE_HOME=/usr/local/bitchan/bitmessage"
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/local/bitchan/venv2/bin/python /usr/local/bin/pybitmessage -d
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
+Alias=bitchan_bitmessage.service

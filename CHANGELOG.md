@@ -1,4 +1,57 @@
+## 1.2.0 (2023/04/24)
+
+This release incorporates several changes that are incompatible with the previous version. Therefore, it is recommended to do a clean install.
+
+This release also enables BitChan to be installed natively in a Debian-based Linux operating system without the use of Docker. This is now the recommended installation method. See INSTALL.md for instructions.
+
+ - Fix hiding posts if thread is hidden
+ - Fix preventing posting on hidden threads
+ - Fix Automatic Wipe of boards
+ - Fix cross-post links
+ - Fix starting attachment downloads from /recent page
+ - Fix adding boards/lists from passphrase links in posts
+ - Fix issue if height/width not able to be determined from attachment images/video
+ - Fix display of video attachments with greater height than width
+ - Fix deleting and regenerating posts
+ - Fix upload site check that may prevent downloading some attachments
+ - Fix issue with post HTML cache not updating after an attachment download completes
+ - Fix saving post formatting/HTML
+ - Fix premature end of post replacement matching
+ - Fix table checkerboard coloring on recent page applying to post dropdowns
+ - Add ability to reply to threads without refreshing the page
+ - Add ability to heal missing OP of OP-less threads
+ - Add additional PGP functionality for posts
+ - Add ability to combine Bitmessage knownnodes.dat (/diag page)
+ - Add ability to switch between ordering posts using sent and received timestamps
+ - Add ability to ban attachments and automatically delete posts with banned attachments
+ - Add ability to ban strings/regexes from post body/subject and automatically delete posts
+ - Add ability to set automatic string replacements
+ - Add ability to set post header time timezone and 12/24-hour format
+ - Add Maintenance Mode
+ - Add highlighting to refreshed posts in threads
+ - Add custom List banners on home page
+ - Add BitChan Environment Info to /status page
+ - Add warning when attempting to add unlisted Boards/Lists to a List
+ - Add Bitmessage Inbound and Outbound Connections to /status page
+ - Add ability to disable use of "No Encryption" attachment encryption option
+ - Add ability to set the maximum post size
+ - Add kiosk TTL options to set max TTL or force TTL
+ - Add ability to see post preview with text formatting before posting
+ - Add Attachment Option: Change Spoiler
+ - Add blurred spoilers
+ - Add ability to spoiler video attachments
+ - Add ability to disable upload sites
+ - Add ability to set bitmessage in/out connection settings with simple dropdown
+ - Add post attachment upload progress page
+ - Remove Admin Command: Custom Spoiler
+ - Improve data display on /stats page
+ - Update tor to 0.4.7.9
+ - Update i2pd to 2.47.0
+
+
 ## 1.1.1 (2022/05/15)
+
+Users with BitChan < 0.11.0 can not upgrade and will need to follow the instructions listed in the README to clean and install BitChan. Users with Bitchan >= 0.11.0 that wish to upgrade need to pull the new code, delete a volume, then build, as follows:
 
 ```
 cd BitChan/docker

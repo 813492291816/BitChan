@@ -1,6 +1,7 @@
 import logging
 import signal
 import sys
+from logging import handlers
 
 from flask import Flask
 from flask_session import Session
@@ -10,7 +11,20 @@ from database.models import populate_db
 from flask_extensions import db
 from utils.flask_session_captcha import FlaskSessionCaptcha
 
-logger = logging.getLogger('bitchan')
+logging.basicConfig(
+    level=config.LOG_LEVEL,
+    format="[%(asctime)s] %(levelname)s/%(name)s: %(message)s",
+    handlers=[
+        handlers.RotatingFileHandler(
+            config.LOG_FRONTEND_FILE, mode='a', maxBytes=5 * 1024 * 1024,
+            backupCount=1, encoding=None, delay=False
+        ),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger("bitchan.flask")
+logger.info("Frontend starting")
 
 app = Flask(__name__)
 

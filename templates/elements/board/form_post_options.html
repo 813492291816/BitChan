@@ -6,10 +6,23 @@
       </td>
     </tr>
 {% endif %}
+
+{% set max_ttl = get_max_ttl() %}
+{% set max_ttl_msg = "" %}
+{% if settings.enable_kiosk_mode and settings.kiosk_ttl_option not in ["forced_28_days", "forced_102_hours" , "forced_custom"] %}
+    {% set max_ttl_msg = ", max " + max_ttl|string %}
+{% elif settings.enable_kiosk_mode and settings.kiosk_ttl_option in ["forced_28_days", "forced_102_hours" , "forced_custom"] %}
+    {% set max_ttl_msg = ", static TTL" %}
+{% endif %}
     <tr>
-      <td class="form themed bold"><label for="ttl">TTL (seconds)</label></td>
+      <td class="form themed bold"><label for="ttl">TTL (seconds{{max_ttl_msg}})</label></td>
       <td>
-          <input style="width: 100%; box-sizing: border-box;" type="number" id="ttl" name="ttl" value="{% if 'ttl' in form_populate and form_populate['ttl'] %}{{form_populate['ttl']}}{% else %}2419200{% endif %}"/>
+          {% if settings.enable_kiosk_mode and settings.kiosk_ttl_option in ["forced_28_days", "forced_102_hours" , "forced_custom"] %}
+          <input style="width: 100%; box-sizing: border-box;" type="number" id="ttl" name="ttl" value="{{max_ttl}}" disabled/>
+          <input type="hidden" id="ttl" name="ttl" value="{{max_ttl}}"/>
+          {% else %}
+          <input style="width: 100%; box-sizing: border-box;" type="number" id="ttl" name="ttl" value="{% if 'ttl' in form_populate and form_populate['ttl'] %}{{form_populate['ttl']}}{% else %}{{max_ttl}}{% endif %}"/>
+          {% endif %}
       </td>
     </tr>
     <tr>

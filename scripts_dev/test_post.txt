@@ -5,10 +5,13 @@
 __underline__
 ++strikethrough++
 ``highlight``
+[back]backwards[/back]
+[cap]cap[/cap]
+[kern]kern[/kern]
 Test^^superscript^^
 Test%%subscript%%
---smol--
-==big==
+$$smol$$
+##big##
 **spoiler**
 ^rred^r
 ^bblue^b
@@ -22,10 +25,19 @@ Test%%subscript%%
 [flash]flashing[/flash]
 [meme]meme[/meme]
 [autism]autism[/autism]
+[rot=45]D[/rot]
 [aa]        /\_/\
    ____/ o o \
  /~____  =ø= /
 (______)__m_m)[/aa]
+[aa-s]        /\_/\
+   ____/ o o \
+ /~____  =ø= /
+(______)__m_m)[/aa-s]
+[aa-xs]        /\_/\
+   ____/ o o \
+ /~____  =ø= /
+(______)__m_m)[/aa-xs]
 >>>BM-2cXxMxqBBEMAdZhL86K4i2W7cUBj72EVCj
 [identity]BM-2cW1cSbE6JN9e23wNCXz9XVQLiAJoTVLJm[/identity]
 #d20 #4d6
@@ -39,3 +51,20 @@ Test%%subscript%%
 #r3
 #stich
 #godsong
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+Test
+-----END PGP PUBLIC KEY BLOCK-----
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+Test
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.6 (MingW32)
+Test
+-----END PGP SIGNATURE-----
+
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.6 (MingW32)
+Test
+-----END PGP SIGNATURE-----

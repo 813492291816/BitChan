@@ -1,0 +1,85 @@
+{% extends "layout.html" %}
+
+{% block title %}Regex - {% endblock %}
+
+{% block head %}
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+        tr:nth-child(odd) {
+            background-color: {{themes[get_theme()].posthighlight}};
+        }
+
+        .wrap {
+            text-align: center;
+        }
+        .outer {
+            display: inline-block;
+            margin: 0 auto;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+<div class='wrap'>
+
+    <h1 class="title themed bold" style="text-align: center">Regex</h1>
+
+    <form method="post">
+        <table class="table themed" style="max-width: 900px; text-align: left; margin-left: auto; margin-right: auto;">
+            <tr>
+                <td>Regex</td>
+                <td><textarea rows="2" cols="50" id="regex" name="regex">{{form_data['regex']}}</textarea></td>
+            </tr>
+            <tr>
+                <td>Text</td>
+                <td><textarea rows="5" cols="50" id="text" name="text">{{form_data['text']}}</textarea></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><input type="submit" name="test_regex" value="Test Regex"/></td>
+            </tr>
+        </table>
+    </form>
+
+    {% if regex_return %}
+    <table class="table themed" style="max-width: 900px; text-align: left; margin-left: auto; margin-right: auto;">
+        <tr>
+            <td>re.findall</td>
+            <td>
+                {% for match in regex_return['findall'] %}
+                    {{loop.index}}: {{match|safe}}<br/>
+                {% endfor %}
+            </td>
+        </tr>
+        <tr>
+            <td>re.finditer</td>
+            <td>
+                {% for match in regex_return['finditer'] %}
+                    {{loop.index}}: {{match.group()|replace("\n", "<br/>")|safe}}<br/>
+                {% endfor %}
+            </td>
+        </tr>
+        <tr>
+            <td>re.search</td>
+            <td>{% if regex_return['search'] %}{{regex_return['search'].group()|replace("\n", "<br/>")|safe}}{% endif %}</td>
+        </tr>
+        <tr>
+            <td>re.match</td>
+            <td>{{regex_return['match']|safe}}</td>
+        </tr>
+    </table>
+    {% endif %}
+
+    <div style="padding-top: 1em"></div>
+</div>
+{% endblock %}

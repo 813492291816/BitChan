@@ -344,6 +344,10 @@ div.new-post {
     box-shadow:0 0 20px {{theme.new_post}};
 }
 
+div.ref-post {
+    box-shadow:0 0 20px {{theme.refreshed_post}};
+}
+
 div.plaque {
     background-color: {{theme.postbg}};
     color: {{theme.textcolor}};
@@ -429,12 +433,14 @@ div.intro {
     padding: 15px 25px 20px 25px;
 }
 
-h1.error {
+.error {
     font-family: Tahoma,sans-serif;
-    font-size: 20px;
-    letter-spacing: -1px;
-    margin-top: 0px;
-    color: {{theme.textcolor}};
+    color: {{theme.texterror}};
+}
+
+.success {
+    font-family: Tahoma,sans-serif;
+    color: {{theme.textsuccess}};
 }
 
 div.themes {

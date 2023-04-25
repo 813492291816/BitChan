@@ -1,0 +1,195 @@
+{% extends "layout.html" %}
+
+{% set global_admin, _ = allowed_access("is_global_admin") %}
+{% set file_order, attach, number_files = attachment_info(message_id) %}
+{% set post = table_messages.query.filter(table_messages.message_id == message_id).first() %}
+
+{% block title %}Attachment Options - {% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div class="themed" style="width: 100%; text-align: center; padding-bottom: 2em">
+                <form method="post">
+                <h1 class="title themed bold">Attachment Options</h1>
+
+    {% if only_board_address %}
+                <h3 class="themed">Only for board address {{only_board_address}}</h3>
+    {% endif %}
+
+    {% if not post %}
+                <div style="padding-bottom: 1em">
+                    Post not found
+                </div>
+    {% else %}
+
+                <table class="table themed" style="padding-bottom: 0.5em">
+
+
+        {% for each_file in dict_files %}
+
+                    <tr>
+                        <td colspan="2">
+                {% if (post.file_decoded or (post.file_url and post.file_download_successful)) and
+                    (dict_files[each_file]["extension"] in config.FILE_EXTENSIONS_IMAGE +
+                                                       config.FILE_EXTENSIONS_VIDEO +
+                                                       config.FILE_EXTENSIONS_AUDIO) %}
+
+                {% if dict_files[each_file]["extension"] in config.FILE_EXTENSIONS_IMAGE %}
+                            <a class="link" href="/files/file/{{post.message_id}}/{{quote(each_file)}}">Click to Open</a><br/>
+                            <a class="link" href="/files/file/{{post.message_id}}/{{quote(each_file)}}">
+                                <img loading="lazy" style="max-height: 200px; max-width: 200px; border-radius: 2px" class="postimg pic" src="/files/thumb/{{post.message_id}}/{{quote(each_file)}}">
+                            </a>
+                {% elif dict_files[each_file]["extension"] in config.FILE_EXTENSIONS_AUDIO %}
+                            <div class="video" style="border-radius: 5px; margin: 3px 3px 2px 2px; max-width: 450px;">
+                                <audio preload="metadata" class="video-horiz volume-75" controls>
+                                  <source src="/files/file/{{post.message_id}}/{{quote(each_file)}}">
+                                  Your browser does not support the audio tag.
+                                </audio>
+                            </div>
+                {% elif dict_files[each_file]["extension"] in config.FILE_EXTENSIONS_VIDEO %}
+                            <div class="video" style="border: 0px solid #000; border-radius: 5px; margin: 0 auto; margin-bottom: 20px; width: 190px; height: 130px;">
+                                <a class="link" href="/files/file/{{post.message_id}}/{{quote(each_file)}}">Click to Open</a><br/>
+                                <video style="margin-top: 3px;" class="{% if dict_files[each_file]['height'] >= dict_files[each_file]['width'] %}video-vert{% else %}video-horiz{% endif %} volume-75" controls>
+                                    <source src="/files/file/{{post.message_id}}/{{quote(each_file)}}">
+                                    Your browser does not support the video tag.
+                                </video>
+                            </div>
+                {% endif %}
+            {% elif dict_files[each_file]["extension"] %}
+                            <div class="container_file" style="margin: 3px 3px 1px 2px">
+                                <a class="link" href="/files/file/{{post.message_id}}/{{quote(each_file)}}">
+                                    <img style="height: 130px" src="/static/file_blank.png">
+                                    <div class="centered_file">{{dict_files[each_file]["extension"]|upper}}</div>
+                                </a>
+                            </div>
+            {% endif %}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td colspan="2" style="padding-top: 0.5em; padding-bottom:0.2em; text-align: center; font-size: 1.5em">Ban Options</td>
+                    </tr>
+                    <tr>
+                        <td style="text-align: left"><label for="ban_{{dict_files[each_file]['number']}}">Ban Attachment</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="ban_{{dict_files[each_file]['number']}}" name="ban_{{dict_files[each_file]['number']}}" value="y"/></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: left">Only if "Ban Attachment" is selected will the following attachment ban options take effect.</td>
+                    </tr>
+            {% if 'sha256_hash' in dict_files[each_file] %}
+                    <tr>
+                        <td style="text-align: left">SHA256 Hash</td>
+                        <td style="font-family: monospace; text-align: left">
+                            {{dict_files[each_file]['sha256_hash']}}
+                            <input type="hidden" id="sha256_hash_{{dict_files[each_file]['number']}}" name="sha256_hash_{{dict_files[each_file]['number']}}" value="{{dict_files[each_file]['sha256_hash']}}"/>
+                        </td>
+                    </tr>
+            {% endif %}
+            {% if 'imagehash_hash' in dict_files[each_file] %}
+                    <tr>
+                        <td style="text-align: left">Fingerprint Hash</td>
+                        <td style="font-family: monospace; text-align: left">
+                            {{dict_files[each_file]['imagehash_hash']}}
+                            <input type="hidden" id="imagehash_hash_{{dict_files[each_file]['number']}}" name="imagehash_hash_{{dict_files[each_file]['number']}}" value="{{dict_files[each_file]['imagehash_hash']}}"/>
+                        </td>
+                    </tr>
+            {% endif %}
+
+                    <tr>
+                        <td style="text-align: left">Name (optional)</td>
+                        <td style="text-align: left">
+                            <input type="text" id="hashname_{{dict_files[each_file]['number']}}" name="hashname_{{dict_files[each_file]['number']}}" value="{{each_file}}"/>
+                        </td>
+                    </tr>
+
+            {% if only_board_address %}
+                    <tr>
+                        <td style="text-align: left">Board Address</td>
+                        <td style="text-align: left">{{only_board_address}}</td>
+                    </tr>
+            {% elif board_address %}
+                    <tr>
+                        <td style="text-align: left">Board Addresses</td>
+                        <td style="text-align: left"><textarea rows="2" id="boardaddress_{{dict_files[each_file]['number']}}" name="boardaddress_{{dict_files[each_file]['number']}}" style="width: 100%">{{board_address}}</textarea></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: left">Enter one or more board addresses (separated by commas) to ban on those boards. Leaving empty bans globally.</td>
+                    </tr>
+            {% endif %}
+
+                    <tr>
+                        <td style="text-align: left"><label for="deleteposts_{{dict_files[each_file]['number']}}">Delete Posts</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="deleteposts_{{dict_files[each_file]['number']}}" name="deleteposts_{{dict_files[each_file]['number']}}" value="y" checked/></td>
+                    </tr>
+                    <tr>
+                        <td style="text-align: left"><label for="deletethreads_{{dict_files[each_file]['number']}}">Delete Threads (if OP)</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="deletethreads_{{dict_files[each_file]['number']}}" name="deletethreads_{{dict_files[each_file]['number']}}" value="y" checked/></td>
+                    </tr>
+            {% if dict_files[each_file]["extension"] in config.FILE_EXTENSIONS_IMAGE %}
+                    <tr>
+                        <td style="text-align: left"><label for="storethumb_{{dict_files[each_file]['number']}}">Save Thumbnail (30x30)</label></td>
+                        <td style="text-align: left">
+                            <label>
+                                <input type="checkbox" id="storethumb_{{dict_files[each_file]['number']}}" name="storethumb_{{dict_files[each_file]['number']}}" value="y" checked/>
+                            {%- if 'thumb_b64' in dict_files[each_file] and dict_files[each_file]['thumb_b64'] -%}
+                                <img src="/b64_to_img/{{quote(dict_files[each_file]['thumb_b64'])}}">
+                                <input type="hidden" id="thumbb64_{{dict_files[each_file]['number']}}" name="thumbb64_{{dict_files[each_file]['number']}}" value="{{dict_files[each_file]['thumb_b64']}}"/>
+                            {%- endif -%}
+                            </label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="text-align: left"><label for="blurthumb_{{dict_files[each_file]['number']}}">Blur Thumbnail</label></td>
+                        <td style="text-align: left">
+                            <label>
+                                <input type="checkbox" id="blurthumb_{{dict_files[each_file]['number']}}" name="blurthumb_{{dict_files[each_file]['number']}}" value="y"/>
+                            {%- if 'thumb_b64_blur' in dict_files[each_file] and dict_files[each_file]['thumb_b64_blur'] -%}
+                                <img src="/b64_to_img/{{quote(dict_files[each_file]['thumb_b64_blur'])}}">
+                                <input type="hidden" id="thumbb64blur_{{dict_files[each_file]['number']}}" name="thumbb64blur_{{dict_files[each_file]['number']}}" value="{{dict_files[each_file]['thumb_b64_blur']}}"/>
+                            {%- endif -%}
+                            </label>
+                        </td>
+                    </tr>
+            {% endif %}
+
+            {% if dict_files[each_file]["extension"] in config.FILE_EXTENSIONS_IMAGE or dict_files[each_file]["extension"] in config.FILE_EXTENSIONS_VIDEO %}
+                    <tr>
+                        <td colspan="2" style="padding-top: 0.5em; padding-bottom:0.2em; text-align: center; font-size: 1.5em">Spoiler Options</td>
+                    </tr>
+                    <tr>
+                        <td style="text-align: left"><label for="spoiler_{{dict_files[each_file]['number']}}">Enable Spoiler</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="spoiler_{{dict_files[each_file]['number']}}" name="spoiler_{{dict_files[each_file]['number']}}" value="y"{% if dict_files[each_file]["spoiler"] %} checked{% endif %}/></td>
+                    </tr>
+            {% endif %}
+
+                    <tr>
+                        <td colspan="2"><hr></td>
+                    </tr>
+
+        {% endfor %}
+
+                </table>
+
+                <div class="themed" style="padding-bottom: 2em">
+                    <input type="submit" name="save_attachment_options" value="Save Attachment Options"/>
+                </div>
+
+    {% endif %}
+
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

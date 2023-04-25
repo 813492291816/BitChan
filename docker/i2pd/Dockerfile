@@ -1,8 +1,7 @@
-FROM purplei2p/i2pd:release-2.41.0
+FROM purplei2p/i2pd:latest
 
 RUN mkdir -p /home/i2pd/data
 
-# Setting needed to be able to load the web console, prevents "host mismatch"
 COPY docker/i2pd/i2pd.conf /home/i2pd/data/i2pd.conf
 
 # Set up the HTTP tunnel

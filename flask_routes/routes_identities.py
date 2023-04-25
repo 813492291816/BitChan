@@ -88,9 +88,6 @@ def identities():
             if not status_msg['status_message']:
                 b64_passphrase = base64.b64encode(form_identity.passphrase.data.encode())
 
-                if form_identity.generate_shorter_address.data:
-                    logger.info("Generating shorter Identity address")
-
                 return_str = generate_identity(
                     form_identity.passphrase.data,
                     form_identity.generate_shorter_address.data)

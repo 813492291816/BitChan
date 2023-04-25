@@ -43,7 +43,7 @@ DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 logger = logging.getLogger('bitchan.anonfile')
 
 
-class AnonFile():
+class AnonFile:
     # Custom timeout needs to be a tuple (connection_timeout, read_timeout)
     def __init__(self, api_key='', server=None, uri=None, custom_timeout=None, proxies=None, upload_id=None):
         # openload.cc letsupload.cc megaupload.nz bayfiles.com
@@ -114,7 +114,7 @@ class AnonFile():
                             upl.progress_size_bytes = monitor.bytes_read
                             upl.progress_percent = monitor.bytes_read / upl.total_size_bytes * 100
                             new_session.commit()
-                            logger.info("Upload {}: {}/{} ({:.1f} %) uploaded".format(
+                            logger.info("Anonfile Upload {}: {}/{} ({:.1f} %) uploaded".format(
                                 upl.upload_id,
                                 upl.progress_size_bytes,
                                 upl.total_size_bytes,

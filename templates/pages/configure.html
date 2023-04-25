@@ -40,12 +40,31 @@
 
     <h1 class="title themed bold" style="text-align: center">BitChan Configuration</h1>
 
-    <div class="heading-2 head-center themed">General Settings</div>
-
     <div class='outer' style="max-width: 800px; padding: 1.5em 0 3em 0">
 
         <form method="post">
         <table class="themed">
+            <tr style="background-color: initial">
+                <td colspan="2" class="heading-2 head-center themed">General Settings</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.maintenance_mode.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="maintenance_mode" name="maintenance_mode" value="y"{% if settings.maintenance_mode %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Prevent new posts from being made, display "Maintenance Mode" on all pages.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.debug_posts.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="debug_posts" name="debug_posts" value="y"{% if settings.debug_posts %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">This will show the entire database table entry for boards/threads/posts in an accordion. If kiosk is enabled, must be an Admin.</td>
+            </tr>
             <tr>
                 <td>{{form_settings.theme.label(class_='heading-bold')}}</td>
                 <td>
@@ -123,6 +142,15 @@
                 <td colspan="2">If a post has unencrypted attachments from upload sites, always require the Download button to be pressed to download them.</td>
             </tr>
             <tr>
+                <td>{{form_settings.allow_unencrypted_encryption_option.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="allow_unencrypted_encryption_option" name="allow_unencrypted_encryption_option" value="y"{% if settings.allow_unencrypted_encryption_option %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Allow "Unencrypted" as an encryption option for post attachments.</td>
+            </tr>
+            <tr>
                 <td>{{form_settings.auto_dl_from_unknown_upload_sites.label(class_='heading-bold')}}</td>
                 <td>
                     <input type="checkbox" id="auto_dl_from_unknown_upload_sites" name="auto_dl_from_unknown_upload_sites" value="y"{% if settings.auto_dl_from_unknown_upload_sites %} checked{% endif %}/>
@@ -141,13 +169,63 @@
                 <td colspan="2">This will automatically delete the sent messages in your identity mailboxes.</td>
             </tr>
             <tr>
-                <td>{{form_settings.debug_posts.label(class_='heading-bold')}}</td>
+                <td>{{form_settings.post_timestamp.label(class_='heading-bold')}}</td>
                 <td>
-                    <input type="checkbox" id="debug_posts" name="debug_posts" value="y"{% if settings.debug_posts %} checked{% endif %}/>
+                     <select name="post_timestamp">
+                        <option value="sent"{% if settings.post_timestamp == "sent" %} selected{% endif %}>Sent</option>
+                         <option value="received"{% if settings.post_timestamp == "received" %} selected{% endif %}>Received</option>
+                    </select>
                 </td>
             </tr>
             <tr>
-                <td colspan="2">This will show the entire database table entry for boards/threads/posts in an accordion. If kiosk is enabled, must be an Admin.</td>
+                <td colspan="2">This will determine which timestamp to use to sort posts, threads, and boards when order is considered.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.post_timestamp_timezone.label(class_='heading-bold')}}</td>
+                <td>
+                     <select name="post_timestamp_timezone">
+                         <option value="Etc/GMT"{% if settings.post_timestamp_timezone == "Etc/GMT" %} selected{% endif %}>UTC GMT+00:00 (Default)</option>
+                         <option value="Etc/GMT+1"{% if settings.post_timestamp_timezone == "Etc/GMT+1" %} selected{% endif %}>GMT-01:00</option>
+                         <option value="Etc/GMT+2"{% if settings.post_timestamp_timezone == "Etc/GMT+2" %} selected{% endif %}>GMT-02:00</option>
+                         <option value="Etc/GMT+3"{% if settings.post_timestamp_timezone == "Etc/GMT+3" %} selected{% endif %}>GMT-03:00</option>
+                         <option value="Etc/GMT+4"{% if settings.post_timestamp_timezone == "Etc/GMT+4" %} selected{% endif %}>GMT-04:00</option>
+                         <option value="Etc/GMT+5"{% if settings.post_timestamp_timezone == "Etc/GMT+5" %} selected{% endif %}>GMT-05:00</option>
+                         <option value="Etc/GMT+6"{% if settings.post_timestamp_timezone == "Etc/GMT+6" %} selected{% endif %}>GMT-06:00</option>
+                         <option value="Etc/GMT+7"{% if settings.post_timestamp_timezone == "Etc/GMT+7" %} selected{% endif %}>GMT-07:00</option>
+                         <option value="Etc/GMT+8"{% if settings.post_timestamp_timezone == "Etc/GMT+8" %} selected{% endif %}>GMT-08:00</option>
+                         <option value="Etc/GMT+9"{% if settings.post_timestamp_timezone == "Etc/GMT+9" %} selected{% endif %}>GMT-09:00</option>
+                         <option value="Etc/GMT+10"{% if settings.post_timestamp_timezone == "Etc/GMT+10" %} selected{% endif %}>GMT-10:00</option>
+                         <option value="Etc/GMT+11"{% if settings.post_timestamp_timezone == "Etc/GMT+11" %} selected{% endif %}>GMT-11:00</option>
+                         <option value="Etc/GMT+12"{% if settings.post_timestamp_timezone == "Etc/GMT+12" %} selected{% endif %}>GMT-12:00</option>
+                         <option value="Etc/GMT-1"{% if settings.post_timestamp_timezone == "Etc/GMT-1" %} selected{% endif %}>GMT+01:00</option>
+                         <option value="Etc/GMT-2"{% if settings.post_timestamp_timezone == "Etc/GMT-2" %} selected{% endif %}>GMT+02:00</option>
+                         <option value="Etc/GMT-3"{% if settings.post_timestamp_timezone == "Etc/GMT-3" %} selected{% endif %}>GMT+03:00</option>
+                         <option value="Etc/GMT-4"{% if settings.post_timestamp_timezone == "Etc/GMT-4" %} selected{% endif %}>GMT+04:00</option>
+                         <option value="Etc/GMT-5"{% if settings.post_timestamp_timezone == "Etc/GMT-5" %} selected{% endif %}>GMT+05:00</option>
+                         <option value="Etc/GMT-6"{% if settings.post_timestamp_timezone == "Etc/GMT-6" %} selected{% endif %}>GMT+06:00</option>
+                         <option value="Etc/GMT-7"{% if settings.post_timestamp_timezone == "Etc/GMT-7" %} selected{% endif %}>GMT+07:00</option>
+                         <option value="Etc/GMT-8"{% if settings.post_timestamp_timezone == "Etc/GMT-8" %} selected{% endif %}>GMT+08:00</option>
+                         <option value="Etc/GMT-9"{% if settings.post_timestamp_timezone == "Etc/GMT-9" %} selected{% endif %}>GMT+09:00</option>
+                         <option value="Etc/GMT-10"{% if settings.post_timestamp_timezone == "Etc/GMT-10" %} selected{% endif %}>GMT+10:00</option>
+                         <option value="Etc/GMT-11"{% if settings.post_timestamp_timezone == "Etc/GMT-11" %} selected{% endif %}>GMT+11:00</option>
+                         <option value="Etc/GMT-12"{% if settings.post_timestamp_timezone == "Etc/GMT-12" %} selected{% endif %}>GMT+12:00</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">This will determine the timezone of the time that's shown in post headers. Warning: changing this from UTC is less secure because others can see which timezone you set if you enable Kiosk Mode or your share screenshots of posts with the timestamp visible. Changing this setting will cause all cached post HTML to be regenerated.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.post_timestamp_hour.label(class_='heading-bold')}}</td>
+                <td>
+                     <select name="post_timestamp_hour">
+                        <option value="24"{% if settings.post_timestamp_hour == "24" %} selected{% endif %}>24-Hour (20:30)</option>
+                         <option value="12"{% if settings.post_timestamp_hour == "12" %} selected{% endif %}>12-Hour (08:30 PM)</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">This will determine whether 12-hour or 24-hour time is displayed in post headers. Changing this setting will cause all cached post HTML to be regenerated.</td>
             </tr>
             <tr>
                 <td>{{form_settings.results_per_page_board.label(class_='heading-bold')}}</td>
@@ -229,9 +307,36 @@
             </tr>
             <tr></tr>
             <tr style="background-color: initial">
-                <td colspan="2">
-                    <div class="heading-2 head-center themed">Kiosk Mode Settings</div>
+                <td colspan="2" class="heading-2 head-center themed">Bitmessage Settings</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.bm_connections_in_out.label(class_='heading-bold')}}</td>
+                <td>
+                     <select name="bm_connections_in_out">
+                         <option value="in_clear_out_clear"{% if settings.bm_connections_in_out == "in_clear_out_clear" %} selected{% endif %}>In: Clearnet, Out: Clearnet</option>
+                         <option value="in_tor+clear_out_clear"{% if settings.bm_connections_in_out == "in_tor+clear_out_clear" %} selected{% endif %}>In: Tor + Clearnet, Out: Clearnet</option>
+                         <option value="in_tor_out_clear"{% if settings.bm_connections_in_out == "in_tor_out_clear" %} selected{% endif %}>In: Tor, Out: Clearnet</option>
+                         <option value="in_clear_out_tor"{% if settings.bm_connections_in_out == "in_clear_out_tor" %} selected{% endif %}>In: Clearnet, Out: Tor</option>
+                         <option value="in_tor+clear_out_tor"{% if settings.bm_connections_in_out == "in_tor+clear_out_tor" %} selected{% endif %}>In: Tor + Clearnet, Out: Tor</option>
+                         <option value="in_tor_out_tor"{% if settings.bm_connections_in_out == "in_tor_out_tor" %} selected{% endif %}>In: Tor, Out: Tor</option>
+                    </select>
                 </td>
+            </tr>
+            <tr>
+                <td colspan="2">Set how bitmessage allows incoming and outgoing connections. Keep in mind that you may need to initially set Outgoing Connections to use the clearnet to build up a list of hosts prior to setting it to use Tor, otherwise the bitmessage tor bootstrap address may take an incredibly long time to establish an initial connection.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.bitmessage_onion_services_only.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="bitmessage_onion_services_only" name="bitmessage_onion_services_only" value="y"{% if settings.bitmessage_onion_services_only %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Only allow Bitmessage to connect to onion services. Note: This is initially disabled because Bitmessage needs to first find connections before enabling. If this is enabled and Bitmessage has not found at least one onion address to connect to, it will never be able to connect to other peers.</td>
+            </tr>
+            <tr></tr>
+            <tr style="background-color: initial">
+                <td colspan="2" class="heading-2 head-center themed">Kiosk Settings</td>
             </tr>
             <tr>
                 <td>{{form_settings.enable_kiosk_mode.label(class_='heading-bold')}}</td>
@@ -251,6 +356,7 @@
             <tr>
                 <td colspan="2">Require users to log in to access BitChan.</td>
             </tr>
+
             <tr>
                 <td>{{form_settings.kiosk_allow_posting.label(class_='heading-bold')}}</td>
                 <td>
@@ -258,7 +364,16 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2">Allow users to post.</td>
+                <td colspan="2">Allow users to post on boards. Turn the kiosk into read-only by enabling this setting.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_allow_gpg.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="kiosk_allow_gpg" name="kiosk_allow_gpg" value="y"{% if settings.kiosk_allow_gpg %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Allow users to encrypt or sign PGP messages in posts.</td>
             </tr>
             <tr>
                 <td>{{form_settings.kiosk_disable_bm_attach.label(class_='heading-bold')}}</td>
@@ -279,6 +394,30 @@
                 <td colspan="2">Allow users to induce post attachment downloading with the Allow Download button.</td>
             </tr>
             <tr>
+                <td>{{form_settings.kiosk_ttl_option.label(class_='heading-bold')}}</td>
+                <td>
+                     <select name="kiosk_ttl_option">
+                         <option value="selectable_max_28_days"{% if settings.kiosk_ttl_option == "selectable_max_28_days" %} selected{% endif %}>User-set: max of 28 days (max TTL)</option>
+                         <option value="selectable_max_custom"{% if settings.kiosk_ttl_option == "selectable_max_custom" %} selected{% endif %}>User-set: max of custom value (set below)</option>
+                         <option value="forced_28_days"{% if settings.kiosk_ttl_option == "forced_28_days" %} selected{% endif %}>Forced: 28 days (max TTL)</option>
+                         <option value="forced_102_hours"{% if settings.kiosk_ttl_option == "forced_102_hours" %} selected{% endif %}>Forced: 102 hours (bitmessage default)</option>
+                         <option value="forced_custom"{% if settings.kiosk_ttl_option == "forced_custom" %} selected{% endif %}>Forced: custom value (set below)</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Force posts to use a specific Time To Live (TTL) or allow the user to set the TTL with a maximum.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_ttl_seconds.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="kiosk_ttl_seconds" value="{{settings.kiosk_ttl_seconds}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The custom TTL, in seconds, when forcing a specific TTL or setting a maximum TTL. Must be between 3600 and 2419200 seconds.</td>
+            </tr>
+            <tr>
                 <td>{{form_settings.kiosk_post_rate_limit.label(class_='heading-bold')}}</td>
                 <td>
                     <input type="number" name="kiosk_post_rate_limit" value="{{settings.kiosk_post_rate_limit}}"/>
@@ -286,6 +425,15 @@
             </tr>
             <tr>
                 <td colspan="2">The refractory period (seconds) between posting.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_max_post_size_bytes.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="kiosk_max_post_size_bytes" value="{{settings.kiosk_max_post_size_bytes}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The maximum allowable post size, in bytes. 0 disables, allowing the default max post size of {{config.BM_PAYLOAD_MAX_SIZE}} bytes.</td>
             </tr>
             <tr>
                 <td>{{form_settings.kiosk_attempts_login.label(class_='heading-bold')}}</td>
@@ -316,9 +464,7 @@
             </tr>
             <tr></tr>
             <tr style="background-color: initial">
-                <td colspan="2">
-                    <div class="heading-2 head-center themed">Security Settings</div>
-                </td>
+                <td colspan="2" class="heading-2 head-center themed">Security Settings</td>
             </tr>
             <tr>
                 <td>{{form_settings.enable_captcha.label(class_='heading-bold')}}</td>
@@ -374,15 +520,6 @@
             <tr>
                 <td colspan="2">Prevent passphrases from being shown in the Board/List Information.</td>
             </tr>
-            <tr>
-                <td>{{form_settings.bitmessage_onion_services_only.label(class_='heading-bold')}}</td>
-                <td>
-                    <input type="checkbox" id="bitmessage_onion_services_only" name="bitmessage_onion_services_only" value="y"{% if settings.bitmessage_onion_services_only %} checked{% endif %}/>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="2">Only allow Bitmessage to connect to onion services. Note: This is initially disabled because Bitmessage needs to first find connections before enabling. If this is enabled and Bitmessage has not found at least one onion address to connect to, it will never be able to connect to other peers.</td>
-            </tr>
         </table>
 
         <div style="padding-top: 1em">
@@ -405,19 +542,22 @@
 
 
     <div class="heading-2 head-center themed">Post Attachment Upload Sites</div>
-    <div class="head-center themed">Edit or add external upload sites. You don't have to worry if users viewing the post have the same settings as they are sent within the post.</div>
+    <div class="head-center themed">Edit or add external upload sites. You don't have to worry if users viewing the post have the same settings as they are sent within the post. Disabling an upload method will only hide it from being selected for a post when Kiosk Mode is enabled.</div>
 
     <div class='outer' style="padding: 1.5em 0 3em 0">
         <table class="themed">
+            <tr>
+                <td>Upload Site Description</td>
+                <td>Enabled</td>
+                <td></td>
+                <td></td>
+            </tr>
         {% for each_site in upload_sites %}
             <tr>
                 <td>{% if each_site.form_name %}{{each_site.form_name}}{% endif %}</td>
-                <td>
-                    <a class="link" href="/upload_site/edit/{{each_site.id}}">Edit</a>
-                </td>
-                <td>
-                    <a class="link" href="/upload_site/delete/{{each_site.id}}">Delete</a>
-                </td>
+                <td>{% if each_site.enabled %}X{% endif %}</td>
+                <td><a class="link" href="/upload_site/edit/{{each_site.id}}">Edit</a></td>
+                <td><a class="link" href="/upload_site/delete/{{each_site.id}}">Delete</a></td>
             </tr>
         {% endfor %}
         </table>

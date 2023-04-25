@@ -1,0 +1,22 @@
+SocksPort 9050
+ControlPort 9051
+
+DataDirectory /usr/local/bitchan/tor_data
+
+# Hidden service for Bitmessage
+HiddenServiceDir /usr/local/bitchan/tor/bm
+HiddenServicePort 8444 127.0.0.1:8444
+
+# Random address (do not edit, enabled/disabled by BitChan)
+# These can be uncommented before building for the first time to start a hidden service
+# Command to view hostname after being built: sudo docker exec -it bitchan_tor cat /usr/local/bitchan/tor/rand/hostname
+#HiddenServiceDir /usr/local/bitchan/tor/rand
+#HiddenServicePort 80 unix:/run/nginx.sock
+
+# Custom address (do not edit, enabled/disabled by BitChan)
+#HiddenServiceDir /usr/local/bitchan/tor/cus
+#HiddenServicePort 80 unix:/run/nginx.sock
+
+# You can enable client authorization if using a hidden onion service
+# See BitChan/docker/tor/Dockerfile for instructions how to generate and enable the auth file
+# ClientOnionAuthDir /usr/local/bitchan/tor/authorized_clients

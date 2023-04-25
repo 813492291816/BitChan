@@ -2,6 +2,7 @@ import base64
 import html
 import json
 import logging
+import signal
 import socket
 import sqlite3
 import time
@@ -33,6 +34,19 @@ socket.setdefaulttimeout(config.API_TIMEOUT)
 api = jsonrpclib.Server(bm_endpoint)
 
 
+class timeout:
+    def __init__(self, seconds=1, error_message='Timeout'):
+        self.seconds = seconds
+        self.error_message = error_message
+    def handle_timeout(self, signum, frame):
+        raise TimeoutError(self.error_message)
+    def __enter__(self):
+        signal.signal(signal.SIGALRM, self.handle_timeout)
+        signal.alarm(self.seconds)
+    def __exit__(self, type, value, traceback):
+        signal.alarm(0)
+
+
 def generate_identity(passphrase, short_address):
     lf = LF()
     if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
@@ -56,7 +70,7 @@ def generate_identity(passphrase, short_address):
 def get_msg_address_from(msg_id: str):
     try:
         conn = sqlite3.connect('file:{}?mode=ro'.format(
-            config.messages_dat), uri=True, check_same_thread=False)
+            config.BM_MESSAGES_DAT), uri=True, check_same_thread=False)
         conn.text_factory = bytes
         c = conn.cursor()
         c.execute('SELECT fromaddress FROM inbox WHERE msgid=?', (unhexlify(msg_id),))
@@ -112,7 +126,7 @@ def delete_and_replace_comment(message_id, new_comment, from_address=None, local
                 message.file_decoded = None
                 message.file_download_successful = None
                 message.message_steg = "{}"
-                message.file_amount = 0
+                message.file_amount = None
                 message.file_size = None
                 message.media_width = None
                 message.media_width = None

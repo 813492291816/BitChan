@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from collections import OrderedDict
 from operator import getitem
@@ -14,10 +15,13 @@ from urllib.parse import urlparse
 from flask import request
 from flask import session
 from sqlalchemy import and_
+from sqlalchemy import or_
 
 import config
 from bitchan_client import DaemonCom
 from database.models import AddressBook
+from database.models import BanedHashes
+from database.models import BanedWords
 from database.models import Chan
 from database.models import Command
 from database.models import Flags
@@ -40,18 +44,392 @@ from utils.generate_popup import get_user_name
 from utils.generate_popup import message_has_images
 from utils.generate_post import generate_post_html
 from utils.html_truncate import truncate
+from utils.posts import delete_post
+from utils.posts import delete_thread
 from utils.replacements import format_body
 from utils.replacements import replace_lt_gt
+from utils.shared import add_mod_log_entry
 from utils.shared import get_access
 from utils.shared import get_post_id
 from utils.shared import post_has_image
-from utils.tor import path_torrc
 from utils.tor import str_bm_enabled
 from utils.tor import str_custom_enabled
 from utils.tor import str_random_enabled
 
 logger = logging.getLogger('bitchan.routes')
 daemon_com = DaemonCom()
+
+
+def ban_and_delete(
+        sha256_hash=None,
+        imagehash_hash=None,
+        name="",
+        delete_posts=False,
+        delete_threads=False,
+        store_thumbnail_b64=False,
+        user_name=None,
+        only_board_address=None):
+    """ Ban a file attachment and delete any threads/posts with those attachments """
+    # check if ban already exists
+    # if ((sha256_hash and BanedHashes.query.filter(BanedHashes.hash == sha256_hash).count()) and
+    #         (imagehash_hash and BanedHashes.query.filter(BanedHashes.imagehash == imagehash_hash).count())):
+    #     logger.info("banned sha256 hash and image fingerprint already exist")
+    # elif ((sha256_hash and BanedHashes.query.filter(BanedHashes.hash == sha256_hash).count()) and
+    #         not imagehash_hash):
+    #     logger.info("banned sha256 hash already exists")
+    # elif ((imagehash_hash and BanedHashes.query.filter(BanedHashes.imagehash == imagehash_hash).count()) and
+    #         not sha256_hash):
+    #     logger.info("banned image fingerprint already exists")
+    # else:
+
+    # ban hash
+    hash_ban = BanedHashes()
+    hash_ban.name = name
+    hash_ban.hash = sha256_hash
+    hash_ban.imagehash = imagehash_hash
+    if only_board_address:
+        hash_ban.only_board_address = only_board_address
+
+    add_mod_log_entry(
+        f"Banned file attachment SHA256 hash {sha256_hash} and "
+        f"hash fingerprint {imagehash_hash} ({name})",
+        user_from=user_name)
+
+    # Store thumbnail
+    if store_thumbnail_b64:
+        hash_ban.thumb_b64 = store_thumbnail_b64
+
+    hash_ban.save()
+
+    # Delete posts/threads with banned hashes
+    if delete_posts or delete_threads:
+        list_threads = {}
+        list_posts = {}
+
+        #
+        # First, find, using SHA256, OPs and replies that posted banned attachments
+        #
+        messages_op_sha256 = Messages.query.filter(and_(
+            Messages.media_info.contains(sha256_hash),
+            Messages.is_op.is_(True))).all()
+        for msg in messages_op_sha256:
+            if (delete_threads and
+                    msg.thread and
+                    msg.thread.thread_hash not in list_threads):
+                list_threads[msg.thread.thread_hash] = {
+                    "address": msg.thread.chan.address,
+                    "msg_id": msg.message_id,
+                    "hash_type": "SHA256 Hash",
+                    "hash": sha256_hash,
+                    "name": name
+                }
+            elif (delete_posts and
+                    msg.thread and
+                    msg.thread.thread_hash not in list_threads and
+                    msg.message_id not in list_posts):
+                list_posts[msg.message_id] = {
+                    "thread_hash": msg.thread.thread_hash,
+                    "address": msg.thread.chan.address,
+                    "hash_type": "SHA256 Hash",
+                    "hash": sha256_hash,
+                    "name": name
+                }
+
+        messages_reply_sha256 = Messages.query.filter(and_(
+            Messages.media_info.contains(sha256_hash),
+            Messages.is_op.is_(False))).all()
+        for msg in messages_reply_sha256:
+            if (delete_posts and
+                    msg.thread and
+                    msg.thread.thread_hash not in list_threads and
+                    msg.message_id not in list_posts):
+                list_posts[msg.message_id] = {
+                    "thread_hash": msg.thread.thread_hash,
+                    "address": msg.thread.chan.address,
+                    "hash_type": "SHA256 Hash",
+                    "hash": sha256_hash,
+                    "name": name
+                }
+
+        #
+        # Second, find, using image fingerprint, OPs and replies that posted banned images
+        #
+        messages_op_fingerprint = Messages.query.filter(and_(
+            Messages.media_info.contains(imagehash_hash),
+            Messages.is_op.is_(True))).all()
+        for msg in messages_op_fingerprint:
+            if (delete_threads and
+                    msg.thread and
+                    msg.thread.thread_hash not in list_threads):
+                list_threads[msg.thread.thread_hash] = {
+                    "address": msg.thread.chan.address,
+                    "msg_id": msg.message_id,
+                    "hash_type": "Image Fingerprint",
+                    "hash": imagehash_hash,
+                    "name": name
+                }
+            elif (delete_posts and
+                    msg.thread and
+                    msg.thread.thread_hash not in list_threads and
+                    msg.message_id not in list_posts):
+                list_posts[msg.message_id] = {
+                    "thread_hash": msg.thread.thread_hash,
+                    "address": msg.thread.chan.address,
+                    "hash_type": "Image Fingerprint",
+                    "hash": imagehash_hash,
+                    "name": name
+                }
+
+        messages_reply_fingerprint = Messages.query.filter(and_(
+            Messages.media_info.contains(imagehash_hash),
+            Messages.is_op.is_(False))).all()
+        for msg in messages_reply_fingerprint:
+            if (delete_posts and
+                    msg.thread and
+                    msg.thread.thread_hash not in list_threads and
+                    msg.message_id not in list_posts):
+                list_posts[msg.message_id] = {
+                    "thread_hash": msg.thread.thread_hash,
+                    "address": msg.thread.chan.address,
+                    "hash_type": "Image Fingerprint",
+                    "hash": imagehash_hash,
+                    "name": name
+                }
+
+        # Delete threads
+        for thread_hash, data in list_threads.items():
+            delete_thread(thread_hash)
+            add_mod_log_entry(
+                f"Deleted thread with banned file attachment "
+                f"{data['hash_type']} {data['hash']} ({data['name']})",
+                user_from=user_name,
+                message_id=data['msg_id'],
+                board_address=data['address'],
+                thread_hash=thread_hash)
+
+        # Delete posts
+        for msg_id, data in list_posts.items():
+            delete_post(msg_id)
+            add_mod_log_entry(
+                f"Deleted reply post with banned file attachment "
+                f"{data['hash_type']} {data['hash']} ({data['name']})",
+                user_from=user_name,
+                message_id=msg_id,
+                board_address=data['address'],
+                thread_hash=data['thread_hash'])
+
+
+def ban_and_delete_word(
+        word=None,
+        name="",
+        is_regex=False,
+        delete_posts=False,
+        delete_threads=False,
+        user_name=None,
+        only_board_address=None):
+    """ Ban a word and delete any threads/posts """
+    # Ban word
+    word_ban = BanedWords()
+    word_ban.name = name
+    word_ban.word = word
+    word_ban.is_regex = is_regex
+    if only_board_address:
+        word_ban.only_board_address = only_board_address
+
+    add_mod_log_entry(
+        f"Banned word '{word}' ({name})",
+        user_from=user_name)
+
+    word_ban.save()
+
+    # Delete posts/threads with banned hashes
+    if delete_posts or delete_threads:
+        list_threads = {}
+        list_posts = {}
+
+        start = time.time()
+
+        # Find OPs and replies that posted banned words
+        if is_regex:
+            messages_op = Messages.query.join(
+                Threads).filter(Messages.is_op.is_(True)).all()
+        else:
+            messages_op = Messages.query.join(Threads).filter(
+                and_(
+                    Messages.is_op.is_(True),
+                    or_(Messages.message.contains(word),
+                        Threads.subject.contains(word))
+                )).all()
+
+        for msg in messages_op:
+            if msg.thread and msg.thread.chan and msg.thread.chan.address and msg.thread.chan.address:
+                if only_board_address and msg.thread.chan.address not in only_board_address:
+                    continue
+            else:
+                continue
+
+            if (not is_regex or
+                    (is_regex and (re.findall(word, str(msg.message)) or re.findall(word, str(msg.subject))))):
+                if (delete_threads and
+                        msg.thread and
+                        msg.thread.thread_hash not in list_threads):
+                    list_threads[msg.thread.thread_hash] = {
+                        "address": msg.thread.chan.address,
+                        "msg_id": msg.message_id,
+                        "name": name
+                    }
+                elif (delete_posts and
+                        msg.thread and
+                        msg.thread.thread_hash not in list_threads and
+                        msg.message_id not in list_posts):
+                    list_posts[msg.message_id] = {
+                        "thread_hash": msg.thread.thread_hash,
+                        "address": msg.thread.chan.address,
+                        "name": name
+                    }
+
+        if is_regex:
+            messages_reply = Messages.query.filter(Messages.is_op.is_(False)).all()
+        else:
+            messages_reply = Messages.query.filter(
+                and_(
+                    Messages.is_op.is_(False),
+                    Messages.message.contains(word)
+                )).all()
+
+        for msg in messages_reply:
+            if msg.thread and msg.thread.chan and msg.thread.chan.address and msg.thread.chan.address:
+                if only_board_address and msg.thread.chan.address not in only_board_address:
+                    continue
+            else:
+                continue
+
+            if (not is_regex or
+                    (is_regex and re.findall(word, str(msg.message)))):
+                if (delete_posts and
+                        msg.thread and
+                        msg.thread.thread_hash not in list_threads and
+                        msg.message_id not in list_posts):
+                    list_posts[msg.message_id] = {
+                        "thread_hash": msg.thread.thread_hash,
+                        "address": msg.thread.chan.address,
+                        "name": name
+                    }
+
+        logger.info(f"Finished finding word/regex in {time.time() - start:.3f} seconds")
+
+        # Delete threads
+        if is_regex:
+            word = "regex"
+        else:
+            word = "word"
+
+        for thread_hash, data in list_threads.items():
+            delete_thread(thread_hash)
+            add_mod_log_entry(
+                f"Deleted thread with banned {word} ({data['name']})",
+                user_from=user_name,
+                message_id=data['msg_id'],
+                board_address=data['address'],
+                thread_hash=thread_hash)
+
+        # Delete posts
+        for msg_id, data in list_posts.items():
+            delete_post(msg_id)
+            add_mod_log_entry(
+                f"Deleted reply post with {word} ({data['name']})",
+                user_from=user_name,
+                message_id=msg_id,
+                board_address=data['address'],
+                thread_hash=data['thread_hash'])
+
+
+def get_threads_from_page(address, page):
+    threads_sticky = []
+    stickied_hash_ids = []
+
+    settings = GlobalSettings.query.first()
+    thread_start = int((int(page) - 1) * settings.results_per_page_board)
+    thread_end = int(int(page) * settings.results_per_page_board) - 1
+    chan_ = Chan.query.filter(Chan.address == address).first()
+
+    # Find all threads remotely stickied
+    admin_cmds = Command.query.filter(and_(
+            Command.chan_address == address,
+            Command.action_type == "thread_options",
+            Command.thread_sticky.is_(True))
+        ).order_by(Command.timestamp_utc.desc()).all()
+    for each_adm in admin_cmds:
+        sticky_thread = Threads.query.filter(
+            Threads.thread_hash == each_adm.thread_id).first()
+        if sticky_thread:
+            stickied_hash_ids.append(sticky_thread.thread_hash)
+            threads_sticky.append(sticky_thread)
+
+    thread_order_desc = Threads.timestamp_sent.desc()
+    if settings.post_timestamp == 'received':
+        thread_order_desc = Threads.timestamp_received.desc()
+
+    # Find all thread locally stickied (and prevent duplicates)
+    threads_sticky_db = Threads.query.filter(
+        and_(
+            Threads.chan_id == chan_.id,
+            or_(Threads.stickied_local.is_(True))
+        )).order_by(thread_order_desc).all()
+    for each_db_sticky in threads_sticky_db:
+        if each_db_sticky.thread_hash not in stickied_hash_ids:
+            threads_sticky.append(each_db_sticky)
+
+    threads_all = Threads.query.filter(
+        and_(
+            Threads.chan_id == chan_.id,
+            Threads.stickied_local.is_(False)
+        )).order_by(thread_order_desc).all()
+
+    threads = []
+    threads_count = 0
+    for each_thread in threads_sticky:
+        if threads_count > thread_end:
+            break
+        if thread_start <= threads_count:
+            threads.append(each_thread)
+        threads_count += 1
+
+    for each_thread in threads_all:
+        if each_thread.thread_hash in stickied_hash_ids:
+            continue  # skip stickied threads
+        if threads_count > thread_end:
+            break
+        if thread_start <= threads_count:
+            threads.append(each_thread)
+        threads_count += 1
+
+    return threads
+
+
+def get_post_id_string(post_id=None, message_id=None):
+    post = None
+    post_id_string = None
+
+    if post_id:
+        post = Messages.query.filter(Messages.post_id == post_id).first()
+    elif message_id:
+        post = Messages.query.filter(Messages.message_id == message_id).first()
+
+    if not post:
+        logger.info(f"Message not found. post_id: {post_id}, message_id: {message_id}")
+        return
+
+    if post.file_amount:
+        if post.file_download_successful:
+            post_id_string = f"{post.post_id}-t"
+        else:
+            post_id_string = f"{post.post_id}-f"
+
+    if post_id_string:
+        return post_id_string
+    elif post and post.post_id:
+        return post.post_id
 
 
 def get_user_name_info(address_from, full_address=False):
@@ -95,21 +473,26 @@ def get_user_name_info(address_from, full_address=False):
     return username, user_type
 
 
-def get_chan_passphrase(address):
-    chan = Chan.query.filter(Chan.address == address).first()
-    dict_join = {
-        "passphrase": chan.passphrase
-    }
-    passphrase_base64 = base64.b64encode(
-        json.dumps(dict_join).encode()).decode().replace("/", "&")
-    if chan.pgp_passphrase_msg != config.PGP_PASSPHRASE_MSG:
+def get_chan_passphrase(address, is_board=True):
+    chan = None
+    try:
+        chan = Chan.query.filter(Chan.address == address).first()
+        dict_join = {
+            "passphrase": chan.passphrase
+        }
+    except:
+        dict_join = {}
+
+    passphrase_base64 = base64.b64encode(json.dumps(dict_join).encode()).decode()
+
+    if chan and chan.pgp_passphrase_msg != config.PGP_PASSPHRASE_MSG:
         dict_join["pgp_msg"] = chan.pgp_passphrase_msg
-    if chan.pgp_passphrase_attach != config.PGP_PASSPHRASE_ATTACH:
+    if is_board and chan and chan.pgp_passphrase_attach != config.PGP_PASSPHRASE_ATTACH:
         dict_join["pgp_attach"] = chan.pgp_passphrase_attach
-    if chan.pgp_passphrase_steg != config.PGP_PASSPHRASE_STEG:
+    if is_board and chan and chan.pgp_passphrase_steg != config.PGP_PASSPHRASE_STEG:
         dict_join["pgp_steg"] = chan.pgp_passphrase_steg
-    passphrase_base64_with_pgp = base64.b64encode(
-        json.dumps(dict_join).encode()).decode().replace("/", "&")
+
+    passphrase_base64_with_pgp = base64.b64encode(json.dumps(dict_join).encode()).decode()
     return passphrase_base64, passphrase_base64_with_pgp
 
 
@@ -117,12 +500,12 @@ def get_onion_info():
     tor_enabled_bm = False
     tor_address_bm = None
     try:
-        with open(path_torrc) as f:
+        with open(config.TORRC) as f:
             s = f.read()
             if str_bm_enabled in s:
                 tor_enabled_bm = True
-            if os.path.exists("/usr/local/tor/bm/hostname"):
-                text_file = open("/usr/local/tor/bm/hostname", "r")
+            if os.path.exists(f"{config.TOR_HS_BM}/hostname"):
+                text_file = open(f"{config.TOR_HS_BM}/hostname", "r")
                 tor_address_bm = text_file.read()
                 text_file.close()
     except:
@@ -131,12 +514,12 @@ def get_onion_info():
     tor_enabled_rand = False
     tor_address_rand = None
     try:
-        with open(path_torrc) as f:
+        with open(config.TORRC) as f:
             s = f.read()
             if str_random_enabled in s:
                 tor_enabled_rand = True
-            if os.path.exists("/usr/local/tor/rand/hostname"):
-                text_file = open("/usr/local/tor/rand/hostname", "r")
+            if os.path.exists(f"{config.TOR_HS_RAND}/hostname"):
+                text_file = open(f"{config.TOR_HS_RAND}/hostname", "r")
                 tor_address_rand = text_file.read()
                 text_file.close()
     except:
@@ -145,12 +528,12 @@ def get_onion_info():
     tor_enabled_cus = False
     tor_address_cus = None
     try:
-        with open(path_torrc) as f:
+        with open(config.TORRC) as f:
             s = f.read()
             if str_custom_enabled in s:
                 tor_enabled_cus = True
-            if os.path.exists("/usr/local/tor/cus/hostname"):
-                text_file = open("/usr/local/tor/cus/hostname", "r")
+            if os.path.exists(f"{config.TOR_HS_CUS}/hostname"):
+                text_file = open(f"{config.TOR_HS_CUS}/hostname", "r")
                 tor_address_cus = text_file.read()
                 text_file.close()
     except:
@@ -459,10 +842,84 @@ def get_theme():
     return cookie_theme
 
 
+def is_custom_banner(chan_address):
+    chan = Chan.query.filter(Chan.address == chan_address).first()
+
+    if chan:
+        admin_cmd = Command.query.filter(and_(
+            Command.chan_address == chan.address,
+            Command.action == "set",
+            Command.action_type == "options")).first()
+        if admin_cmd:
+            try:
+                options = json.loads(admin_cmd.options)
+            except:
+                options = {}
+            if "banner_base64" in options and options["banner_base64"]:
+                return True
+
+
+def get_op_and_thread_from_thread_hash(thread_hash):
+    message_op = None
+    thread = Threads.query.filter(or_(
+        Threads.thread_hash == thread_hash,
+        Threads.thread_hash_short == thread_hash)).first()
+    if thread:
+        message_op = Messages.query.filter(and_(
+            Messages.thread_id == thread.id,
+            Messages.is_op.is_(True))).first()
+    return message_op, thread
+
+
+def get_chan_from_board_address(board_address):
+    chan = Chan.query.filter(Chan.address == board_address).first()
+    return chan
+
+
+def get_max_ttl():
+    """Get maximum allowed TTL for post"""
+    settings = GlobalSettings.query.first()
+    if not settings.enable_kiosk_mode:
+        return 2419200
+
+    if settings.kiosk_ttl_option == "selectable_max_28_days":
+        max_ttl = 2419200
+    elif settings.kiosk_ttl_option == "selectable_max_custom":
+        max_ttl = settings.kiosk_ttl_seconds
+    elif settings.kiosk_ttl_option == "forced_28_days":
+        max_ttl = 2419200
+    elif settings.kiosk_ttl_option == "forced_102_hours":
+        max_ttl = 367200
+    elif settings.kiosk_ttl_option == "forced_custom":
+        max_ttl = settings.kiosk_ttl_seconds
+    else:
+        max_ttl = 2419200
+
+    return max_ttl
+
+
+def calc_resize(width, height, max_width, max_height):
+    if width > max_width:
+        w_ratio = height / width
+        width = max_width
+        height = width * w_ratio
+    if height > max_height:
+        h_ratio = width / height
+        height = max_height
+        width = height * h_ratio
+    return int(width), int(height)
+
+
 def page_dict():
     command_options = {}
     command_thread_options = {}
     unread_mail = 0
+    all_chans = {}
+    identities = {}
+    address_book_data = {}
+    address_labels = {}
+    chans_board_info = {}
+    chans_list_info = {}
 
     # Get user options
     user_options = {
@@ -490,19 +947,24 @@ def page_dict():
         if ident.unread_messages:
             unread_mail += ident.unread_messages
 
-    all_chans = daemon_com.get_all_chans()
-    identities = daemon_com.get_identities()
-    address_labels = daemon_com.get_address_labels()
-    address_book = OrderedDict(
-        sorted(daemon_com.get_address_book().items(), key=lambda x: getitem(x[1], 'label')))
+    try:
+        all_chans = daemon_com.get_all_chans()
+        identities = daemon_com.get_identities()
+        address_book_data = daemon_com.get_address_book()
+        address_labels = daemon_com.get_address_labels()
+        chans_board_info = daemon_com.get_chans_board_info()
+        chans_list_info = daemon_com.get_chans_list_info()
+    except Exception as err:
+        logger.error(f"Error communicating with daemon: {err}")
 
-    chans_board_info = daemon_com.get_chans_board_info()
+    address_book = OrderedDict(
+        sorted(address_book_data.items(), key=lambda x: getitem(x[1], 'label')))
+
     for each_address in chans_board_info:
         chans_board_info[each_address]["db"] = Chan.query.filter(and_(
             Chan.address == each_address,
             Chan.type == "board")).first()
 
-    chans_list_info = daemon_com.get_chans_list_info()
     for each_address in chans_list_info:
         chans_list_info[each_address]["db"] = Chan.query.filter(and_(
             Chan.address == each_address,
@@ -515,6 +977,7 @@ def page_dict():
                 allowed_access=allowed_access,
                 attachment_info=attachment_info,
                 bitmessage=daemon_com,
+                calc_resize=calc_resize,
                 chans_board_info=chans_board_info,
                 chans_list_info=chans_list_info,
                 command_options=command_options,
@@ -530,10 +993,14 @@ def page_dict():
                 format_message_steg=format_message_steg,
                 get_access=get_access,
                 get_card_link_html=get_card_link_html,
+                get_chan_from_board_address=get_chan_from_board_address,
                 get_chan_mod_info=get_chan_mod_info,
                 get_chan_passphrase=get_chan_passphrase,
+                get_max_ttl=get_max_ttl,
+                get_op_and_thread_from_thread_hash=get_op_and_thread_from_thread_hash,
                 generate_post_html=generate_post_html,
                 get_post_id=get_post_id,
+                get_post_id_string=get_post_id_string,
                 get_post_replies_dict=get_post_replies_dict,
                 generate_reply_link_and_popup_html=generate_reply_link_and_popup_html,
                 get_thread_options=get_thread_options,
@@ -544,6 +1011,7 @@ def page_dict():
                 html=html,
                 human_readable_size=human_readable_size,
                 identities=identities,
+                is_custom_banner=is_custom_banner,
                 json=json,
                 logged_in=is_logged_in(),
                 message_has_images=message_has_images,

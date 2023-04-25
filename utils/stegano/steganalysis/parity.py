@@ -32,7 +32,7 @@ def steganalyse(img: Image.Image) -> Image.Image:
     """
     Steganlysis of the LSB technique.
     """
-    encoded = Image.new(img.mode, (img.size))
+    encoded = Image.new(img.mode, img.size)
     width, height = img.size
     for row in range(height):
         for col in range(width):

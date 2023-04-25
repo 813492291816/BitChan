@@ -1,6 +1,6 @@
 
-{% if primary_addresses %}
 Owner Addresses:<br/>
+{% if primary_addresses %}
     {% for each_address in primary_addresses -%}
         {%- if each_address in chans_board_info or
                each_address in chans_list_info or
@@ -11,10 +11,13 @@ Owner Addresses:<br/>
         {%- endif -%}
         {%- if not loop.last %}, {% endif -%}
     {%- endfor -%}
+{% else %}
+None
 {% endif %}
-{% if secondary_addresses %}
-    {% if primary_addresses %}<br/>{% endif %}
+<br/>
+
 Admin Addresses:<br/>
+{% if secondary_addresses %}
     {% for each_address in secondary_addresses -%}
         {%- if each_address in chans_board_info or
                each_address in chans_list_info or
@@ -25,10 +28,13 @@ Admin Addresses:<br/>
         {%- endif -%}
         {%- if not loop.last %}, {% endif -%}
     {%- endfor -%}
+{% else %}
+None
 {% endif %}
-{% if tertiary_addresses %}
-    {% if primary_addresses or secondary_access %}<br/>{% endif %}
+<br/>
+
 User Addresses:<br/>
+{% if tertiary_addresses %}
     {% for each_address in tertiary_addresses -%}
         {%- if each_address in chans_board_info or
                each_address in chans_list_info or
@@ -39,10 +45,13 @@ User Addresses:<br/>
         {%- endif -%}
         {%- if not loop.last %}, {% endif -%}
     {%- endfor -%}
+{% else %}
+None
 {% endif %}
-{% if restricted_addresses %}
-    {% if primary_addresses or secondary_access %}<br/>{% endif %}
+<br/>
+
 Restricted Addresses:<br/>
+{% if restricted_addresses %}
     {% for each_address in restricted_addresses -%}
         {%- if each_address in chans_board_info or
                each_address in chans_list_info or
@@ -53,4 +62,7 @@ Restricted Addresses:<br/>
         {%- endif -%}
         {%- if not loop.last %}, {% endif -%}
     {%- endfor -%}
+{% else %}
+None
 {% endif %}
+<br/>

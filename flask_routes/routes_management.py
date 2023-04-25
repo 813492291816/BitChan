@@ -1,8 +1,10 @@
 import base64
+import html
 import json
 import logging
 import time
 import uuid
+from threading import Thread
 
 from flask import redirect
 from flask import render_template
@@ -16,23 +18,18 @@ from bitchan_client import DaemonCom
 from config import RESTRICTED_WORDS
 from credentials import credentials
 from database.models import Chan
-from database.models import Command
-from database.models import DeletedMessages
 from database.models import GlobalSettings
-from database.models import ModLog
 from flask_routes import flask_session_login
 from flask_routes.utils import count_views
 from flask_routes.utils import is_verified
 from forms import forms_board
 from forms import forms_settings
-from utils.files import LF
+from utils.chan import leave_chan
 from utils.general import generate_passphrase
 from utils.general import process_passphrase
 from utils.general import set_clear_time_to_future
-from utils.posts import delete_chan
-from utils.posts import delete_post
-from utils.posts import delete_thread
 from utils.routes import allowed_access
+from utils.routes import get_logged_in_user_name
 from utils.routes import page_dict
 from utils.shared import add_mod_log_entry
 
@@ -332,24 +329,19 @@ def join():
                         status_msg['status_message'].append("Joined board")
                         url = "/board/{}/1".format(result)
                         url_text = "/{}/ - {}".format(new_chan.label, new_chan.description)
-                        log_description = "Joined board {} ({})".format(url_text, result)
+                        log_description = f"Joined board {result}: {url_text}"
                     elif new_chan.type == "list":
                         status_msg['status_message'].append("Joined list")
                         url = "/list/{}".format(result)
                         url_text = "{} - {}".format(new_chan.label, new_chan.description)
-                        log_description = "Joined list {} ({})".format(url_text, result)
+                        log_description = f"Joined list {result}: {url_text}"
                 else:
                     status_msg['status_message'].append("Chan creation queued.")
                     new_chan.address = None
                     new_chan.is_setup = False
 
                 if log_description:
-                    add_mod_log_entry(
-                        log_description,
-                        message_id=None,
-                        user_from=None,
-                        board_address=result,
-                        thread_hash=None)
+                    add_mod_log_entry(log_description, board_address=result)
 
                 if 'status_title' not in status_msg:
                     status_msg['status_title'] = "Success"
@@ -623,23 +615,20 @@ def join():
                     if stage in ["public_board", "private_board"]:
                         url = "/board/{}/1".format(result)
                         url_text = "/{}/ - {}".format(label, description)
-                        log_description = "Created board {} ({})".format(url_text, result)
+                        log_description = f"Created board {result}: {url_text}"
                     elif stage in ["public_list", "private_list"]:
                         url = "/list/{}".format(result)
                         url_text = "{} - {}".format(label, description)
-                        log_description = "Created list {} ({})".format(url_text, result)
+                        log_description = f"Created list {result}: {url_text}"
                 else:
                     status_msg['status_message'].append("Creation queued")
                     new_chan.address = None
                     new_chan.is_setup = False
 
                 if log_description:
-                    add_mod_log_entry(
-                        log_description,
-                        message_id=None,
-                        user_from=None,
-                        board_address=result,
-                        thread_hash=None)
+                    user_name = get_logged_in_user_name()
+                    admin_name = user_name if user_name else "LOCAL ADMIN"
+                    add_mod_log_entry(log_description, board_address=new_chan.address, user_from=admin_name)
 
                 if 'status_title' not in status_msg:
                     status_msg['status_title'] = "Success"
@@ -666,6 +655,7 @@ def join_base64(passphrase_base64):
     pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
     pgp_passphrase_attach = config.PGP_PASSPHRASE_ATTACH
     pgp_passphrase_steg = config.PGP_PASSPHRASE_STEG
+    passphrase_json = None
     dict_chan_info = None
     status_msg = {"status_message": []}
     url = ""
@@ -676,16 +666,23 @@ def join_base64(passphrase_base64):
     form_join = forms_board.Join()
 
     try:
-        passphrase_dict_json = base64.b64decode(
-            passphrase_base64.replace("&", "/")).decode()
-        passphrase_dict = json.loads(passphrase_dict_json)
-        passphrase_json = passphrase_dict["passphrase"]
-        if "pgp_msg" in passphrase_dict:
-            pgp_passphrase_msg = passphrase_dict["pgp_msg"]
-        if "pgp_attach" in passphrase_dict:
-            pgp_passphrase_attach = passphrase_dict["pgp_attach"]
-        if "pgp_steg" in passphrase_dict:
-            pgp_passphrase_steg = passphrase_dict["pgp_steg"]
+        passphrase_json = base64.b64decode(html.unescape(passphrase_base64)).decode()
+
+        try:
+            dict_test = json.loads(passphrase_json)
+        except:
+            dict_test = {}
+
+        if dict_test:
+            if "passphrase" in dict_test:
+                passphrase_json = dict_test["passphrase"]
+            if "pgp_msg" in dict_test:
+                pgp_passphrase_msg = dict_test["pgp_msg"]
+            if "pgp_attach" in dict_test:
+                pgp_passphrase_attach = dict_test["pgp_attach"]
+            if "pgp_steg" in dict_test:
+                pgp_passphrase_steg = dict_test["pgp_steg"]
+
         chan_exists = Chan.query.filter(Chan.passphrase == passphrase_json).first()
 
         errors, dict_chan_info = process_passphrase(passphrase_json)
@@ -694,7 +691,9 @@ def join_base64(passphrase_base64):
             for error in errors:
                 status_msg['status_message'].append(error)
     except Exception as err:
-        status_msg['status_message'].append("Issue parsing base64 string: {}".format(err))
+        logger.exception("parsing base64 string")
+        status_msg['status_message'].append(
+            f'Issue parsing base64 string: {html.unescape(passphrase_base64)}: {err}')
 
     if request.method == 'POST':
         if form_join.join.data:
@@ -739,8 +738,6 @@ def join_base64(passphrase_base64):
                 new_chan.restricted_addresses = json.dumps(dict_chan_info["restricted_addresses"])
                 new_chan.rules = json.dumps(dict_chan_info["rules"])
 
-
-
                 if form_join.unlisted.data:
                     new_chan.unlisted = True
 
@@ -763,12 +760,7 @@ def join_base64(passphrase_base64):
                     new_chan.is_setup = False
 
                 if log_description:
-                    add_mod_log_entry(
-                        log_description,
-                        message_id=None,
-                        user_from=None,
-                        board_address=result,
-                        thread_hash=None)
+                    add_mod_log_entry(log_description, board_address=result)
 
                 if 'status_title' not in status_msg:
                     status_msg['status_title'] = "Success"
@@ -800,6 +792,7 @@ def leave(address):
         return allow_msg
 
     form_confirm = forms_board.Confirm()
+    form_leave = forms_board.Leave()
 
     chan = Chan.query.filter(Chan.address == address).first()
 
@@ -811,44 +804,12 @@ def leave(address):
 
     status_msg = {"status_message": []}
 
-    admin_cmds = Command.query.filter(
-        Command.chan_address == address).all()
-    for each_adm_cmd in admin_cmds:
-        each_adm_cmd.delete()
+    leave_and_delete = Thread(
+        target=leave_chan, args=(address, form_leave.clear_mod_log.data,))
+    leave_and_delete.start()
 
-    lf = LF()
-    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-        try:
-            for each_thread in chan.threads:
-                for each_message in each_thread.messages:
-                    delete_post(each_message.message_id)  # Delete thread posts
-                delete_thread(each_thread.thread_hash)  # Delete thread
-
-            deleted_msgs = DeletedMessages.query.filter(
-                DeletedMessages.address_to == address).all()
-            for each_msg in deleted_msgs:
-                logger.info("DeletedMessages: Deleting entry: {}".format(each_msg.message_id))
-                each_msg.delete()
-
-            try:
-                daemon_com.leave_chan(address)  # Leave chan in Bitmessage
-                delete_chan(address)  # Delete chan
-
-                # Delete mod log entries for address
-                mod_logs = ModLog.query.filter(
-                    ModLog.board_address == address).all()
-                for each_entry in mod_logs:
-                    each_entry.delete()
-            except:
-                logger.exception("Could not delete chan via daemon or delete_chan()")
-
-            daemon_com.delete_and_vacuum()
-
-            status_msg['status_title'] = "Success"
-            status_msg['status_message'].append("Deleted {}".format(address))
-        finally:
-            time.sleep(1)
-            lf.lock_release(config.LOCKFILE_MSG_PROC)
+    status_msg['status_title'] = "Success"
+    status_msg['status_message'].append(f"Deletion of /{chan.label}/ - {chan.description} ({address}) initiated. See the logs for details and any errors")
 
     board = {"current_chan": None}
     url = ""

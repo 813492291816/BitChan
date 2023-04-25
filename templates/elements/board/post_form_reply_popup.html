@@ -5,23 +5,24 @@
 
 {% set chan = board['current_chan'] %}
 
-<div>
-  <form method="post" enctype="multipart/form-data" autocomplete="off" onsubmit="return checkForm(this);" action="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}{% if last %}?last={{last}}{% endif %}">
+<div style="max-height: 600px; max-width: 100%; overflow: auto;">
+  <form method="post" id="reply_form" enctype="multipart/form-data" autocomplete="off" action="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}{% if last %}?last={{last}}{% endif %}">
     <input type="hidden" name="thread_id" value="{{thread.thread_hash}}"/>
     <input type="hidden" name="board_id" value="{{board['current_chan'].address}}"/>
-    <input type="hidden" name="page_id" value="{{page_id}}"/>
+    <input type="hidden" name="page_id" id="page_id" value="{{page_id}}"/>
     <input type="hidden" name="is_op" value="no"/>
     <input type="hidden" name="op_sha256_hash" value="{{thread.op_sha256_hash}}"/>
     <input type="hidden" name="game_hash" value="{{game_hash}}"/>
     {% if thread %}
     <input type="hidden" name="subject" value="{{thread.subject|safe}}"/>
     {% endif %}
-    <input type="hidden" name="submit" value="Post"/>
+    <input type="hidden" name="submit_post" value="Post"/>
     {{form_post.csrf_token}}
     <table class="bold" style="table-layout: fixed; max-width: 600px;">
       <tbody>
         <tr>
           <td colspan="3">
+            <div id="reply_submit_output" class="reply_return"></div>
             <section>
               <details>
                 <summary>Post Options</summary>
@@ -92,6 +93,11 @@
                     </table>
                   </details>
                 </section>
+            {% if not settings.enable_kiosk_mode or
+                  (settings.enable_kiosk_mode and settings.kiosk_allow_gpg) or
+                  (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) %}
+              {% include '/elements/board/form_post_gpg_options.html' %}
+            {% endif %}
               </details>
             </section>
           </td>
@@ -136,7 +142,7 @@
                 </summary>
                 <table>
                   <tr>
-                    <td class="form themed bold">Upload Images/Files<br/><span style="font-size: 0.7em">(Check to spoiler image)</span></td>
+                    <td class="form themed bold">Upload Images/Files<br/><span style="font-size: 0.7em">(Check to spoiler media)</span></td>
                     <td class="themed" colspan="2">
                       1 <input style="vertical-align: middle;" type="checkbox" id="image1_spoiler" name="image1_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file1')">&#8856;</button> <input id="file1" name="file1" type="file"/>
                       <br/>2 <input style="vertical-align: middle;" type="checkbox" id="image2_spoiler" name="image2_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file2')">&#8856;</button> <input id="file2" name="file2" type="file"/>
@@ -155,8 +161,8 @@
                       {% if not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and not settings.kiosk_disable_bm_attach) %}
                         <option value="bitmessage"{% if "upload" in form_populate and form_populate["upload"] == "bitmessage" %} selected{% endif %}>Bitmessage (most secure, ~250KB)</option>
                       {% endif %}
-                      {% for each_server in upload_sites.query.all() %}
-                        <option value="{{each_server.domain}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.domain %} selected{% endif %}>{{each_server.form_name}}</option>
+                      {% for each_server in upload_sites.query.all() if each_server.enabled or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) %}
+                        <option value="{{each_server.id}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.id|string %} selected{% endif %}>{{each_server.form_name}}</option>
                       {% endfor %}
                       </select>
                     </td>
@@ -165,7 +171,7 @@
                     <td class="form themed bold">Upload Encryption</td>
                     <td>
                       <select style="width: 100%;" name="upload_cipher_and_key">
-                      {% for each_cipher in config.UPLOAD_ENCRYPTION_CIPHERS %}
+                      {% for each_cipher in config.UPLOAD_ENCRYPTION_CIPHERS if each_cipher[1] != "No Encryption" or (each_cipher[1] == "No Encryption" and settings.allow_unencrypted_encryption_option) %}
                         <option value="{{each_cipher[0]}}"{% if "upload_cipher_and_key" in form_populate and form_populate["upload_cipher_and_key"] == each_cipher[0] %} selected{% endif %}>{{each_cipher[1]}}</option>
                       {% endfor %}
                       </select>
@@ -181,8 +187,19 @@
             {{captcha(page_id=page_id, img_id="post_captcha")}}
             <input type="text" name="captcha">
         {% endif %}
-            <input class="postbutton" type="submit" name="submit_post" value="Post"/>
+            <div style="float: right;">
+              <input class="postbutton" type="submit" id="btn_reply_submit" name="submit_post" value="Post"/>
+            </div>
+            <div style="float: right;">
+              <input class="postbutton" type="submit" id="btn_preview_submit" name="preview_post" value="Preview"/>
+            </div>
           </td>
+        </tr>
+        <tr id="post_preview" style="{% if form_populate and 'preview' in form_populate and form_populate['preview'] %}{% else %}display: none;{% endif %}">
+          <td colspan="3" class="form themed bold" style="padding: 0.4em;">Preview</td>
+        </tr>
+        <tr id="post_preview_body" style="{% if form_populate and 'preview' in form_populate and form_populate['preview'] %}{% else %}display: none{% endif %}">
+          <td colspan="3"><div id="reply_submit_preview" style="font-weight: initial; overflow-y: auto; overflow-wrap: break-word; table-layout: fixed; display: table; width: 100%;">{% if form_populate and 'preview' in form_populate and form_populate['preview'] %}{{form_populate['preview']|safe}}{% endif %}</div></td>
         </tr>
       </tbody>
     </table>

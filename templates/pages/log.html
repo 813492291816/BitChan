@@ -17,11 +17,17 @@
     <div class="container">
         <div class="themed" style="max-width: 800px;">
             <div style="width: 100%; text-align: center;">
-                <h1 class="title themed bold">BitChan Log</h1>
+                <h1 class="title themed bold">BitChan Logs</h1>
             </div>
             <div>
                 <form method="post" enctype="multipart/form-data">
-                    <input type="number" name="lines" value="30"/> <input type="submit" name="save" value="Last Lines"/>
+                    <select name="log">
+                        <option value="daemon"{% if log == 'daemon' %} selected{% endif %}>Backend</option>
+                        <option value="flask"{% if log == 'flask' %} selected{% endif %}>Frontend</option>
+                        <option value="tor"{% if log == 'tor' %} selected{% endif %}>Tor</option>
+                        <option value="i2p"{% if log == 'i2p' %} selected{% endif %}>i2pd</option>
+                    </select>
+                    <input type="number" name="lines" value="{{lines}}"/> <input type="submit" name="save" value="Last Lines"/>
                 </form>
             </div>
         </div>

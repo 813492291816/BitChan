@@ -14,12 +14,14 @@ WORKDIR ${HOME}
 
 RUN useradd bitchan
 
+RUN mkdir -p /usr/local/gnupg
 RUN mkdir -p /usr/local/bitmessage
 RUN mkdir -p /usr/local/bitchan
 RUN mkdir -p /usr/local/bitchan/log
 RUN mkdir -p /usr/local/bitchan/downloaded_files
 RUN chown bitchan /usr/local/bitmessage
 RUN chown bitchan /home/bitchan
+RUN chown bitchan /usr/local/gnupg
 
 # Apt dependencies
 COPY ./install_packages.sh /home/bitchan/install_packages.sh
@@ -32,20 +34,25 @@ RUN python3 -m pip install --upgrade pip
 #
 # Tor
 #
+
+COPY ./install_tor.sh /home/bitchan/install_tor.sh
+RUN /bin/bash /home/bitchan/install_tor.sh
+
 RUN mkdir -p /usr/local/tor
 RUN mkdir -p /usr/local/tor/bm
 RUN mkdir -p /usr/local/tor/cus
 RUN mkdir -p /usr/local/tor/rand
 RUN mkdir -p /usr/local/tor/authorized_clients/
-RUN chmod -R 700 /usr/local/tor
-RUN chown -R root /usr/local/tor
-
 RUN mkdir -p /root/.tor
 RUN chown -R root /root/.tor
 
-COPY docker/tor/torrc /etc/tor/torrc
+COPY docker/tor/torrc /usr/local/tor/torrc
 
-RUN echo "HashedControlPassword $(tor --quiet --hash-password torpass1234)" >> /etc/tor/torrc  # pass also in config.py
+COPY ./docker/tor/torpass.sh /home/bitchan/torpass.sh
+RUN /bin/bash /home/bitchan/torpass.sh
+
+RUN chmod -R 700 /usr/local/tor
+RUN chown -R root /usr/local/tor
 
 #
 # Bitmessage
@@ -67,6 +74,7 @@ RUN cd /home/bitchan/PyBitmessage && python2 setup.py install
 
 # Generate Bitmessage /usr/local/bitmessage/keys.dat)
 COPY ./docker/bitmessage_setup.sh ./bitmessage_setup.sh
+COPY ./install_files/knownnodes.dat ./knownnodes.dat
 RUN /bin/bash /home/bitchan/bitmessage_setup.sh
 RUN rm -f /home/bitchan/bitmessage_setup.sh
 

@@ -2,17 +2,15 @@
 
 # Bugs
 
- - Starting attachment download of post from recent/search page doesn't work as expected
- - recovering hidden post broken
+ - long crosslink replacement has needs to account for postid that's removed from the database
 
 # Ideas
 
+ - add check and auto restart if Bitmessage has crashed
+ - make mention on the github: docker-compose.yaml needs to not specify more CPU cores than exist
  - if locally deleting or restoring a post/thread, search and delete admin command entries for deleting that thread/post. Or indicate on admin msg that it can be ignored because a local action has been performed (since admin commands can continually come in, deleting the admin command will not prevent it from being received form someone else in the future). Perhaps delete admin commands after a certain period of time (60 days?).
- - Add diag option: Recreate Orphaned Identities in Bitmessage
  - Periodically delete DB entries for PostDeletePasswordHashes older than 30 days
  - allow sending mail to multiple addresses
- - Link TTL to auto wipe (add 6hrs) for boards/lists with auto wipe rule
- - allow lists featured on the homepage to display custom banner pic like boards display OP's pic
  - reduce moderation dropdown menu to moderate thread, moderate post. Move finer moderation options to confirmation page
  - ability to delete thread with comment and ability to preserve op but delete thread with comment
  - add ~~exporting~~ and importing to preserve address book, identities, lists, and boards
@@ -92,4 +90,13 @@
  - Always reveal text spoilers option
  - Hover over pictures to show metadata popup
  - Add usage and examples for CSS/JS options panel
- - Admin command to set board specific theme. 
+ - Admin command to set board specific theme.
+ - Kiosk admin selective access to specific keyrings for use in PGP encrypting and signing messages
+ - Allow owners to restore admin moderation for everyone (not just locally)
+ - Add ability to schedule posts
+ - Add ability to force TTL value
+ - range click to select multiple posts/threads for moderation (when admin, add check boxes next to posts in threads and next to OPs in catalog and overboard)
+ - if pages on index pages and /recent exceed certain amount hide middle page links and leave the first few and the last separated by ...
+ - a per-board setting to allow when an owner/admin remotely deletes a post/thread, it actually removes it rather than hiding
+ - allow multiple posts with the same attachment, filename of its sha256
+ - Add text of post to attachment upload progress page

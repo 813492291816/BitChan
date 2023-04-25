@@ -54,8 +54,7 @@ def hide(
     if "exif" in img.info:
         exif_dict = piexif.load(img.info["exif"])
     else:
-        exif_dict = {}
-        exif_dict["0th"] = {}
+        exif_dict = {"0th": {}}
     exif_dict["0th"][piexif.ImageIFD.ImageDescription] = text
     exif_bytes = piexif.dump(exif_dict)
     img.save(img_enc, format=img_format, exif=exif_bytes)

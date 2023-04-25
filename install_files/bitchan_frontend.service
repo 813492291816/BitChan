@@ -1,0 +1,20 @@
+[Unit]
+Description=BitChan Frontend
+After=bitchan_backend.service
+
+[Service]
+WorkingDirectory=/usr/local/bitchan/BitChan
+ExecStart=/usr/local/bitchan/venv3/bin/python -m gunicorn \
+--workers 1 \
+--worker-class gthread \
+--threads 4 \
+--timeout 1800 \
+--pid /var/run/bitchan_frontend.pid \
+--bind unix:/run/bitchan.sock bitchan_flask:app
+
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s TERM $MAINPID
+
+[Install]
+WantedBy=multi-user.target
+Alias=bitchan_frontend.service

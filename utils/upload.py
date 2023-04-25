@@ -21,13 +21,13 @@ logger = logging.getLogger("bitchan.upload")
 class UploadCurl:
     proxy_types = {
         "tor": {
-            "host": '172.28.1.2',
-            "port": 9060,
+            "host": config.TOR_HOST,
+            "port": config.TOR_SOCKS_PORT,
             "type": pycurl.PROXYTYPE_SOCKS5_HOSTNAME
         },
         "i2p": {
-            "host": '172.28.1.6',
-            "port": 4444,
+            "host": config.I2P_HOST,
+            "port": config.I2P_SOCKS_PORT,
             "type": pycurl.PROXYTYPE_HTTP
         }
     }
@@ -45,7 +45,11 @@ class UploadCurl:
             with session_scope(DB_PATH) as new_session:
                 upl = new_session.query(UploadProgress).filter(
                     UploadProgress.upload_id == self.upload_id).first()
-                if upl and upload_d > upl.progress_size_bytes:
+                if not upl:
+                    logger.error("No upload progress table entry: Cancelling upload")
+                    return -1
+
+                if upload_d > upl.progress_size_bytes:
                     try:
                         if not upload_t:
                             if upl.total_size_bytes:
@@ -54,6 +58,7 @@ class UploadCurl:
                                 upload_t = self.file_size
                         upl.progress_size_bytes = upload_d
                         upl.progress_percent = upload_d / upload_t * 100
+                        upl.progress_ts = int(time.time())
                         new_session.commit()
                         logger.info("Upload {}: {}/{} ({:.1f} %) uploaded".format(
                             upl.upload_id,
@@ -63,6 +68,9 @@ class UploadCurl:
                     except Exception as err:
                         logger.error("Exception monitoring upload progress: {}/{} uploaded, {}".format(
                             upload_d, upload_t, err))
+                elif upl.progress_ts and time.time() - upl.progress_ts > 60:  # If no upload progress in 60 seconds, end upload
+                    logger.error("Upload progress timeout: Cancelling upload")
+                    return -1
 
     def upload_curl(self, post_id, file_path, options):
         download_url = None
@@ -97,7 +105,7 @@ class UploadCurl:
         c.close()
 
         body = buffer.getvalue()
-        logger.info("pycurl returned: {}".format(body.decode("UTF-8")))
+        logger.info("pycurl returned: {}".format(body.decode("UTF-8").strip()))
 
         if options["response"] == "JSON":
             try:
@@ -133,7 +141,7 @@ class UploadCurl:
             if options["replace_download_domain"]:  # For download URLs that need the domain replaced
                 dom_replace = json.loads(options["replace_download_domain"])
                 download_url = download_url.replace(dom_replace[0], dom_replace[1])
-                logger.info("Domain replaced: {}".format(download_url))
+                logger.info("Domain replaced: {}".format(download_url.strip()))
             return True, download_url
         return False, None
 

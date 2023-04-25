@@ -95,6 +95,10 @@ List
     {% include '/elements/banner.html' %}
     <br/>
 
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
     <center>
         <span class="themed" style="font-size: 1.5em">
         {% if is_private %}
@@ -132,10 +136,6 @@ List
     </center>
     {% endif %}
 
-    {% if status_msg["status_message"] %}
-        {% include '/elements/status.html' %}
-    {% endif %}
-
     <hr/>
     <center>
 
@@ -158,11 +158,15 @@ List
                                 The current configuration does not permit list passphrases to be shown
                             </div>
                             {% else %}
+
+                                {% set passphrase_base64_escaped = html.escape(passphrase_base64) %}
+                                {% set passphrase_base64_with_pgp_escaped = html.escape(passphrase_base64_with_pgp) %}
+
                             <span class="themed">List Join Link{% if passphrase_base64 != passphrase_base64_with_pgp %}s{% endif %}</span>
                             <div style="padding-bottom: 0.5em">
-                                <a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64}}">Share Link</a>
+                                <a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64_escaped}}">Share Link</a>
                                 {% if passphrase_base64 != passphrase_base64_with_pgp %}
-                                <br/><a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64_with_pgp}}">Share Link With PGP Passphrase</a>
+                                <br/><a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64_with_pgp_escaped}}">Share Link With PGP Passphrase</a>
                                 {% endif %}
                             </div>
 
@@ -186,11 +190,9 @@ List
                             {% include '/elements/rules.html' %}
                             {% endif %}
 
-                            {% if primary_addresses or secondary_addresses or tertiary_addresses %}
                             <div class="themed" style="padding-bottom: 0.5em">
                                 {% include '/elements/accordion_access.html' %}
                             </div>
-                            {% endif %}
 
                             <span class="themed">Options:</span>
                             <form method="post" action="/set_info_options/{{board['current_chan'].address}}" enctype="multipart/form-data">
@@ -243,7 +245,7 @@ List
             <section>
                 <details>
                     <summary>Admin Options</summary>
-                        <div style="padding: 1em">
+                        <div class="themed" style="padding: 1em">
                             ...
                         </div>
                 </details>

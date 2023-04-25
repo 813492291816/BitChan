@@ -52,7 +52,7 @@ class Command(CRUDMixin, db.Model):
     action_type = db.Column(db.String, default=None)
     do_not_send = db.Column(db.Boolean, default=False)
     chan_address = db.Column(db.String, default=None)
-    thread_id = db.Column(db.String, default=None)
+    thread_id = db.Column(db.Integer, default=None)
     message_id = db.Column(db.String, default=None)
     options = db.Column(db.String, default="{}")
     locally_deleted = db.Column(db.Boolean, default=False)
@@ -150,6 +150,8 @@ class Threads(CRUDMixin, db.Model):
     anchored_local_ts = db.Column(db.Integer, default=0)
     hide = db.Column(db.Boolean, default=False)
     time_ts = db.Column(db.Integer, default=0)
+    orig_op_bm_json_obj = db.Column(db.String, default=None)
+    last_op_json_obj_ts = db.Column(db.Integer, default=0)
 
     chan = relationship("Chan", back_populates="threads")
     messages = relationship("Messages", back_populates="thread")
@@ -166,7 +168,7 @@ class Messages(CRUDMixin, db.Model):
     }
 
     id = db.Column(db.Integer, unique=True, primary_key=True)
-    thread_id = db.Column(db.String, db.ForeignKey('thread.id'), default=None)
+    thread_id = db.Column(db.Integer, db.ForeignKey('thread.id'), default=None)
     message_id = db.Column(db.String, default=None)
     post_id = db.Column(db.String, default=None)
     post_number = db.Column(db.Integer, default=None)
@@ -178,6 +180,7 @@ class Messages(CRUDMixin, db.Model):
     message_sha256_hash = db.Column(db.String, default=None)  # This message payload SHA256 hash
     sage = db.Column(db.Boolean, default=False)
     subject = db.Column(db.String, default=None)
+    original_message = db.Column(db.String, default=None)
     message = db.Column(db.String, default=None)
     nation = db.Column(db.String, default=None)
     nation_base64 = db.Column(db.String, default=None)
@@ -200,6 +203,7 @@ class Messages(CRUDMixin, db.Model):
     file_enc_password = db.Column(db.String, default=None)
     file_sha256_hashes_match = db.Column(db.Boolean, default=None)
     file_order = db.Column(db.String, default="[]")
+    start_download = db.Column(db.Boolean, default=False)
     upload_filename = db.Column(db.String, default=None)
     saved_file_filename = db.Column(db.String, default=None)
     saved_image_thumb_filename = db.Column(db.String, default=None)
@@ -221,9 +225,13 @@ class Messages(CRUDMixin, db.Model):
     delete_comment = db.Column(db.String, default=None)
     post_html = db.Column(db.String, default=None)
     post_html_board_view = db.Column(db.String, default=None)
+    text_replacements = db.Column(db.String, default=None)
     regenerate_post_html = db.Column(db.Boolean, default=False)
     post_ids_replied_to = db.Column(db.String, default="[]")  # Reply Post IDs in this message
     post_ids_replying_to_msg = db.Column(db.String, default="[]")  # Post IDs that reply to this message
+
+    # GPG
+    gpg_texts = db.Column(db.String, default="{}")
 
     # Games
     game_password_a = db.Column(db.String, default=None)
@@ -252,8 +260,11 @@ class UploadProgress(CRUDMixin, db.Model):
     uploading = db.Column(db.Boolean, default=None)
     subject = db.Column(db.String, default=None)
     total_size_bytes = db.Column(db.Integer, default=None)
+    progress = db.Column(db.String, default=None)
+    progress_ts = db.Column(db.Integer, default=None)
     progress_size_bytes = db.Column(db.Integer, default=0)
     progress_percent = db.Column(db.Float, default=0)
+    post_message = db.Column(db.String, default=None)
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(
@@ -295,6 +306,77 @@ class Games(CRUDMixin, db.Model):
     game_initiated = db.Column(db.String, default=None)
     game_over = db.Column(db.Boolean, default=False)
     game_termination_pw_hash = db.Column(db.String, default=None)
+
+    def __repr__(self):
+        return "<{cls}(id={rep.id})>".format(
+            cls=self.__class__.__name__, rep=self)
+
+
+class PGP(CRUDMixin, db.Model):
+    __tablename__ = "pgp"
+    __table_args__ = {
+        'extend_existing': True
+    }
+
+    id = db.Column(db.Integer, unique=True, primary_key=True)
+    fingerprint = db.Column(db.String, unique=True, default=None)
+    key_id = db.Column(db.String, unique=True, default=None)
+    passphrase = db.Column(db.String, default=None)
+    keyring_name = db.Column(db.String, default=None)
+
+    def __repr__(self):
+        return "<{cls}(id={rep.id})>".format(
+            cls=self.__class__.__name__, rep=self)
+
+
+class BanedHashes(CRUDMixin, db.Model):
+    __tablename__ = "banned_hashes"
+    __table_args__ = {
+        'extend_existing': True
+    }
+
+    id = db.Column(db.Integer, unique=True, primary_key=True)
+    name = db.Column(db.String, default=None)
+    hash = db.Column(db.String, default=None)
+    imagehash = db.Column(db.String, default=None)
+    thumb_filename = db.Column(db.String, default=None)
+    thumb_b64 = db.Column(db.String, default=None)
+    only_board_address = db.Column(db.String, default="")
+
+    def __repr__(self):
+        return "<{cls}(id={rep.id})>".format(
+            cls=self.__class__.__name__, rep=self)
+
+
+class BanedWords(CRUDMixin, db.Model):
+    __tablename__ = "banned_words"
+    __table_args__ = {
+        'extend_existing': True
+    }
+
+    id = db.Column(db.Integer, unique=True, primary_key=True)
+    name = db.Column(db.String, default=None)
+    word = db.Column(db.String, default=None)
+    is_regex = db.Column(db.Boolean, default=None)
+    only_board_address = db.Column(db.String, default="")
+
+    def __repr__(self):
+        return "<{cls}(id={rep.id})>".format(
+            cls=self.__class__.__name__, rep=self)
+
+
+class StringReplace(CRUDMixin, db.Model):
+    __tablename__ = "string_replacement"
+    __table_args__ = {
+        'extend_existing': True
+    }
+
+    id = db.Column(db.Integer, unique=True, primary_key=True)
+    name = db.Column(db.String, default="")
+    string = db.Column(db.String, default="")
+    regex = db.Column(db.String, default="")
+    string_replacement = db.Column(db.String, default="")
+    only_board_address = db.Column(db.String, default="")
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(

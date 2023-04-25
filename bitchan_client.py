@@ -27,11 +27,17 @@ class DaemonCom:
     def bm_sync_complete(self):
         return self.proxy().bm_sync_complete()
 
+    def bm_change_connection_settings(self):
+        return self.proxy().bm_change_connection_settings()
+
     def bulk_join(self, list_address, join_bulk_list):
         return self.proxy().bulk_join(list_address, join_bulk_list)
 
     def clear_bm_inventory(self):
         return self.proxy().clear_bm_inventory()
+
+    def combine_bm_knownnodes(self, knownnodes_list):
+        return self.proxy().combine_bm_knownnodes(knownnodes_list)
 
     def delete_and_vacuum(self):
         return self.proxy().delete_and_vacuum()
@@ -51,8 +57,8 @@ class DaemonCom:
     def get_all_chans(self):
         return self.proxy().get_all_chans()
 
-    def get_api_status(self):
-        return self.proxy().get_api_status()
+    def get_api_status(self, return_stored=True):
+        return self.proxy().get_api_status(return_stored=return_stored)
 
     def get_bm_sync_complete(self):
         return self.proxy().get_bm_sync_complete()
@@ -114,6 +120,9 @@ class DaemonCom:
 
     def restart_bitmessage(self):
         return self.proxy().restart_bitmessage()
+
+    def shutdown_daemon(self):
+        return self.proxy().shutdown_daemon()
 
     def set_board_by_chan(self, chan_address, board):
         return self.proxy().set_board_by_chan(chan_address, board)

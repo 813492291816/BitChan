@@ -2,14 +2,17 @@ import base64
 import html
 import json
 import logging
+import os
 import time
 from io import BytesIO
+from urllib.parse import unquote
 
 import gnupg
 from PIL import Image
 from flask import redirect
 from flask import render_template
 from flask import request
+from flask import send_file
 from flask import url_for
 from flask.blueprints import Blueprint
 from sqlalchemy import and_
@@ -24,17 +27,22 @@ from database.models import Threads
 from flask_routes.utils import count_views
 from flask_routes.utils import is_verified
 from forms import forms_board
+from forms import forms_settings
+from utils.download import process_attachments
 from utils.files import LF
+from utils.files import generate_thumbnail_image
 from utils.files import human_readable_size
 from utils.gateway import api
 from utils.gateway import delete_and_replace_comment
 from utils.general import check_bm_address_csv_to_list
+from utils.generate_popup import attachment_info
 from utils.message_post import send_post_delete_request
 from utils.posts import delete_post
 from utils.posts import delete_thread
 from utils.posts import restore_post
 from utils.posts import restore_thread
 from utils.routes import allowed_access
+from utils.routes import ban_and_delete
 from utils.routes import get_logged_in_user_name
 from utils.routes import page_dict
 from utils.shared import add_mod_log_entry
@@ -484,6 +492,17 @@ def restore(address, message_id, thread_id, restore_type):
                            url_text=url_text)
 
 
+@blueprint.route('/b64_to_img/<str_b64>')
+@count_views
+def b64_to_img(str_b64):
+    can_post, allow_msg = allowed_access("can_post")
+    can_view, allow_msg = allowed_access("can_view")
+    if not can_post and not can_view:
+        return allow_msg
+
+    return send_file(BytesIO(base64.b64decode(str_b64.replace("-", "/"))), mimetype="image/jpeg")
+
+
 @blueprint.route('/delete_post_with_password/<address>/<message_id>/<thread_id>', methods=('GET', 'POST'))
 @count_views
 def delete_post_with_password(address, message_id, thread_id):
@@ -787,6 +806,201 @@ def delete(address, message_id, thread_id, delete_type):
     return render_template("pages/alert.html",
                            board=board,
                            status_msg=status_msg,
+                           url=url,
+                           url_text=url_text)
+
+
+@blueprint.route('/attachment_options/<address>/<message_id>/<single_file>/<file_name>', methods=('GET', 'POST'))
+@count_views
+def attachment_options(address, message_id, single_file, file_name):
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=address)
+    if not global_admin and not board_list_admin:
+        return allow_msg
+
+    message = Messages.query.filter(Messages.message_id == message_id).first()
+
+    # Ensure message, thread, board is valid
+    if not message or not message.thread or not message.thread.chan:
+        return "Message, thread, or board doesn't exist"
+
+    # Ensure message is from specified board address
+    if message.thread.chan.address != address:
+        return "Board addresses do not match"
+
+    dict_files = {}
+    list_filenames = []
+
+    only_board_address = None
+    if global_admin:
+        pass
+    elif board_list_admin:
+        only_board_address = address
+
+    user_name = get_logged_in_user_name()
+    admin_name = user_name if user_name else "LOCAL ADMIN"
+
+    form_diag = forms_settings.Diag()
+
+    file_order, attach, number_files = attachment_info(message_id)
+
+    # Determine if a single or multiple files are being considered
+    if single_file == "1":
+        file_name = unquote(file_name)
+        if file_name in attach:
+            list_filenames.append(file_name)
+            dict_files[file_name] = attach[file_name]
+            dict_files[file_name]["number"] = attach[file_name]["file_number"]
+    else:
+        for i, each_file in enumerate(file_order):
+            if each_file is None:
+                continue
+            list_filenames.append(each_file)
+            dict_files[each_file] = attach[each_file]
+            dict_files[each_file]["number"] = i + 1
+
+    status_msg = {"status_message": []}
+    url = ""
+    url_text = ""
+
+    if request.method == 'POST':
+        if form_diag.save_attachment_options.data:
+            dict_options = {}
+            file_num = []
+
+            # Get number of files
+            for each_name in request.form:
+                if each_name.startswith("hashname_"):
+                    file_num.append(each_name.split("_")[1])
+                    dict_options[each_name.split("_")[1]] = {}
+
+            list_keys = [
+                "hashname",
+                "boardaddress",
+                "ban",
+                "deleteposts",
+                "deletethreads",
+                "thumbb64",
+                "thumbb64blur",
+                "storethumb",
+                "blurthumb",
+                "sha256_hash",
+                "imagehash_hash",
+                "spoiler"
+            ]
+
+            # Get options for each file
+            for each_num in file_num:
+                for each_key in list_keys:
+                    if f"{each_key}_{each_num}" in request.form:
+                        dict_options[each_num][each_key] = request.form.get(f"{each_key}_{each_num}")
+                    else:
+                        dict_options[each_num][each_key] = None
+
+            # Check if each file should be banned
+            spoiler_changed = False
+            for each_num in dict_options:
+                try:
+                    if dict_options[each_num]['ban']:
+                        if not dict_options[each_num]['sha256_hash'] and not dict_options[each_num]['imagehash']:
+                            status_msg['status_message'].append("A hash is required.")
+                        else:
+                            if dict_options[each_num]['blurthumb']:
+                                thumb_b64 = unquote(dict_options[each_num]['thumbb64blur'].replace("-", "/"))
+                            else:
+                                thumb_b64 = unquote(dict_options[each_num]['thumbb64'].replace("-", "/"))
+
+                            board_address = None
+                            if only_board_address:
+                                board_address = only_board_address
+                            elif dict_options[each_num]['boardaddress']:
+                                board_address = dict_options[each_num]['boardaddress']
+
+                            ban_and_delete(
+                                sha256_hash=dict_options[each_num]['sha256_hash'],
+                                imagehash_hash=dict_options[each_num]['imagehash_hash'],
+                                name=dict_options[each_num]['hashname'],
+                                delete_posts=dict_options[each_num]['deleteposts'],
+                                delete_threads=dict_options[each_num]['deletethreads'],
+                                store_thumbnail_b64=thumb_b64,
+                                user_name=admin_name,
+                                only_board_address=board_address)
+
+                            status_msg['status_message'].append(
+                                f"Banned file with hash: "
+                                f"{dict_options[each_num]['hashname']}, "
+                                f"{dict_options[each_num]['imagehash_hash']}, "
+                                f"{dict_options[each_num]['sha256_hash']}.")
+
+                    # Check if message has been deleted
+                    if not Messages.query.filter(Messages.message_id == message_id).first():
+                        continue
+
+                    this_spoiler_changed = False
+                    if each_num == "1" and bool(message.image1_spoiler) != bool(dict_options[each_num]['spoiler']):
+                        message.image1_spoiler = bool(dict_options[each_num]['spoiler'])
+                        this_spoiler_changed = True
+                    elif each_num == "2" and bool(message.image2_spoiler) != bool(dict_options[each_num]['spoiler']):
+                        message.image2_spoiler = bool(dict_options[each_num]['spoiler'])
+                        this_spoiler_changed = True
+                    elif each_num == "3" and bool(message.image3_spoiler) != bool(dict_options[each_num]['spoiler']):
+                        message.image3_spoiler = bool(dict_options[each_num]['spoiler'])
+                        this_spoiler_changed = True
+                    elif each_num == "4" and bool(message.image4_spoiler) != bool(dict_options[each_num]['spoiler']):
+                        message.image4_spoiler = bool(dict_options[each_num]['spoiler'])
+                        this_spoiler_changed = True
+                    if this_spoiler_changed:
+                        spoiler_changed = True
+                        status_msg['status_message'].append(
+                            f"Image {each_num} spoiler changed to: {bool(dict_options[each_num]['spoiler'])}.")
+
+                except Exception as err:
+                    status_msg['status_message'].append(f"Couldn't apply attachment options: {err}")
+                    logger.exception(f"Couldn't apply attachment options")
+
+            # If spoiler changed and message still exists
+            if spoiler_changed and Messages.query.filter(Messages.message_id == message_id).first():
+                message.save()
+                extract_path = "{}/{}".format(config.FILE_DIRECTORY, message.message_id)
+                errors_files, media_info, message_steg = process_attachments(
+                    message.message_id, extract_path, progress=False, overwrite_thumbs=True)
+                for each_err in errors_files:
+                    status_msg['status_message'].append(f"Error: {each_err}.")
+                regenerate_card_popup_post_html(message_id=message.message_id)
+
+            status_msg['status_title'] = "Success"
+            status_msg['status_message'].append(
+                f"All chosen attachment options applied.")
+
+        if 'status_title' not in status_msg:
+            status_msg['status_title'] = "Error"
+
+        return render_template("pages/alert.html",
+                               board=None,
+                               status_msg=status_msg,
+                               url=url,
+                               url_text=url_text)
+
+    # Generate base64 thumbnails for each image attachment
+    for each_file in list_filenames:
+        file_path_full = os.path.join(f"{config.FILE_DIRECTORY}/{message_id}", each_file)
+        dict_files[each_file]['thumb_b64'] = generate_thumbnail_image(
+            message_id, file_path_full, None, dict_files[each_file]["extension"],
+            size_x=30, size_y=30, blur=False, return_b64=True)
+        if dict_files[each_file]['thumb_b64']:
+            dict_files[each_file]['thumb_b64'] = dict_files[each_file]['thumb_b64'].decode().replace("/", "-")
+        dict_files[each_file]['thumb_b64_blur'] = generate_thumbnail_image(
+            message_id, file_path_full, None, dict_files[each_file]["extension"],
+            size_x=30, size_y=30, blur=True, return_b64=True)
+        if dict_files[each_file]['thumb_b64_blur']:
+            dict_files[each_file]['thumb_b64_blur'] = dict_files[each_file]['thumb_b64_blur'].decode().replace("/", "-")
+
+    return render_template("pages/attachment_options.html",
+                           board_address=address,
+                           message_id=message_id,
+                           only_board_address=only_board_address,
+                           status_msg=status_msg,
+                           dict_files=dict_files,
                            url=url,
                            url_text=url_text)
 
@@ -1127,10 +1341,8 @@ def admin_board_ban_address(chan_address, ban_address, ban_type):
                             log_description += ": Reason: {}".format(form_confirm.text.data)
                         add_mod_log_entry(
                             log_description,
-                            message_id=None,
                             user_from=form_confirm.address.data,
-                            board_address=chan_address,
-                            thread_hash=None)
+                            board_address=chan_address)
                 else:
                     logger.error("Could not authenticate access to globally ban")
             except Exception as err:
@@ -1167,7 +1379,6 @@ def set_owner_options(chan_address):
             modify_user_addresses = None
             modify_restricted_addresses = None
             image_base64 = None
-            spoiler_base64 = None
             long_description = None
             css = None
             word_replace = {}
@@ -1259,22 +1470,6 @@ def set_owner_options(chan_address):
                     status_msg['status_message'].append(
                         "Error while determining image size: {}".format(err))
 
-            if form_options.file_spoiler.data:
-                # determine image dimensions
-                spoiler_base64 = base64.b64encode(form_options.file_spoiler.data.read())
-                try:
-                    im = Image.open(BytesIO(base64.b64decode(spoiler_base64)))
-                    media_width, media_height = im.size
-                    if media_width > config.SPOILER_MAX_WIDTH or media_height > config.SPOILER_MAX_HEIGHT:
-                        status_msg['status_message'].append(
-                            "Spoiler image dimensions too large. Requirements: width <= {}, height <= {}.".format(
-                                config.SPOILER_MAX_WIDTH, config.SPOILER_MAX_HEIGHT))
-                    else:
-                        logger.info("Setting spoiler image")
-                except Exception as err:
-                    status_msg['status_message'].append(
-                        "Error while determining spoiler size: {}".format(err))
-
             if form_options.long_description.data:
                 send_long_description = False
                 if admin_cmd and admin_cmd.options:
@@ -1348,7 +1543,6 @@ def set_owner_options(chan_address):
 
             # Ensure at least one option is set
             if (not image_base64 and
-                    not spoiler_base64 and
                     not long_description and
                     not css and
                     not word_replace and
@@ -1383,8 +1577,6 @@ def set_owner_options(chan_address):
 
                 if image_base64:
                     dict_message["options"]["banner_base64"] = image_base64.decode()
-                if spoiler_base64:
-                    dict_message["options"]["spoiler_base64"] = spoiler_base64.decode()
                 if long_description:
                     dict_message["options"]["long_description"] = long_description
                 if css:

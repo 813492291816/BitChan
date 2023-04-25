@@ -15,6 +15,7 @@ from flask_routes.utils import is_verified
 from flask_routes.utils import rate_limit
 from utils.generate_post import generate_post_html
 from utils.routes import allowed_access
+from utils.routes import get_post_id_string
 from utils.routes import page_dict
 
 logger = logging.getLogger('bitchan.routes_no_verification')
@@ -45,6 +46,12 @@ def new_posts(thread_hash_short, post_ids):
     if not can_view:
         return allow_msg
 
+    settings = GlobalSettings.query.first()
+
+    post_order_asc = Messages.timestamp_sent.asc()
+    if settings.post_timestamp == 'received':
+        post_order_asc = Messages.timestamp_received.asc()
+
     post_op = Messages.query.join(Threads).filter(and_(
         Threads.thread_hash_short == thread_hash_short,
         Messages.is_op.is_(True))).first()
@@ -54,13 +61,18 @@ def new_posts(thread_hash_short, post_ids):
         post_op_post_id = None
 
     posts = Messages.query.join(Threads).filter(
-        Threads.thread_hash_short == thread_hash_short).order_by(
-            Messages.timestamp_sent.asc()).all()
+        Threads.thread_hash_short == thread_hash_short).order_by(post_order_asc).all()
     if not posts:
         return json.dumps([])
 
+    list_post_ids_only = []
     try:
         list_post_ids = post_ids.split("_")
+        for each_post_id in list_post_ids:
+            if "-" in each_post_id:
+                list_post_ids_only.append(each_post_id.split("-")[0])
+            else:
+                list_post_ids_only.append(each_post_id)
     except:
         return json.dumps([])
 
@@ -72,30 +84,50 @@ def new_posts(thread_hash_short, post_ids):
     post_new_count = 0
     post_ref_count = 0
     list_posts = []
+    download_statuses = {}
 
     # Find Posts removed
     for each_post in posts:
         list_posts.append(each_post.post_id)
-    list_del_posts = list(set(list_post_ids) - set(list_posts))
+    list_del_posts = list(set(list_post_ids_only) - set(list_posts))
 
     # Find posts added
     found_first_post = False
     for each_post in posts:
+        download_statuses[each_post.post_id] = get_post_id_string(post_id=each_post.post_id)
+
         # Need to ensure we find at least the first post_id before starting to add new posts
         # This allows Last 100 page to work
-        if each_post.post_id.upper() in list_post_ids:
+        if each_post.post_id.upper() in list_post_ids_only:
             found_first_post = True
         if not found_first_post:
             continue
 
-        if each_post.post_id.upper() not in list_post_ids:
+        # Find posts that have had attachments successfully downloaded to refresh
+        for each_post_attach in list_post_ids:
+            if (("-" in each_post_attach and
+                    each_post_attach.split("-")[0] == each_post.post_id.upper()) or
+                        each_post.post_id.upper() == each_post_attach):
+                if each_post_attach != download_statuses[each_post.post_id]:
+                    # Post ID string is not the same as on the user's page, indicate to refresh post content
+                    list_ref_post_message_ids.append(
+                        [each_post.post_id, each_post.message_id])
+                break
+
+        if each_post.post_id.upper() not in list_post_ids_only:
+            if each_post.post_id in download_statuses:
+                download_status = download_statuses[each_post.post_id]
+            else:
+                download_status = None
+
             list_new_posts.append([
                 last_post_id,
                 each_post.post_id.upper(),
-                generate_post_html(each_post.message_id)
+                generate_post_html(each_post.message_id),
+                download_status
             ])
             list_new_post_ids.append(each_post.post_id.upper())
-            list_post_ids.append(each_post.post_id.upper())
+            list_post_ids_only.append(each_post.post_id.upper())
             post_new_count += 1
 
             # Find posts that the new post references, check if it's in this thread, and update it.
@@ -104,11 +136,11 @@ def new_posts(thread_hash_short, post_ids):
             try:
                 replies = json.loads(each_post.post_ids_replied_to)
                 for each_post_id in replies:
-                    if each_post_id in list_post_ids or (post_op_post_id and each_post_id == post_op_post_id):
+                    if each_post_id in list_post_ids_only or (post_op_post_id and each_post_id == post_op_post_id):
                         reply_post = Messages.query.join(Threads).filter(and_(
                             Threads.thread_hash_short == thread_hash_short,
                             Messages.post_id == each_post_id)).first()
-                        if reply_post:
+                        if reply_post and each_post_id not in list_ref_post_message_ids:
                             list_ref_post_message_ids.append(
                                 [each_post_id, reply_post.message_id])
                     else:
@@ -116,7 +148,7 @@ def new_posts(thread_hash_short, post_ids):
             except:
                 pass
 
-        if each_post.post_id.upper() in list_post_ids:
+        if each_post.post_id.upper() in list_post_ids_only:
             last_post_id = each_post.post_id.upper()
 
         # Only allow returning up to 10 new posts at a time
@@ -131,14 +163,22 @@ def new_posts(thread_hash_short, post_ids):
         # Only allow returning up to 10 refreshed posts at a time
         if post_ref_count >= 10:
             break
-        list_ref_posts.append([post_id, generate_post_html(message_id)])
+
+        if post_id in download_statuses:
+            download_status = download_statuses[post_id]
+        else:
+            download_status = None
+
+        list_ref_posts.append([post_id, generate_post_html(message_id), download_status])
         post_ref_count += 1
 
-    return json.dumps({
+    ret_json = json.dumps({
         "add": list_new_posts,
         "del": list_del_posts,
         "ref": list_ref_posts
     })
+
+    return ret_json
 
 
 @blueprint.route('/post-timer')

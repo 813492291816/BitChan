@@ -85,7 +85,7 @@
 					  <select name="upload">
 					    <option value="bitmessage"{% if "upload" in form_populate and form_populate["upload"] == "bitmessage" %} selected{% endif %}>Bitmessage (most secure, ~250KB)</option>
 					  {% for each_server in upload_sites.query.all() %}
-					    <option value="{{each_server.domain}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.domain %} selected{% endif %}>{{each_server.form_name}}</option>
+					    <option value="{{each_server.id}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.id|string %} selected{% endif %}>{{each_server.form_name}}</option>
 					  {% endfor %}
 					  </select>
 				    </td>
@@ -94,7 +94,7 @@
 					<td class="form themed bold">Upload Encryption<br/><span style="font-size: 0.7em">Non-Bitmessage uploads only</span></td>
 					<td>
 					  <select name="upload_cipher_and_key">
-					  {% for each_cipher in config.UPLOAD_ENCRYPTION_CIPHERS %}
+					  {% for each_cipher in config.UPLOAD_ENCRYPTION_CIPHERS if each_cipher[1] != "No Encryption" or (each_cipher[1] == "No Encryption" and settings.allow_unencrypted_encryption_option) %}
 					    <option value="{{each_cipher[0]}}">{{each_cipher[1]}}</option>
 					  {% endfor %}
 				      </select>

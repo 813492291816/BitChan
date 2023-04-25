@@ -1,12 +1,16 @@
 import base64
+import html
 import json
 import logging
 import os
+import random
 import time
 import uuid
 from io import BytesIO
 from urllib.parse import unquote
 
+from flask import current_app
+from flask import jsonify
 from flask import redirect
 from flask import render_template
 from flask import request
@@ -15,11 +19,11 @@ from flask import session
 from flask import url_for
 from flask.blueprints import Blueprint
 from sqlalchemy import and_
-from sqlalchemy import or_
 
 import config
 from bitchan_client import DaemonCom
 from bitchan_flask import captcha
+from database.models import BanedHashes
 from database.models import Chan
 from database.models import Command
 from database.models import Flags
@@ -34,13 +38,19 @@ from flask_routes.utils import rate_limit
 from forms import forms_board
 from utils.files import LF
 from utils.generate_popup import attachment_info
+from utils.gpg import find_gpg
+from utils.gpg import get_all_key_information
+from utils.gpg import gpg_decrypt
 from utils.identicon import generate_icon
 from utils.message_post import generate_post_form_populate
 from utils.message_post import post_message
 from utils.posts import delete_post
+from utils.replacements import format_body
+from utils.replacements import process_replacements
 from utils.routes import allowed_access
 from utils.routes import get_chan_passphrase
 from utils.routes import get_theme
+from utils.routes import get_threads_from_page
 from utils.routes import page_dict
 
 logger = logging.getLogger('bitchan.routes_board')
@@ -115,6 +125,10 @@ def board(current_chan, current_page):
         return render_template("pages/404-board.html",
                                board_address=current_chan)
 
+    post_order_desc = Threads.timestamp_sent.desc()
+    if settings.post_timestamp == 'received':
+        post_order_desc = Threads.timestamp_received.desc()
+
     board = {
         "current_page": int(current_page),
         "current_chan": chan,
@@ -122,67 +136,35 @@ def board(current_chan, current_page):
         "messages": Messages,
         "threads": Threads.query
             .filter(Threads.chan_id == chan.id)
-            .order_by(Threads.timestamp_sent.desc())
+            .order_by(post_order_desc)
     }
 
     form_populate = session.get('form_populate', {})
     status_msg = session.get('status_msg', {"status_message": []})
 
-    def get_threads_from_page(address, page):
-        threads_sticky = []
-        stickied_hash_ids = []
-        thread_start = int((int(page) - 1) * settings.results_per_page_board)
-        thread_end = int(int(page) * settings.results_per_page_board) - 1
-        chan_ = Chan.query.filter(Chan.address == address).first()
+    (public_keys,
+     private_keys,
+     private_key_ids,
+     public_key_ids,
+     exported_public_keys) = get_all_key_information()
 
-        # Find all threads remotely stickied
-        admin_cmds = Command.query.filter(and_(
-                Command.chan_address == address,
-                Command.action_type == "thread_options",
-                Command.thread_sticky.is_(True))
-            ).order_by(Command.timestamp_utc.desc()).all()
-        for each_adm in admin_cmds:
-            sticky_thread = Threads.query.filter(
-                Threads.thread_hash == each_adm.thread_id).first()
-            if sticky_thread:
-                stickied_hash_ids.append(sticky_thread.thread_hash)
-                threads_sticky.append(sticky_thread)
+    list_gpg_from = []
+    for each_key in private_keys:
+        if len(each_key['uids'][0]) > 40:
+            uid = f"{each_key['uids'][0][0:40]}..."
+        else:
+            uid = each_key['uids'][0]
+        name = f"{uid} ({each_key['fingerprint'][0:6]}...{each_key['fingerprint'][-6:]})"
+        list_gpg_from.append({"value": each_key["fingerprint"], "name": name})
 
-        # Find all thread locally stickied (and prevent duplicates)
-        threads_sticky_db = Threads.query.filter(
-            and_(
-                Threads.chan_id == chan_.id,
-                or_(Threads.stickied_local.is_(True))
-            )).order_by(Threads.timestamp_sent.desc()).all()
-        for each_db_sticky in threads_sticky_db:
-            if each_db_sticky.thread_hash not in stickied_hash_ids:
-                threads_sticky.append(each_db_sticky)
-
-        threads_all = Threads.query.filter(
-            and_(
-                Threads.chan_id == chan_.id,
-                Threads.stickied_local.is_(False)
-            )).order_by(Threads.timestamp_sent.desc()).all()
-
-        threads = []
-        threads_count = 0
-        for each_thread in threads_sticky:
-            if threads_count > thread_end:
-                break
-            if thread_start <= threads_count:
-                threads.append(each_thread)
-            threads_count += 1
-
-        for each_thread in threads_all:
-            if each_thread.thread_hash in stickied_hash_ids:
-                continue  # skip stickied threads
-            if threads_count > thread_end:
-                break
-            if thread_start <= threads_count:
-                threads.append(each_thread)
-            threads_count += 1
-
-        return threads
+    list_gpg_to = []
+    for each_key in public_keys:
+        if len(each_key['uids'][0]) > 40:
+            uid = f"{each_key['uids'][0][0:40]}..."
+        else:
+            uid = each_key['uids'][0]
+        name = f"{uid} ({each_key['fingerprint'][0:6]}...{each_key['fingerprint'][-6:]})"
+        list_gpg_to.append({"value": each_key["fingerprint"], "name": name})
 
     if request.method == 'GET':
         if 'form_populate' in session:
@@ -245,12 +227,17 @@ def board(current_chan, current_page):
             if not can_download and not board_list_admin:
                 return allow_msg
 
-            daemon_com.set_start_download(form_post.message_id.data)
-            status_msg['status_title'] = "Success"
-            status_msg['status_message'].append(
-                "File download initialized in the background. Give it time to download.")
+            if settings.maintenance_mode:
+                status_msg['status_title'] = "Error"
+                status_msg['status_message'].append(
+                    "Cannot initiate attachment download while Maintenance Mode is enabled.")
+            else:
+                daemon_com.set_start_download(form_post.message_id.data)
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append(
+                    "File download initialized in the background. Give it time to download.")
 
-        elif form_post.submit.data:
+        elif form_post.submit_post.data:
             invalid_post = False
             if not form_post.validate():
                 for field, errors in form_post.errors.items():
@@ -284,6 +271,7 @@ def board(current_chan, current_page):
 
             status_msg, result, form_populate = post_message(
                 form_post, status_msg)
+            status_msg["no_escape"] = True
 
         session['form_populate'] = form_populate
         session['status_msg'] = status_msg
@@ -309,11 +297,27 @@ def board(current_chan, current_page):
                            form_post=form_post,
                            from_list=from_list,
                            get_threads_from_page=get_threads_from_page,
+                           list_gpg_from=list_gpg_from,
+                           list_gpg_to=list_gpg_to,
                            page_id=str(uuid.uuid4()),
                            passphrase_base64=passphrase_base64,
                            passphrase_base64_with_pgp=passphrase_base64_with_pgp,
                            status_msg=status_msg,
                            upload_sites=UploadSites)
+
+
+@blueprint.route('/csrf/<current_chan>')
+@count_views
+@rate_limit
+def csrf(current_chan):
+    can_post, allow_msg = allowed_access("can_post")
+    board_list_admin, allow_msg = allowed_access(
+        "is_board_list_admin", board_address=current_chan)
+    if not can_post and not board_list_admin:
+        return allow_msg
+
+    form_post = forms_board.Post()
+    return form_post.csrf_token._value()
 
 
 @blueprint.route('/thread/<current_chan>/<thread_id>', methods=('GET', 'POST'))
@@ -324,6 +328,8 @@ def thread(current_chan, thread_id):
     if not can_view:
         return allow_msg
 
+    anchor = None
+
     try:
         last = int(request.args.get('last'))
         if last < 0:
@@ -331,10 +337,29 @@ def thread(current_chan, thread_id):
     except:
         last = None
 
+    try:
+        ref = int(request.args.get('ref'))  # reply post is made via ajax, will not refresh page
+    except:
+        ref = None
+
     form_post = forms_board.Post()
 
     settings = GlobalSettings.query.first()
     chan = Chan.query.filter(Chan.address == current_chan).first()
+
+    (public_keys,
+     private_keys,
+     private_key_ids,
+     public_key_ids,
+     exported_public_keys) = get_all_key_information()
+
+    list_gpg_from = []
+    for each_key in private_keys:
+        list_gpg_from.append({"value": each_key["fingerprint"], "name": each_key["fingerprint"]})
+
+    list_gpg_to = []
+    for each_key in public_keys:
+        list_gpg_to.append({"value": each_key["fingerprint"], "name": each_key["fingerprint"]})
 
     game_hash = ""
     game = Games.query.filter(and_(
@@ -379,12 +404,43 @@ def thread(current_chan, thread_id):
             if not can_download and not board_list_admin:
                 return allow_msg
 
-            daemon_com.set_start_download(form_post.message_id.data)
-            status_msg['status_title'] = "Success"
-            status_msg['status_message'].append(
-                "File download initialized in the background. Give it time to download.")
+            if settings.maintenance_mode:
+                status_msg['status_title'] = "Error"
+                status_msg['status_message'].append(
+                    "Cannot initiate attachment download while Maintenance Mode is enabled.")
+            else:
+                daemon_com.set_start_download(form_post.message_id.data)
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append(
+                    "File download initialized in the background. Give it time to download.")
 
-        elif form_post.submit.data:
+        if form_post.preview_post.data:
+            anchor = "popup_reply"
+            if 'status_title' not in status_msg:
+                status_msg['status_title'] = "Preview"
+                status_msg['status_message'].append("Post Preview generated.")
+            form_populate = generate_post_form_populate(form_post)
+            form_populate["preview"] = process_replacements(
+                html.escape(form_populate["comment"].encode('utf-8').strip().decode()),
+                str(random.randint(1, 10**10)),
+                "0",
+                preview=True)
+
+            form_populate["preview"], gpg_texts = find_gpg(form_populate["preview"])
+            gpg_texts = gpg_decrypt(gpg_texts)
+
+            if thread:
+                form_populate["preview"] = format_body(
+                    "preview", form_populate["preview"], False, True, preview=True, this_thread_hash=thread.thread_hash, gpg_texts=gpg_texts)
+            else:
+                form_populate["preview"] = format_body(
+                    "preview", form_populate["preview"], False, True, preview=True, gpg_texts=gpg_texts)
+
+            if ref:  # send text response status to popup reply window
+                status_msg["preview"] = form_populate["preview"]
+                return status_msg
+
+        elif form_post.submit_post.data or ref:
             invalid_post = False
             if not form_post.validate():
                 for field, errors in form_post.errors.items():
@@ -418,6 +474,10 @@ def thread(current_chan, thread_id):
 
             status_msg, result, form_populate = post_message(
                 form_post, status_msg)
+            status_msg["no_escape"] = True
+
+            if ref:  # send text response status to popup reply window
+                return status_msg
 
         session['form_populate'] = form_populate
         session['status_msg'] = status_msg
@@ -426,11 +486,13 @@ def thread(current_chan, thread_id):
             return redirect(url_for("routes_board.thread",
                                     current_chan=current_chan,
                                     last=last,
-                                    thread_id=thread_id))
+                                    thread_id=thread_id,
+                                    _anchor=anchor))
         else:
             return redirect(url_for("routes_board.thread",
                                     current_chan=current_chan,
-                                    thread_id=thread_id))
+                                    thread_id=thread_id,
+                                    _anchor=anchor))
 
     try:
         from_list = daemon_com.get_from_list(current_chan)
@@ -445,6 +507,8 @@ def thread(current_chan, thread_id):
                            from_list=from_list,
                            game_hash=game_hash,
                            last=last,
+                           list_gpg_from=list_gpg_from,
+                           list_gpg_to=list_gpg_to,
                            logger=logger,
                            page_id=str(uuid.uuid4()),
                            status_msg=status_msg,
@@ -500,10 +564,15 @@ def thread_steg(current_chan, thread_id):
             if not can_download and not board_list_admin:
                 return allow_msg
 
-            daemon_com.set_start_download(form_post.message_id.data)
-            status_msg['status_title'] = "Success"
-            status_msg['status_message'].append(
-                "File download initialized in the background. Give it time to download.")
+            if settings.maintenance_mode:
+                status_msg['status_title'] = "Error"
+                status_msg['status_message'].append(
+                    "Cannot initiate attachment download while Maintenance Mode is enabled.")
+            else:
+                daemon_com.set_start_download(form_post.message_id.data)
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append(
+                    "File download initialized in the background. Give it time to download.")
 
         elif form_post.submit.data:
             invalid_post = False
@@ -539,6 +608,7 @@ def thread_steg(current_chan, thread_id):
 
             status_msg, result, form_populate = post_message(
                 form_post, status_msg)
+            status_msg["no_escape"] = True
 
         session['form_populate'] = form_populate
         session['status_msg'] = status_msg
@@ -573,7 +643,7 @@ def icon_image(address):
     if not os.path.exists(path_icon):
         generate_icon(address)
     if os.path.abspath(path_icon).startswith(config.FILE_DIRECTORY):
-        return send_file(path_icon, mimetype='image/png', cache_timeout=1440)
+        return send_file(path_icon, mimetype='image/png', max_age=1440)
 
 
 @blueprint.route('/custom_flag_by_flag_id/<flag_id>')
@@ -589,7 +659,7 @@ def custom_flag_by_flag_id(flag_id):
         return send_file(
             BytesIO(base64.b64decode(flag.flag_base64)),
             mimetype='image/{}'.format(flag.flag_extension),
-            cache_timeout=1440)
+            max_age=1440)
 
 
 @blueprint.route('/custom_flag_by_post_id/<post_id>')
@@ -605,81 +675,53 @@ def custom_flag_by_post_id(post_id):
         return send_file(
             BytesIO(base64.b64decode(message.nation_base64)),
             mimetype='image/jpg',
-            cache_timeout=1440)
+            max_age=1440)
 
 
 @blueprint.route('/banner/<chan_address>')
 def banner_image(chan_address):
     """Returns a banner image based on whether a custom banner is available"""
     file_path = None
-    settings = GlobalSettings.query.first()
+    theme = get_theme()
 
     can_view, allow_msg = allowed_access("can_view")
     if not can_view:
-        if get_theme() in config.THEMES_DARK:
-            file_path = "/home/bitchan/static/banner_dark.png"
-        elif get_theme() in config.THEMES_LIGHT:
-            file_path = "/home/bitchan/static/banner_light.png"
+        if theme in config.THEMES_DARK:
+            file_path = f"{config.BITCHAN_DIR}/static/banner_dark.png"
+        elif theme in config.THEMES_LIGHT:
+            file_path = f"{config.BITCHAN_DIR}/static/banner_light.png"
         if file_path:
-            return send_file(file_path, mimetype='image/png', cache_timeout=1440)
+            return send_file(file_path, mimetype='image/png', max_age=1440)
         else:
             return allow_msg
 
-    chan = Chan.query.filter(Chan.address == chan_address).first()
+    if chan_address != "0":
+        chan = Chan.query.filter(Chan.address == chan_address).first()
+        if chan:
+            admin_cmd = Command.query.filter(and_(
+                Command.chan_address == chan.address,
+                Command.action == "set",
+                Command.action_type == "options")).first()
+            if admin_cmd:
+                try:
+                    options = json.loads(admin_cmd.options)
+                except:
+                    options = {}
+                if "banner_base64" in options and options["banner_base64"]:
+                    return send_file(
+                        BytesIO(base64.b64decode(options["banner_base64"])),
+                        mimetype='image/png',
+                        max_age=1440)
 
-    if chan:
-        admin_cmd = Command.query.filter(and_(
-            Command.chan_address == chan.address,
-            Command.action == "set",
-            Command.action_type == "options")).first()
-        if admin_cmd:
-            try:
-                options = json.loads(admin_cmd.options)
-            except:
-                options = {}
-            if "banner_base64" in options and options["banner_base64"]:
-                return send_file(
-                    BytesIO(base64.b64decode(options["banner_base64"])),
-                    mimetype='image/png',
-                    cache_timeout=1440)
-
-    if get_theme() in config.THEMES_DARK:
-        file_path = "/home/bitchan/static/banner_dark.png"
-    elif get_theme() in config.THEMES_LIGHT:
-        file_path = "/home/bitchan/static/banner_light.png"
+    if theme in config.THEMES_DARK:
+        file_path = f"{config.BITCHAN_DIR}/static/banner_dark.png"
+    elif theme in config.THEMES_LIGHT:
+        file_path = f"{config.BITCHAN_DIR}/static/banner_light.png"
 
     if file_path:
-        return send_file(file_path, mimetype='image/png', cache_timeout=1440)
+        return send_file(file_path, mimetype='image/png', max_age=1440)
+
     return "Error determining the banner image to use"
-
-
-@blueprint.route('/spoiler/<chan_address>')
-def spoiler_image(chan_address):
-    """Returns a spoiler image based on whether a custom banner is available"""
-    can_view, allow_msg = allowed_access("can_view")
-    if not can_view:
-        return allow_msg
-
-    chan = Chan.query.filter(Chan.address == chan_address).first()
-
-    if chan:
-        admin_cmd = Command.query.filter(and_(
-            Command.chan_address == chan.address,
-            Command.action == "set",
-            Command.action_type == "options")).first()
-        if admin_cmd:
-            try:
-                options = json.loads(admin_cmd.options)
-            except:
-                options = {}
-            if "spoiler_base64" in options and options["spoiler_base64"]:
-                return send_file(
-                    BytesIO(base64.b64decode(options["spoiler_base64"])),
-                    mimetype='image/png',
-                    cache_timeout=1440)
-
-    file_path = "/home/bitchan/static/spoiler.png"
-    return send_file(file_path, mimetype='image/png', cache_timeout=1440)
 
 
 def get_image_attach(message_id, file_path, file_filename, extension, mime_type="image/jpg"):
@@ -695,19 +737,19 @@ def get_image_attach(message_id, file_path, file_filename, extension, mime_type=
             if (extension in config.FILE_EXTENSIONS_IMAGE and
                     os.path.abspath(file_path_full).startswith(file_path)):
                 return send_file(file_path_full, mimetype=mime_type)
-        else:
-            logger.error("File doesn't exist on disk")
+        elif "_thumb" not in file_path:
+            logger.error(f"Attach File {file_path_full} doesn't exist")
             message = Messages.query.filter(Messages.message_id == message_id).first()
             message.file_download_successful = False
             message.file_sha256_hashes_match = False
             message.save()
-            return ""
+        return "File not found"
     elif post.file_decoded:
         return send_file(BytesIO(post.file_decoded), mimetype=mime_type)
 
 
 @blueprint.route('/files/<file_type>/<message_id>/<filename>')
-def images(message_id, file_type, filename):
+def files(message_id, file_type, filename):
     can_view, allow_msg = allowed_access("can_view")
     if not can_view:
         return allow_msg
@@ -718,32 +760,70 @@ def images(message_id, file_type, filename):
     if not post:
         if file_type == "god_song":
             pass  # God songs can be in the long description
+        elif filename == "banned_thumb.jpeg":
+            pass  # banned image thumbnail
         else:
             return "Message ID not found"
 
-    if post.hide:
+    if post and post.hide:
         return "hidden"
 
     if file_type == "game":
         return post.game_image_file
-    if file_type == "thumb":
+
+    elif file_type == "thumb":
         # Return image thumbnail
         file_order, media_info, _ = attachment_info(message_id)
         path = "{}/{}_thumb".format(config.FILE_DIRECTORY, message_id)
-        if filename in media_info:
+        thumb_name = f'thumb_{media_info[filename]["file_number"]}.jpg'
+        thumb_spoiler_name = f'thumb_{media_info[filename]["file_number"]}_spoiler.jpg'
+        if media_info[filename]['spoiler'] and os.path.exists(os.path.join(path, thumb_spoiler_name)):
+            return send_file(os.path.join(path, thumb_spoiler_name), mimetype="image/jpg")
+        elif filename in media_info and os.path.exists(os.path.join(path, thumb_name)):
             return get_image_attach(
-                message_id, path, filename, media_info[filename]["extension"])
-    if file_type == "thumb_first":
+                message_id, path, thumb_name, media_info[filename]["extension"])
+        else:
+            return send_file(f"{config.CODE_DIR}/static/thread.png", mimetype="image/png")
+
+    elif file_type == "thumb_video":
+        # Return video thumbnail
+        file_order, media_info, _ = attachment_info(message_id)
+        path = "{}/{}_thumb".format(config.FILE_DIRECTORY, message_id)
+        thumb_name = f'thumb_{media_info[filename]["file_number"]}.jpg'
+        thumb_spoiler_name = f'thumb_{media_info[filename]["file_number"]}_spoiler.jpg'
+        if filename in media_info:
+            if media_info[filename]['spoiler'] and os.path.exists(os.path.join(path, thumb_spoiler_name)):
+                return send_file(os.path.join(path, thumb_spoiler_name), mimetype="image/jpg")
+            elif os.path.exists(os.path.join(path, thumb_name)):
+                return send_file(os.path.join(path, thumb_name), mimetype="image/jpg")
+            else:
+                return send_file(f"{config.CODE_DIR}/static/video_missing_thumb.png", mimetype="image/png")
+
+    elif file_type == "banned_thumb":
+        # Return banned image thumbnail
+        try:
+            banned_id = int(message_id)
+            img_ban = BanedHashes.query.filter(BanedHashes.id == banned_id).first()
+            if img_ban:
+                return send_file(BytesIO(base64.b64decode(img_ban.thumb_b64)), mimetype="image/jpeg")
+        except:
+            pass
+        return ""
+
+    elif file_type == "thumb_first":
         # Return image thumbnail
         file_order, media_info, _ = attachment_info(message_id)
         path = "{}/{}_thumb".format(config.FILE_DIRECTORY, message_id)
-        for filename in media_info:
-            if media_info[filename]["extension"] in config.FILE_EXTENSIONS_IMAGE:
-                if media_info[filename]['spoiler']:
-                    return send_file("/home/bitchan/static/spoiler.png", mimetype="image/png")
-                else:
+        for fn in media_info:
+            if media_info[fn]["extension"] in config.FILE_EXTENSIONS_IMAGE:
+                thumb_name = f'thumb_{media_info[fn]["file_number"]}.jpg'
+                thumb_spoiler_name = f'thumb_{media_info[fn]["file_number"]}_spoiler.jpg'
+                if media_info[fn]['spoiler'] and os.path.exists(os.path.join(path, thumb_spoiler_name)):
+                    return send_file(os.path.join(path, thumb_spoiler_name), mimetype="image/png")
+                elif os.path.exists(os.path.join(path, thumb_name)):
                     return get_image_attach(
-                        message_id, path, filename, media_info[filename]["extension"])
+                        message_id, path, thumb_name, media_info[fn]["extension"])
+
     elif file_type == "image":
         # Return image file
         file_order, media_info, _ = attachment_info(message_id)
@@ -751,12 +831,14 @@ def images(message_id, file_type, filename):
         if filename in media_info:
             return get_image_attach(
                 message_id, path, filename, media_info[filename]["extension"])
+
     elif file_type == "god_song":
         file_path = "{}/{}_god_song.mp3".format(config.FILE_DIRECTORY, message_id)
         if os.path.exists(file_path):
             return send_file(file_path, mimetype="audio/mp3")
         else:
             return "Could not find God Song file at {}".format(file_path)
+
     elif file_type == "file":
         # Return potentially non-image file
         file_order, media_info, _ = attachment_info(message_id)
@@ -769,10 +851,12 @@ def images(message_id, file_type, filename):
                     message_id, path, filename, media_info[filename]["extension"])
             else:
                 if os.path.abspath(file_path).startswith(path):
-                    return send_file(file_path, attachment_filename=filename)
+                    return send_file(file_path, download_name=filename)
+
     else:
         logger.error("File '{}' not found for message {}".format(filename, message_id))
-        return ""
+
+    return "File not found"
 
 
 @blueprint.route('/dl/<message_id>/<filename>')
@@ -788,7 +872,7 @@ def download(message_id, filename):
             os.path.exists(file_path_full) and
             os.path.abspath(file_path_full).startswith(file_path_msg)):
         return send_file(file_path_full,
-                         attachment_filename=filename,
+                         download_name=filename,
                          as_attachment=True)
 
 
@@ -869,3 +953,31 @@ def block_address(chan_address, block_address, block_type):
     return render_template("pages/alert.html",
                            board=board,
                            status_msg=status_msg)
+
+
+@blueprint.route('/captcha/<img_id>/<page_id>/<b64_only>')
+@count_views
+def generate_captcha(page_id, img_id, b64_only):
+    """Generate captcha"""
+    can_post, allow_msg = allowed_access("can_post")
+    can_view, allow_msg = allowed_access("can_view")
+    if not can_post and not can_view:
+        return allow_msg
+
+    if page_id == "0":
+        page_id = str(uuid.uuid4())
+    else:
+        page_id = None
+
+    if b64_only == "0":
+        b64 = None
+        src = current_app.jinja_env.globals['captcha'](page_id=page_id, img_id=img_id)
+    else:
+        b64 = current_app.jinja_env.globals['captcha'](page_id=page_id, img_id=img_id, only_b64=True)
+        src = None
+
+    return jsonify({
+        "src": src,
+        "b64": b64,
+        "page_id": page_id
+    })

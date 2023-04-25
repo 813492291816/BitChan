@@ -6,8 +6,10 @@ Version: 1.1.1
 
 BitChan is a decentralized anonymous imageboard inspired by `BitBoard <https://github.com/michrob/bitboard>`__ and built on top of `Bitmessage <https://bitmessage.org>`__ with `Tor <https://www.torproject.org>`__, `I2P <https://geti2p.net>`__, and `GnuPG <https://gnupg.org>`__.
 
-Try it out at http://bitchanr4b64govofzjthtu6qc4ytrbuwbgynapkjileajpycioikxad.onion (an anonymous donor has paid for a BitChan instance to be set up on a VPS in `Kiosk Mode <https://github.com/813492291816/BitChan/blob/master/MANUAL.md#kiosk-mode>`__). This is only accessible with `Tor Browser <https://www.torproject.org>`__.
+An anonymous donor has paid for a BitChan instance to be set up on a VPS in `Kiosk Mode <MANUAL.md#kiosk-mode>`__. Try it out at:
 
+ - Tor: http://bitchanr4b64govofzjthtu6qc4ytrbuwbgynapkjileajpycioikxad.onion (only accessible with `Tor Browser <https://www.torproject.org>`__).
+ - I2P: http://bitchan.i2p, b32 Address http://waycuw2c27ruakfblkf5tcegwmt3ot445dlfoypil6bzmm4yxg7a.b32.i2p (only accessible with `I2P <https://geti2p.net>`__).
 
 BitChan solves a number of security and free speech problems that have plagued most imageboards. Centralized imageboards can be taken offline or hijacked and can leak user data. BitChan reduces the likelihood of this by being decentralized, requiring all connections to go through Tor, and not requiring JavaScript.
 
@@ -73,19 +75,23 @@ Features
   - Export and import your database (all settings and data)
   - Mailbox system for messaging Bitmessage addresses
 
-Setup
-=====
+Install
+=======
 
-BitChan is distributed with a stable version of Bitmessage and runs among several docker containers orchestrated by docker-compose. This allows cross-platform compatibility and isolation of your install from your operating system. For a consistent install environment, installing BitChan within a virtual machine running Xubuntu 20.04 is described below, however you can install BitChan in any operating system of your choice that's supported by docker and docker-compose.
+BitChan is distributed with a stable version of Bitmessage and runs among several docker containers orchestrated by docker's compose plugin. This allows cross-platform compatibility and isolation of your install from your operating system. For a consistent install environment, installing BitChan within a virtual machine running Xubuntu 22.04 is described below, however you can install BitChan in many operating system of your choice that support the install of docker and docker compose.
 
-Install BitChan
----------------
+Alternatively, BitChan can be installed natively in a Debian-based operating system (without Docker).
 
-To install BitChan, first install `docker <https://docs.docker.com/get-docker/>`__ and `docker-compose <https://docs.docker.com/compose/install/>`__, then change to the BitChan/docker directory and execute:
+See `INSTALL <INSTALL.md>`__ for detailed install instructions.
+
+Install BitChan with Docker
+---------------------------
+
+To install BitChan, first install `Docker Engine <https://docs.docker.com/engine/install/>`__, then change to the BitChan/docker directory and execute:
 
 .. code::
 
-    docker-compose up --build -d
+    docker compose up --build -d
 
 
 If you get a timeout error while downloading any of the docker image files, just run the command again until it successfully finishes all downloads.
@@ -95,22 +101,8 @@ Install Configuration
 
 docker-compose.yml in the docker directory can be configured to suit your particular system. Make sure to run "make daemon" for the changes to take effect.
 
-- The nginx container can have the ports option "8000:8000" changed to modify the port used to access the web interface. To change to port 9000, merely change to "9000:8000".
-- The option cpuset for each container can be modified based on the number of CPU cores available. To allocate more than one to a container, separate them with commas (e.g. cpuset: '0,1,2'). It is wise to allocate one or more cores just to the bitmessage container and no others. Similarly, it's wise to allocate one or more cores only to tor, nginx, and bitchan_flask. This is done to prevent bottlenecks when bitmessage is creating a 100% CPU load doing proof of work, since it is segregated to only using specific CPUs, while other containers can still process on other CPUs.
-
-Install on Debian-Based Operating Systems
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The following steps are to install BitChan on a Debian-based operating system. This has been tested on `Xubuntu <https://xubuntu.org>`__ 20.04 and 21.04 as virtual machines in `VirtualBox <https://www.virtualbox.org/>`__, and Debian Buster (ARM). Open a terminal and run the following commands:
-
-.. code::
-
-    sudo apt install build-essential docker.io docker-compose git
-    sudo systemctl enable docker
-    git clone https://github.com/813492291816/BitChan
-    cd BitChan/docker
-    sudo make daemon
-
+- The cpuset option for each container can be modified based on the number of CPU cores available. To allocate more than one to a container, separate them with commas (e.g. cpuset: '0,1,2'). It is wise to allocate one or more cores only to the bitmessage container. Similarly, it's wise to allocate one or more cores only to tor, nginx, and bitchan_flask. This is done to prevent bottlenecks when bitmessage is doing proof of work, since it is segregated to only using specific CPUs, while other containers can still process on other CPUs.
+- The nginx container can have the ports section uncommented and changed to modify the port used to access the web interface, if you want this port exposed publicly. When commented out, the web interface can only be accessed from the computer BitChan is installed on. To change to port 9000, merely change to "9000:8000". It is recommended to keep this commented unless you know what you're doing.
 
 Post-install
 ~~~~~~~~~~~~
@@ -119,131 +111,16 @@ BitChan will automatically start at boot (if enabled) and runs on port 8000 by d
 
 For added security, it's recommended to either A) use tor browser or B) configure another browser to connect through tor.
 
-- A: Tor Browser: Install tor browser (``sudo apt install torbrowser-launcher``). Launch tor browser and enter ``about:config`` in the address bar. Search for ``network.proxy.no_proxies_on`` and enter ``172.28.1.1`` to exclude the BitChan IP address from the proxy. Open BitChan at ``http://172.28.1.1:8000``.
+- A: Tor Browser: Install tor browser (``sudo apt install torbrowser-launcher``). Launch tor browser and enter ``about:config`` in the address bar. Search for ``network.proxy.no_proxies_on`` and enter ``172.28.1.1,172.28.1.6`` (if installed with docker) or ``127.0.0.1`` (if installed without docker) to exclude the BitChan and I2P Webconsole IP addresses from the proxy. Access BitChan at ``http://172.28.1.1:8000`` and the I2P Webconsole at ``http://172.28.1.6:7070`` (use 127.0.0.1 if installed without docker).
 
-- B: Configure your browser to use the Tor SOCKS5 proxy with the host ``172.28.1.2`` and port 9060 (the IP and port for tor running in the tor docker container). Open BitChan at ``http://localhost:8000``.
+- B: Configure your browser to use the Tor SOCKS5 proxy with the host ``172.28.1.2`` and port 9050 (the IP and port for tor running in the tor docker container). Open BitChan at ``http://localhost:8000``.
 
 Verify your browser is using tor by visiting `https://check.torproject.org <https://check.torproject.org>`__.
 
-Build BitChan Outside Docker
-----------------------------
+Install BitChan without Docker
+------------------------------
 
-These are the general steps to install and set up tor, nginx, PyBitmessage, and BitChan outside docker. If you want to build BitChan outside of docker, YMMV getting everything to play nicely together. Using Docker is still the preferred method.
-
-Create directories for user data
-
-.. code::
-
-    sudo mkdir -p /usr/local/bitmessage
-    sudo mkdir -p /usr/local/bitchan
-    sudo mkdir -p /usr/local/bitchan/log
-    sudo mkdir -p /usr/local/bitchan/downloaded_files
-    chown -R user.user /usr/local/bitmessage
-    chown -R user.user /usr/local/bitchan
-
-
-Install apt dependencies
-
-.. code::
-
-    sudo apt-get update
-    sudo apt-get install -yq --no-install-suggests --no-install-recommends curl secure-delete \\
-        gnupg2 build-essential ffmpeg libsm6 libxext6 docker.io python3-dev python3-opencv \\
-        python3-setuptools python3-distutils python3-pip netbase libjpeg-dev zlib1g-dev \\
-        python-msgpack dh-python python-all-dev build-essential libssl-dev python-stdeb \\
-        fakeroot python-pip libcap-dev nano sed git nginx tor
-
-
-Create Python2 and Python3 virtual environments
-
-.. code::
-
-    python2 -m virtualenv /home/user/venv2
-    python3 -m virtualenv /home/user/venv3
-
-
-Clone PyBitmessage and install pip2 dependencies
-
-.. code::
-
-    cd /home/user
-    git clone https://github.com/Bitmessage/PyBitmessage
-    cd PyBitmessage
-    /home/user/venv2/bin/pip install -r requirements.txt
-    sudo /home/user/venv2/bin/python2 setup.py install
-
-
-Setup PyBitmessage keys.dat
-
-.. code::
-
-    export BITMESSAGE_HOME="/usr/local/bitmessage"
-    /usr/local/bin/pybitmessage -h
-    sed -i '/apivariant/d' /usr/local/bitmessage/keys.dat \\
-        && sed -i 's/socksproxytype.*/socksproxytype = SOCKS5/' /usr/local/bitmessage/keys.dat \\
-        && sed -i 's/sockshostname.*/sockshostname = localhost/' /usr/local/bitmessage/keys.dat \\
-        && sed -i 's/socksport.*/socksport = 9050/' /usr/local/bitmessage/keys.dat \\
-        && echo "apienabled = true" >> /usr/local/bitmessage/keys.dat \\
-        && echo "apiport = 8445" >> /usr/local/bitmessage/keys.dat \\
-        && echo "apiinterface = 0.0.0.0" >> /usr/local/bitmessage/keys.dat \\
-        && echo "apiusername = bitchan" >> /usr/local/bitmessage/keys.dat \\
-        && echo "apipassword = $(tr -dc a-zA-Z0-9 < /dev/urandom | head -c32 && echo)" >> /usr/local/bitmessage/keys.dat
-
-
-Clone BitChan and install pip3 dependencies
-
-.. code::
-
-    cd /home/user
-    git clone https://github.com/813492291816/BitChan
-    cd BitChan
-    /home/user/venv3/bin/pip install -r requirements.txt
-
-
-edit /home/user/BitChan/config.py and change BM_HOST and TOR_HOST to "localhost"
-
-Setup nginx
-
-.. code::
-
-    sudo rm /etc/nginx/nginx.conf
-    sudo cp /home/user/BitChan/docker/nginx/nginx.conf /etc/nginx/
-    sudo rm /etc/nginx/conf.d/default.conf
-    sudo cp /home/user/BitChan/docker/nginx/project.conf /etc/nginx/conf.d/
-    sudo service nginx restart
-
-
-Setup tor
-
-.. code::
-    sudo echo "HashedControlPassword $(tor --quiet --hash-password torpass1234)" >> /etc/tor/torrc
-    sudo service tor restart
-
-
-Start Bitmessage
-
-.. code::
-
-    export BITMESSAGE_HOME="/usr/local/bitmessage"
-    /usr/local/bin/pybitmessage -d
-
-
-Start BitChan Backend
-
-.. code::
-
-    /home/user/venv3/python /home/user/BitChan/bitchan_daemon.py
-
-
-Start BitChan Frontend
-
-.. code::
-
-    cd /home/user/BitChan
-    /home/user/venv3/gunicorn --workers 1 --threads 4 --timeout 1800 --bind unix:/var/run/bitchan.sock bitchan_flask:app
-
-
-Open http://127.0.0.1:8000 in your browser.
+See `INSTALL <INSTALL.md#build-bitchan-without-docker>`__  for how to install BitChan without Docker.
 
 Upgrade BitChan
 ---------------
@@ -293,7 +170,7 @@ Restart BitChan
 .. code::
 
     cd BitChan/docker
-    sudo docker-compose down
+    sudo docker compose down
     sudo make daemon
 
 
@@ -309,8 +186,8 @@ Docker Container Networking
 - tor container
 
   - IP: 172.28.1.2
-  - Proxy Port: 9060
-  - Control Port: 9061
+  - Proxy Port: 9050
+  - Control Port: 9051
 
 - bitmessage container
 
@@ -338,7 +215,7 @@ Add your user to the docker group to run docker as a non-root user.
 
 Log out and back in for the group addition to take effect.
 
-Make sure you're in the BitChan/docker directory when executing the ``make`` or ``docker-compose`` commands.
+Make sure you're in the BitChan/docker directory when executing the ``make`` or ``docker compose`` commands.
 
 Build and Daemonize (runs as daemon at startup)
 -----------------------------------------------
@@ -358,31 +235,31 @@ Stop and delete containers
 Bring Down
 ----------
 
-``docker-compose down``
+``docker compose down``
 
 Bring Up (stdout)
 -----------------
 
-``docker-compose up``
+``docker compose up``
 
 Bring Up (daemon)
 -----------------
 
-``docker-compose up -d``
+``docker compose up -d``
 
 Build and Bring Up (stdout)
 ---------------------------
 
 Note: same as ``make build`` command
 
-``docker-compose up --build``
+``docker compose up --build``
 
 Build and Bring Up (daemon)
 ---------------------------
 
 Note: same as ``make daemon`` command
 
-``docker-compose up --build -d``
+``docker compose up --build -d``
 
 Accessing volumes
 -----------------
@@ -412,7 +289,7 @@ Delete BitChan volume
 .. code::
 
     cd BitChan/docker
-    docker-compose down
+    docker compose down
     docker volume rm docker_bitchan
 
 
@@ -424,7 +301,7 @@ Note: This will delete the Bitmessage keys.dat and messages.dat
 .. code::
 
     cd BitChan/docker
-    docker-compose down
+    docker compose down
     docker volume rm docker_bitmessage
 
 
@@ -436,13 +313,42 @@ To use nyx to connect to the control port of the containerized tor, run the foll
 .. code::
 
     sudo apt install nyx
-    nyx -i 172.28.1.2:9061
+    nyx -i 172.28.1.2:9051
 
 
 Enter password torpass1234
 
 Note: To change the default tor password, edit BitChan/docker/docker-compose.yml and change ``password: "torpass1234"`` to something else, then rebuild your containers with ``make daemon``
 
+
+Check where ports are bound
+---------------------------
+
+.. code::
+
+    sudo netstat -tunlp && sudo lsof -nP -iTCP -sTCP:LISTEN
+
+
+Connect to a remote server that's bound to localhost
+----------------------------------------------------
+
+When a server is bound to localhost, that server can only be connected to from the computer hosting the server (from localhost).
+
+.. code::
+
+    ssh -L local_port:local_address:remote_port user@server.com
+
+
+For example, if your remote IP address is 123.4.5.6, to connect to the remote i2pd webconsole at port 7070, execute the command:
+
+.. code::
+
+    ssh -L 7777:localhost:7070 user@123.4.5.6
+
+
+This will send any connection to port 7777 on your local machine over SSH to port 7070 on the remote machine.
+
+After establishing the tunnel, open a web browser to http://localhost:7070.
 
 Virtual Private Server / Kiosk Mode
 ===================================

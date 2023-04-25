@@ -9,6 +9,7 @@ from sqlalchemy import func
 
 import config
 from config import DATABASE_BITCHAN
+from database.models import GlobalSettings
 from database.models import Messages
 from database.models import PostCards
 from database.models import Threads
@@ -42,6 +43,7 @@ def generate_card(thread_id, force_generate=False):
         each_thread = new_session.query(Threads).filter(
             Threads.thread_hash == thread_id).first()
         thread_info = {
+            "thread": each_thread,
             "op_timestamp": None,
             "messages": [],
             "total_posts": new_session.query(Messages).filter(
@@ -81,15 +83,28 @@ def generate_card(thread_id, force_generate=False):
             thread_info["op_timestamp"] = op_ts
 
         # Replies
-        messages = new_session.query(Messages).filter(
-            and_(
-                Messages.thread_id == each_thread.id,
-                Messages.is_op.is_(False))).order_by(
-            Messages.timestamp_sent.desc()).limit(3)
+        settings = GlobalSettings.query.first()
+        if settings.post_timestamp == 'sent':
+            messages = new_session.query(Messages).filter(
+                and_(
+                    Messages.thread_id == each_thread.id,
+                    Messages.is_op.is_(False))).order_by(
+                Messages.timestamp_sent.desc()).limit(3)
+        elif settings.post_timestamp == 'received':
+            messages = new_session.query(Messages).filter(
+                and_(
+                    Messages.thread_id == each_thread.id,
+                    Messages.is_op.is_(False))).order_by(
+                Messages.timestamp_received.desc()).limit(3)
+        else:
+            return f"Improper timestamp sort: '{settings.post_timestamp}'"
+
         if messages.count():
-            messages_ordered = messages.from_self().order_by(
-                Messages.timestamp_sent.asc()).all()
-            for each_msg in messages_ordered:
+            list_tmp_msgs = []
+            for each_msg in messages.all():
+                list_tmp_msgs.append(each_msg)
+            list_tmp_msgs.reverse()
+            for each_msg in list_tmp_msgs:
                 thread_info["messages"].append(each_msg)
 
         from bitchan_flask import app

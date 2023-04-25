@@ -1,0 +1,39 @@
+[Unit]
+Description=Anonymizing Overlay Network
+After=network.target
+
+[Service]
+User=bitchan
+Group=bitchan
+Type=notify
+NotifyAccess=all
+PrivateTmp=yes
+ExecStartPre=/usr/local/bin/tor -f /usr/local/bitchan/tor/torrc --verify-config
+ExecStart=/usr/local/bin/tor -f /usr/local/bitchan/tor/torrc
+ExecReload=/usr/bin/kill -HUP $MAINPID
+PIDFile=/usr/local/bitchan/tor/tor.pid
+KillSignal=SIGINT
+TimeoutSec=60
+Restart=on-failure
+WatchdogSec=1m
+LimitNOFILE=32768
+
+#Hardening
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=full
+ReadOnlyDirectories=/
+ReadWriteDirectories=-/usr/local/bitchan/tor
+ReadWriteDirectories=-/usr/local/bitchan/tor/bm
+ReadWriteDirectories=-/usr/local/bitchan/tor/rand
+ReadWriteDirectories=-/usr/local/bitchan/tor/cus
+ReadWriteDirectories=-/usr/local/bitchan/tor/authorized_clients
+ReadWriteDirectories=-/usr/local/bitchan/tor_data
+ReadWriteDirectories=-/var/log/tor
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_NET_BIND_SERVICE CAP_DAC_READ_SEARCH
+
+[Install]
+WantedBy=multi-user.target
+Alias=bitchan_tor.service

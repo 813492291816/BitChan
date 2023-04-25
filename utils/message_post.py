@@ -4,6 +4,7 @@ import html
 import json
 import logging
 import os
+import random
 import time
 import zipfile
 from threading import Thread
@@ -15,11 +16,13 @@ from sqlalchemy import and_
 
 import config
 from bitchan_client import DaemonCom
+from config import GPG_DIR
 from database.models import Chan
 from database.models import Command
 from database.models import Flags
 from database.models import Games
 from database.models import GlobalSettings
+from database.models import PGP
 from database.models import Threads
 from database.models import UploadProgress
 from database.models import UploadSites
@@ -35,10 +38,16 @@ from utils.files import human_readable_size
 from utils.files import return_non_overlapping_sequences
 from utils.gateway import api
 from utils.general import get_random_alphanumeric_string
+from utils.gpg import find_gpg
+from utils.gpg import get_keyring_name
+from utils.gpg import gpg_decrypt
 from utils.message_check import check_msg_dict_post
+from utils.replacements import format_body
+from utils.replacements import process_replacements
 from utils.routes import has_permission
 from utils.routes import is_logged_in
 from utils.shared import get_access
+from utils.shared import get_post_ttl
 from utils.steg import steg_encrypt
 from utils.upload import UploadCurl
 
@@ -53,18 +62,29 @@ def post_message(form_post, status_msg):
     return_str = None
     status_msg = status_msg
     settings = GlobalSettings.query.first()
+    thread = None
+
+    if settings.maintenance_mode:
+        status_msg['status_message'].append("Maintenance Mode is Active. Disabled: creating new posts.")
 
     if settings.enable_kiosk_mode:
         if is_logged_in() and has_permission("is_global_admin"):
             pass
-        elif settings.kiosk_allow_posting or has_permission("can_post"):
-            now = time.time()
-            last_post_ts = daemon_com.get_last_post_ts()
-            if now < last_post_ts + settings.kiosk_post_rate_limit:
+        else:
+            # Can posting occur
+            if settings.kiosk_allow_posting or has_permission("can_post"):
+                now = time.time()
+                last_post_ts = daemon_com.get_last_post_ts()
+                if now < last_post_ts + settings.kiosk_post_rate_limit:
+                    status_msg['status_message'].append(
+                        "Posting is limited to 1 post per {} second period. Wait {:.0f} more seconds.".format(
+                            settings.kiosk_post_rate_limit,
+                            (last_post_ts + settings.kiosk_post_rate_limit) - now))
+
+            # Check if allowed to encrypt PGP messages
+            if (form_post.gpg_sign_post.data or form_post.gpg_encrypt_msg.data) and not settings.kiosk_allow_gpg:
                 status_msg['status_message'].append(
-                    "Posting is limited to 1 post per {} second period. Wait {:.0f} more seconds.".format(
-                        settings.kiosk_post_rate_limit,
-                        (last_post_ts + settings.kiosk_post_rate_limit) - now))
+                    "Encrypting or signing PGP messages in posts is not allowed in kiosk mode")
 
     if not form_post.from_address.data:
         status_msg['status_message'].append("A From Address is required.")
@@ -76,21 +96,24 @@ def post_message(form_post, status_msg):
 
         if not thread:
             status_msg['status_message'].append("Cannot post to nonexistent thread.")
+        else:
+            if thread.hide:
+                status_msg['status_message'].append("Cannot post to a hidden thread. Restore the thread before posting.")
 
-        elif thread and thread.chan:
-            admin_cmd = Command.query.filter(and_(
-                Command.action == "set",
-                Command.action_type == "thread_options",
-                Command.thread_id == thread.thread_hash)).first()
-            try:
-                options = json.loads(admin_cmd.options)
-            except:
-                options = {}
-            if ("lock" in options and options["lock"]) or thread.locked_local:
-                access = get_access(thread.chan.address)
-                if form_post.from_address.data not in access["primary_addresses"]:
-                    status_msg['status_message'].append(
-                        "Only Owner address can post to a locked thread.")
+            if thread.chan:
+                admin_cmd = Command.query.filter(and_(
+                    Command.action == "set",
+                    Command.action_type == "thread_options",
+                    Command.thread_id == thread.thread_hash)).first()
+                try:
+                    options = json.loads(admin_cmd.options)
+                except:
+                    options = {}
+                if ("lock" in options and options["lock"]) or thread.locked_local:
+                    access = get_access(thread.chan.address)
+                    if form_post.from_address.data not in access["primary_addresses"]:
+                        status_msg['status_message'].append(
+                            "Only Owner address can post to a locked thread.")
 
     if form_post.is_op.data == "yes":
         if len(form_post.subject.data.strip()) == 0:
@@ -102,15 +125,20 @@ def post_message(form_post, status_msg):
             # A comment is not required if a game command is given
             pass
         elif (not form_post.body.data and
+                not form_post.gpg_body.data and
                 (not form_post.file1.data[0] and
                  not form_post.file2.data[0] and
                  not form_post.file3.data[0] and
                  not form_post.file4.data[0])):
-            status_msg['status_message'].append("A Comment or File is required.")
+            status_msg['status_message'].append("A Comment or File or PGP Message is required.")
 
-    if len(form_post.body.data + form_post.subject.data.strip()) > config.MAX_SUBJECT_COMMENT:
+    gpg_body = ""
+    if form_post.gpg_body.data:
+        gpg_body = form_post.gpg_body.data
+
+    if len(gpg_body + form_post.body.data + form_post.subject.data.strip()) > config.MAX_SUBJECT_COMMENT:
         status_msg['status_message'].append(
-            "Limit of {} characters exceeded for Subject + Comment: {}".format(
+            "Limit of {} characters exceeded for Subject + Comment + PGP Message: {}".format(
                 config.MAX_SUBJECT_COMMENT, len(form_post.body.data)))
 
     if form_post.ttl.data > 2419200 or form_post.ttl.data < 3600:
@@ -133,6 +161,12 @@ def post_message(form_post, status_msg):
 
     if form_post.game.data and form_post.game.data not in config.GAMES:
         status_msg['status_message'].append("Unknown game: {}".format(form_post.game.data))
+
+    if form_post.gpg_encrypt_msg.data and not form_post.gpg_select_to.data:
+        status_msg['status_message'].append("At least one recipient is required to GPG encrypt a message")
+
+    if form_post.gpg_encrypt_msg.data and not form_post.gpg_body.data:
+        status_msg['status_message'].append("A message is required to GPG encrypt a message")
 
     def append_file(form, list_append):
         if bool(form.data[0]):
@@ -180,7 +214,28 @@ def post_message(form_post, status_msg):
     if form_post.game_termination_password.data and len(form_post.game_termination_password.data) > 512:
         status_msg['status_message'].append("Game Termination Password too long. Max characters is 512.")
 
-    if "status_message" not in status_msg or not status_msg["status_message"]:
+    if form_post.preview_post.data:
+        return_str = ""
+        if 'status_title' not in status_msg:
+            status_msg['status_title'] = "Preview"
+            status_msg['status_message'].append("Post Preview generated.")
+        form_populate = generate_post_form_populate(form_post)
+        form_populate["preview"] = process_replacements(
+            html.escape(form_populate["comment"].encode('utf-8').strip().decode()),
+            str(random.randint(1, 10**10)),
+            "0",
+            preview=True)
+
+        form_populate["preview"], gpg_texts = find_gpg(form_populate["preview"])
+        gpg_texts = gpg_decrypt(gpg_texts)
+
+        if thread:
+            form_populate["preview"] = format_body(
+                "preview", form_populate["preview"], False, True, preview=True, this_thread_hash=thread.thread_hash, gpg_texts=gpg_texts)
+        else:
+            form_populate["preview"] = format_body(
+                "preview", form_populate["preview"], False, True, preview=True, gpg_texts=gpg_texts)
+    elif "status_message" not in status_msg or not status_msg["status_message"]:
         if settings.enable_kiosk_mode:
             if settings.kiosk_allow_posting or has_permission("can_post"):
                 daemon_com.set_last_post_ts(time.time())
@@ -190,13 +245,12 @@ def post_message(form_post, status_msg):
         if return_str == "Error":
             status_msg['status_title'] = "Error"
             status_msg['status_message'] = status_msg['status_message'] + errors
+            form_populate = generate_post_form_populate(form_post)
         else:
             status_msg['status_title'] = "Success"
             status_msg['status_message'].append(return_str)
     else:
         status_msg['status_title'] = "Error"
-
-    if status_msg['status_title'] == "Error":
         form_populate = generate_post_form_populate(form_post)
 
     return status_msg, return_str, form_populate
@@ -219,7 +273,7 @@ def generate_post_form_populate(form_post):
             "image2_spoiler": form_post.image2_spoiler.data,
             "image3_spoiler": form_post.image3_spoiler.data,
             "image4_spoiler": form_post.image4_spoiler.data,
-            "image_steg_insert": form_post.steg_message.data,
+            "image_steg_insert": form_post.image_steg_insert.data,
             "steg_comment": form_post.steg_message.data,
             "delete_password": form_post.delete_password.data,
             "ttl": form_post.ttl.data,
@@ -228,7 +282,13 @@ def generate_post_form_populate(form_post):
             "game_password_b": form_post.game_password_b.data,
             "game_player_move": form_post.game_player_move.data,
             "game_termination_password": form_post.game_termination_password.data,
-            "upload_cipher_and_key": form_post.upload_cipher_and_key.data
+            "upload_cipher_and_key": form_post.upload_cipher_and_key.data,
+            "gpg_body": form_post.gpg_body.data,
+            "gpg_encrypt_msg": form_post.gpg_encrypt_msg.data,
+            "gpg_sign_post": form_post.gpg_sign_post.data,
+            "gpg_hide_all_recipients": form_post.gpg_hide_all_recipients.data,
+            "gpg_select_from":form_post.gpg_select_from.data,
+            "gpg_select_to": form_post.gpg_select_to.data
         }
         return form_populate
     except:
@@ -363,6 +423,77 @@ def submit_post(form_post):
     if form_post.body.data:
         dict_send["message"] = form_post.body.data.encode('utf-8').strip().decode()
 
+    #
+    # PGP Encryption
+    #
+
+    # Sign and encrypt message
+    if (form_post.gpg_sign_post.data and
+            form_post.gpg_encrypt_msg.data and
+            form_post.gpg_select_from.data and
+            form_post.gpg_select_to.data and
+            form_post.gpg_body.data):
+        list_keyring_from = get_keyring_name(form_post.gpg_select_from.data)
+        list_keyring_to = get_keyring_name(form_post.gpg_select_to.data)
+        if list_keyring_from and list_keyring_to:
+            list_keyrings = list_keyring_from + list_keyring_to
+            if form_post.gpg_hide_all_recipients.data:
+                gpg_enc = gnupg.GPG(gnupghome=GPG_DIR, keyring=list_keyrings, options=['--throw-keyids'])
+            else:
+                gpg_enc = gnupg.GPG(gnupghome=GPG_DIR, keyring=list_keyrings)
+            with session_scope(DB_PATH) as new_session:
+                gpg_entry = new_session.query(PGP).filter(
+                    PGP.fingerprint == form_post.gpg_select_from.data).first()
+                if gpg_entry:
+                    encrypted_ascii_data = gpg_enc.encrypt(
+                        form_post.gpg_body.data,
+                        form_post.gpg_select_to.data,
+                        sign=form_post.gpg_select_from.data,
+                        passphrase=gpg_entry.passphrase)
+                    dict_send["message"] += f"\n\n{str(encrypted_ascii_data)}"
+        else:
+            msg = "Key fingerprint not found"
+            logger.error(msg)
+            errors.append(msg)
+            return "Error", errors
+
+    # Sign message
+    elif form_post.gpg_sign_post.data and form_post.gpg_select_from.data and form_post.gpg_body.data:
+        list_keyring_names = get_keyring_name(form_post.gpg_select_from.data)
+        if list_keyring_names:
+            with session_scope(DB_PATH) as new_session:
+                gpg_entry = new_session.query(PGP).filter(
+                    PGP.fingerprint == form_post.gpg_select_from.data).first()
+                if gpg_entry:
+                    gpg_sign = gnupg.GPG(gnupghome=GPG_DIR, keyring=list_keyring_names)
+                    sign_data = gpg_sign.sign(
+                        form_post.gpg_body.data,
+                        keyid=form_post.gpg_select_from.data,
+                        passphrase=gpg_entry.passphrase)
+                    dict_send["message"] += f"\n\n{str(sign_data)}"
+        else:
+            msg = "Key fingerprint not found"
+            logger.error(msg)
+            errors.append(msg)
+            return "Error", errors
+
+    # Encrypt message
+    elif form_post.gpg_encrypt_msg.data and form_post.gpg_select_to.data and form_post.gpg_body.data:
+        list_keyring_names = get_keyring_name(form_post.gpg_select_to.data)
+        if list_keyring_names:
+            if form_post.gpg_hide_all_recipients.data:
+                gpg_enc = gnupg.GPG(gnupghome=GPG_DIR, keyring=list_keyring_names, options=['--throw-keyids'])
+            else:
+                gpg_enc = gnupg.GPG(gnupghome=GPG_DIR, keyring=list_keyring_names)
+            encrypted_ascii_data = gpg_enc.encrypt(
+                form_post.gpg_body.data, form_post.gpg_select_to.data)
+            dict_send["message"] += f"\n\n{str(encrypted_ascii_data)}"
+        else:
+            msg = "Key fingerprint not found"
+            logger.error(msg)
+            errors.append(msg)
+            return "Error", errors
+
     if form_post.is_op.data == "no" and form_post.op_sha256_hash.data:
         dict_send["op_sha256_hash"] = form_post.op_sha256_hash.data
 
@@ -440,6 +571,39 @@ def submit_post(form_post):
         if save_file_size > config.UPLOAD_SIZE_TO_THREAD:
             spawn_send_thread = True
 
+    # Check upload site
+    if any(dict_send["file_order"]) and form_post.upload.data != "bitmessage":
+        with session_scope(DB_PATH) as new_session:
+            settings = new_session.query(GlobalSettings).first()
+            upload_info = new_session.query(UploadSites).filter(
+                UploadSites.id == form_post.upload.data).first()
+
+            if (upload_info and
+                    (upload_info.enabled or
+                     (settings.enable_kiosk_mode and is_logged_in() and has_permission("is_global_admin")))):
+                dict_send["file_url_type"] = upload_info.domain
+                dict_send["file_upload_settings"] = {
+                    "domain": upload_info.domain,
+                    "type": upload_info.type,
+                    "subtype": upload_info.subtype,
+                    "uri": upload_info.uri,
+                    "download_prefix": upload_info.download_prefix,
+                    "response": upload_info.response,
+                    "json_key": upload_info.json_key,
+                    "direct_dl_url": upload_info.direct_dl_url,
+                    "extra_curl_options": upload_info.extra_curl_options,
+                    "upload_word": upload_info.upload_word,
+                    "form_name": upload_info.form_name,
+                    "http_headers": upload_info.http_headers,
+                    "proxy_type": upload_info.proxy_type,
+                    "replace_download_domain": upload_info.replace_download_domain
+                }
+            else:
+                msg = f"{dict_send['post_id']}: Upload site (ID {form_post.upload.data}) not found or enabled"
+                logger.error(f"{dict_send['post_id']}: {msg}")
+                errors.append(msg)
+                return "Error", errors
+
     # Generate the dict that will be sent in the message
     dict_message = {
         "version": config.VERSION_MSG,
@@ -479,8 +643,24 @@ def submit_post(form_post):
         "nation": dict_send["nation"],
         "nation_base64": dict_send["nation_base64"],
         "nation_name": dict_send["nation_name"],
-        "thread_hash": dict_send["thread_hash"]
+        "thread_hash": dict_send["thread_hash"],
+        "orig_op_bm_json_obj": None
     }
+
+    if form_post.is_op.data != "yes":
+        with session_scope(DB_PATH) as new_session:
+            thread = new_session.query(Threads).filter(
+                Threads.thread_hash == form_post.thread_id.data).first()
+            now = time.time()
+            if (thread and
+                    thread.orig_op_bm_json_obj and
+                    thread.last_op_json_obj_ts is not None and
+                    now > thread.last_op_json_obj_ts and
+                    now - thread.last_op_json_obj_ts > config.OP_RESEND_JSON_OBJ_SEC):
+                # Send OP original BM json_obj to heal potentially missing OP
+                logger.info(f"Post is not OP and original OP found and time since last OP send is greater "
+                            f"than {config.OP_RESEND_JSON_OBJ_SEC} sec. Sending original OP with post.")
+                dict_message["orig_op_bm_json_obj"] = json.loads(thread.orig_op_bm_json_obj)
 
     # Check generated message dict for validity
     errors = check_msg_dict_post(errors, dict_message)
@@ -493,19 +673,25 @@ def submit_post(form_post):
         # time to refresh. It's better to give the user feedback about what's happening.
         logger.info("{}: File size above {}. Spawning background upload thread.".format(
             dict_send["post_id"], human_readable_size(config.UPLOAD_SIZE_TO_THREAD)))
+        upload_id = get_random_alphanumeric_string(
+            32, with_punctuation=False, with_spaces=False)
         msg_send = Thread(
-            target=send_message, args=(errors, form_post, dict_send, dict_message,))
+            target=send_message,
+            args=(errors, form_post, dict_send, dict_message,),
+            kwargs={'upload_id': upload_id})
         msg_send.daemon = True
         msg_send.start()
         msg = "Your file that will be uploaded is {}, which is above the {} size to wait " \
               "for the upload to finish. Instead, a thread was spawned to handle the upload " \
               "and this message was generated to let you know your post is uploading in the " \
               "background. The upload progress can be viewed (after encryption and any other " \
-              "processing) on the status page). Depending on the size of your upload and the " \
-              "service it's being uploaded to, the time it takes to send your post will vary. " \
-              "Give your post ample time to send so you don't make duplicate posts.".format(
+              'processing) on the status page or by clicking ' \
+              '<a class="link" href="/upload_progress/{}">here</a>. Depending on the size of your upload ' \
+              "and the service it's being uploaded to, the time it takes to send your post will " \
+              "vary. Give your post ample time to send so you don't make duplicate posts.".format(
                 human_readable_size(save_file_size),
-                human_readable_size(config.UPLOAD_SIZE_TO_THREAD))
+                human_readable_size(config.UPLOAD_SIZE_TO_THREAD),
+                upload_id)
         return msg, []
     else:
         logger.info("{}: No files or total file size below {}. Sending in foreground.".format(
@@ -513,9 +699,28 @@ def submit_post(form_post):
         return send_message(errors, form_post, dict_send, dict_message)
 
 
-def send_message(errors, form_post, dict_send, dict_message):
+def send_message(errors, form_post, dict_send, dict_message, upload_id=None):
     """Conduct the file upload and sending of a message"""
     save_encrypted_path = None
+
+    if not upload_id:
+        upload_id = get_random_alphanumeric_string(
+            16, with_spaces=False, with_punctuation=False)
+
+    with session_scope(DB_PATH) as new_session:
+        try:
+            upl = UploadProgress()
+            upl.upload_id = upload_id
+            upl.uploading = False
+            upl.subject = base64.b64decode(dict_send["subject"]).decode()
+            upl.total_size_bytes = None
+            upl.progress_ts = int(time.time())
+            upl.progress = "Organizing attachment(s)"
+            upl.post_message = dict_message["message"]
+            new_session.add(upl)
+            new_session.commit()
+        except:
+            logger.exception("Couldn't send post")
 
     zip_file = "/tmp/{}".format(
         get_random_alphanumeric_string(15, with_punctuation=False, with_spaces=False))
@@ -596,7 +801,7 @@ def send_message(errors, form_post, dict_send, dict_message):
         file_extension = ""
         while file_extension in [""] + config.UPLOAD_BANNED_EXT:
             file_name = get_random_alphanumeric_string(
-                30, with_punctuation=False, with_spaces=False)
+                16, with_punctuation=False, with_spaces=False)
             file_extension = get_random_alphanumeric_string(
                 3, with_punctuation=False, with_digits=False, with_spaces=False).lower()
             dict_message["upload_filename"] = "{}.{}".format(file_name, file_extension)
@@ -606,32 +811,23 @@ def send_message(errors, form_post, dict_send, dict_message):
 
     if any(dict_send["file_order"]) and form_post.upload.data != "bitmessage":
         with session_scope(DB_PATH) as new_session:
-            upload_info = new_session.query(UploadSites).filter(
-                UploadSites.domain == form_post.upload.data).first()
-
-            if upload_info:
-                dict_message["file_url_type"] = upload_info.domain
-                dict_message["file_upload_settings"] = {
-                    "domain": upload_info.domain,
-                    "type": upload_info.type,
-                    "subtype": upload_info.subtype,
-                    "uri": upload_info.uri,
-                    "download_prefix": upload_info.download_prefix,
-                    "response": upload_info.response,
-                    "json_key": upload_info.json_key,
-                    "direct_dl_url": upload_info.direct_dl_url,
-                    "extra_curl_options": upload_info.extra_curl_options,
-                    "upload_word": upload_info.upload_word,
-                    "form_name": upload_info.form_name,
-                    "http_headers": upload_info.http_headers,
-                    "proxy_type": upload_info.proxy_type,
-                    "replace_download_domain": upload_info.replace_download_domain
-                }
-            else:
-                logger.error("{}: Upload domain not found".format(dict_send["post_id"]))
+            upl = new_session.query(UploadProgress).filter(
+                UploadProgress.upload_id == upload_id).first()
+            if upl:
+                upl.uploading = False
+                upl.progress_ts = int(time.time())
+                upl.progress = "Encrypting attachment(s)"
+                new_session.commit()
 
             # encrypt file
             if dict_message["file_enc_cipher"] == "NONE":
+                settings = new_session.query(GlobalSettings).first()
+                if settings and not settings.allow_unencrypted_encryption_option:
+                    msg = "Encryption is required. Not sending."
+                    errors.append(msg)
+                    logger.error("{}: {}".format(dict_send["post_id"], msg))
+                    return "Error", errors
+
                 logger.info("{}: Not encrypting attachment(s)".format(dict_send["post_id"]))
                 os.rename(zip_file, save_encrypted_path)
             else:
@@ -702,16 +898,17 @@ def send_message(errors, form_post, dict_send, dict_message):
             dict_message["file_extracts_start_base64"] = json.dumps(data_extracted_start_base64)
 
             # Upload file
-            upload_id = get_random_alphanumeric_string(
-                12, with_spaces=False, with_punctuation=False)
+            if not upload_id:
+                upload_id = get_random_alphanumeric_string(
+                    16, with_spaces=False, with_punctuation=False)
             try:
-                with session_scope(DB_PATH) as new_session:
-                    upl = UploadProgress()
-                    upl.upload_id = upload_id
+                upl = new_session.query(UploadProgress).filter(
+                    UploadProgress.upload_id == upload_id).first()
+                if upl:
                     upl.uploading = True
-                    upl.subject = base64.b64decode(dict_send["subject"]).decode()
                     upl.total_size_bytes = dict_message["file_size"]
-                    new_session.add(upl)
+                    upl.progress_ts = int(time.time())
+                    upl.progress = "Uploading attachment(s)"
                     new_session.commit()
 
                 upload_success = None
@@ -740,6 +937,11 @@ def send_message(errors, form_post, dict_send, dict_message):
                     logger.info("{}: Uploading {} file".format(
                         dict_send["post_id"],
                         human_readable_size(os.path.getsize(save_encrypted_path))))
+
+                    if curl_options and "uri" in curl_options:
+                        logger.info("{}: Uploading to {}".format(
+                            dict_send["post_id"], curl_options["uri"]))
+
                     if ("type" in dict_message["file_upload_settings"] and
                             dict_message["file_upload_settings"]["type"] == "anonfile"):
                         status, web_url = anon.upload_file(save_encrypted_path)
@@ -752,33 +954,38 @@ def send_message(errors, form_post, dict_send, dict_message):
                     if not status:
                         logger.error("{}: File upload failed".format(dict_send["post_id"]))
                     else:
-                        logger.info("{}: Upload success: URL: {}".format(dict_send["post_id"], web_url))
+                        logger.info("{}: Upload success: URL: {}".format(dict_send["post_id"], web_url.strip()))
                         upload_success = web_url
-                        with session_scope(DB_PATH) as new_session:
-                            upl = new_session.query(UploadProgress).filter(
-                                UploadProgress.upload_id == upload_id).first()
-                            if upl:
-                                upl.progress_size_bytes = os.path.getsize(save_encrypted_path)
-                                upl.progress_percent = 100
-                                upl.uploading = False
-                                new_session.commit()
+                        if upl:
+                            upl.progress_size_bytes = os.path.getsize(save_encrypted_path)
+                            upl.progress_percent = 100
+                            new_session.commit()
                         break
                     time.sleep(15)
             except:
                 logger.exception("uploading file")
             finally:
                 delete_file(save_encrypted_path)
-                with session_scope(DB_PATH) as new_session:
-                    upl = new_session.query(UploadProgress).filter(
-                        UploadProgress.upload_id == upload_id).first()
-                    if upl:
-                        upl.uploading = False
-                        new_session.commit()
+                upl = new_session.query(UploadProgress).filter(
+                    UploadProgress.upload_id == upload_id).first()
+                if upl:
+                    upl.uploading = False
+                    new_session.commit()
+
+            upl = new_session.query(UploadProgress).filter(
+                UploadProgress.upload_id == upload_id).first()
+            upl.progress_ts = int(time.time())
 
             if upload_success:
+                if upl:
+                    upl.progress = "Upload success"
+                    new_session.commit()
                 dict_message["file_url"] = upload_success
             else:
                 msg = "File upload failed after 3 attempts"
+                if upl:
+                    upl.progress = msg
+                    new_session.commit()
                 errors.append(msg)
                 logger.error("{}: {}".format(dict_send["post_id"], msg))
                 return "Error", errors
@@ -804,6 +1011,14 @@ def send_message(errors, form_post, dict_send, dict_message):
             return "Error", errors
 
         if dict_message["file_enc_cipher"] == "NONE":
+            with session_scope(DB_PATH) as new_session:
+                settings = new_session.query(GlobalSettings).first()
+                if settings and not settings.allow_unencrypted_encryption_option:
+                    msg = "Encryption is required. Not sending."
+                    errors.append(msg)
+                    logger.error("{}: {}".format(dict_send["post_id"], msg))
+                    return "Error", errors
+
             logger.info("{}: Not encrypting attachment(s)".format(dict_send["post_id"]))
             os.rename(zip_file, save_encrypted_path)
         else:
@@ -834,8 +1049,6 @@ def send_message(errors, form_post, dict_send, dict_message):
     if zip_file:
         delete_file(zip_file)
 
-    # logger.info("Message: {}".format(dict_message))
-
     pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
     with session_scope(DB_PATH) as new_session:
         chan = new_session.query(Chan).filter(
@@ -852,16 +1065,25 @@ def send_message(errors, form_post, dict_send, dict_message):
 
     message_send = base64.b64encode(message_encrypted.data).decode()
 
-    if len(message_send) > config.BM_PAYLOAD_MAX_SIZE:
-        msg = "Message payload too large: {}. Must be less than {}".format(
-            human_readable_size(len(message_send)),
-            human_readable_size(config.BM_PAYLOAD_MAX_SIZE))
-        logger.error(msg)
-        errors.append(msg)
-        return "Error", errors
-    else:
-        logger.info("{}: Message size: {}".format(
-            dict_send["post_id"], len(message_send)))
+    with session_scope(DB_PATH) as new_session:
+        settings = new_session.query(GlobalSettings).first()
+        if len(message_send) > config.BM_PAYLOAD_MAX_SIZE:
+            msg = "Message payload too large: {}. Must be less than {}.".format(
+                human_readable_size(len(message_send)),
+                human_readable_size(config.BM_PAYLOAD_MAX_SIZE))
+            logger.error(msg)
+            errors.append(msg)
+            return "Error", errors
+        elif settings.kiosk_max_post_size_bytes != 0 and len(message_send) > settings.kiosk_max_post_size_bytes:
+            msg = "Message payload too large: {}. Must be less than {}.".format(
+                human_readable_size(len(message_send)),
+                human_readable_size(settings.kiosk_max_post_size_bytes))
+            logger.error(msg)
+            errors.append(msg)
+            return "Error", errors
+        else:
+            logger.info("{}: Message size: {}".format(
+                dict_send["post_id"], len(message_send)))
 
     # Create new game
     if dict_message["game"]:
@@ -947,6 +1169,8 @@ def send_message(errors, form_post, dict_send, dict_message):
             return msg, errors
         time.sleep(1)
 
+    ttl = get_post_ttl(form_post.ttl.data)
+
     lf = LF()
     if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
         return_str = None
@@ -957,29 +1181,28 @@ def send_message(errors, form_post, dict_send, dict_message):
                 "",
                 message_send,
                 2,
-                form_post.ttl.data)
+                ttl)
             if return_str:
                 logger.info("{}: Message sent from {} to {} with TTL of {} sec: {}".format(
                     dict_send["post_id"],
                     form_post.from_address.data,
                     form_post.board_id.data,
-                    form_post.ttl.data,
+                    ttl,
                     return_str))
         except Exception:
             pass
         finally:
             time.sleep(config.API_PAUSE)
             lf.lock_release(config.LOCKFILE_API)
-            return_msg = "Post of size {} placed in send queue. The time it " \
-                         "takes to send a message is related to the size of the " \
+            return_msg = "Post of {} size and {} second TTL placed in send queue. The time it " \
+                         "takes to send a message is dependent on the size and TTL of the " \
                          "post due to the proof of work required to send. " \
-                         "Generally, the larger the post, the longer it takes to " \
+                         "Generally, the larger the size and longer the TTL, the longer it takes to " \
                          "send. Posts ~10 KB take around a minute or less to send, " \
                          "whereas messages >= 100 KB can take several minutes to " \
                          "send. BM returned: {}".format(
-                            human_readable_size(len(message_send)), return_str)
+                            human_readable_size(len(message_send)), ttl, return_str)
             return return_msg, errors
-
 
 def send_post_delete_request(from_address, to_address, message_id, thread_hash, delete_password):
     errors = []
@@ -1011,15 +1234,24 @@ def send_post_delete_request(from_address, to_address, message_id, thread_hash, 
 
     message_send = base64.b64encode(message_encrypted.data).decode()
 
-    if len(message_send) > config.BM_PAYLOAD_MAX_SIZE:
-        msg = "Message payload too large: {}. Must be less than {}".format(
-            human_readable_size(len(message_send)),
-            human_readable_size(config.BM_PAYLOAD_MAX_SIZE))
-        logger.error(msg)
-        errors.append(msg)
-        return "Error", errors
-    else:
-        logger.info("{}: Message size: {}".format(run_id, len(message_send)))
+    with session_scope(DB_PATH) as new_session:
+        settings = new_session.query(GlobalSettings).first()
+        if len(message_send) > config.BM_PAYLOAD_MAX_SIZE:
+            msg = "Message payload too large: {}. Must be less than {}".format(
+                human_readable_size(len(message_send)),
+                human_readable_size(config.BM_PAYLOAD_MAX_SIZE))
+            logger.error(msg)
+            errors.append(msg)
+            return "Error", errors
+        elif settings.kiosk_max_post_size_bytes != 0 and len(message_send) > settings.kiosk_max_post_size_bytes:
+            msg = "Message payload too large: {}. Must be less than {}.".format(
+                human_readable_size(len(message_send)),
+                human_readable_size(settings.kiosk_max_post_size_bytes))
+            logger.error(msg)
+            errors.append(msg)
+            return "Error", errors
+        else:
+            logger.info("{}: Message size: {}".format(run_id, len(message_send)))
 
     # prolong inventory clear if sending a message
     now = time.time()
@@ -1041,11 +1273,12 @@ def send_post_delete_request(from_address, to_address, message_id, thread_hash, 
             return msg, errors
         time.sleep(1)
 
+    ttl = get_post_ttl()
+
     lf = LF()
     if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
         return_str = None
         try:
-            ttl = 60 * 60 * 24 * 28
             return_str = api.sendMessage(
                 to_address,
                 from_address,
@@ -1065,12 +1298,12 @@ def send_post_delete_request(from_address, to_address, message_id, thread_hash, 
         finally:
             time.sleep(config.API_PAUSE)
             lf.lock_release(config.LOCKFILE_API)
-            return_msg = "Post of size {} placed in send queue. The time it " \
-                         "takes to send a message is related to the size of the " \
+            return_msg = "Post of {} size and {} second TTL placed in send queue. The time it " \
+                         "takes to send a message is dependent on the size and TTL of the " \
                          "post due to the proof of work required to send. " \
-                         "Generally, the larger the post, the longer it takes to " \
+                         "Generally, the larger the size and longer the TTL, the longer it takes to " \
                          "send. Posts ~10 KB take around a minute or less to send, " \
                          "whereas messages >= 100 KB can take several minutes to " \
                          "send. BM returned: {}".format(
-                human_readable_size(len(message_send)), return_str)
+                human_readable_size(len(message_send)), ttl, return_str)
             return return_msg, errors

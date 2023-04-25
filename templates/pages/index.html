@@ -140,15 +140,21 @@
                     {% endfor %}
         </div>
                 {% elif newest_posts[each_chan]["type"] == "list" %}
-        <div class="themed" style="padding: {% if not loop.first %}2em{% else %}0{% endif %} 0 0.5em 0.25em">
+                    {% set custom_banner = is_custom_banner(each_chan.address) %}
+        <div class="themed" style="padding: {% if not loop.first %}2em{% else %}0{% endif %} 0 {% if custom_banner %}0.15em{% else %}0.5em{% endif %} 0.25em">
             <br/>List: <a class="link" style="font-size: 1.2em;" href="/list/{{each_chan.address}}">/{{chans_list_info[each_chan.address]["label"]|safe}}/ - {{chans_list_info[each_chan.address]["description"]|safe}}</a>
-            {% if not settings.enable_kiosk_mode or
-                  (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_mod_log and logged_in and has_permission("is_global_admin")) or
-                  (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_mod_log) %}
+                    {% if not settings.enable_kiosk_mode or
+                          (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_mod_log and logged_in and has_permission("is_global_admin")) or
+                          (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_mod_log) %}
             [<a class="link" title="Mod Log" href="/mod_log/{{each_chan.address}}/1">M</a>]
-            {% endif %}
+                    {% endif %}
             <span style="font-size: 0.7em">{{newest_posts[each_chan]['list_entries']}} Entries{% if newest_posts[each_chan]["wipe_epoch"] %}, Wipe in {{wipe_time_left(newest_posts[each_chan]["wipe_epoch"], show_seconds=False)}}{% endif %}</span>
         </div>
+                    {% if custom_banner %}
+        <div>
+            <a href="/list/{{each_chan.address}}"><img style="width: 300px; height: auto;" src="/banner/{{each_chan.address}}"/></a>
+        </div>
+                    {% endif %}
         <div class="themed" style="font-size: 0.7em; padding-left: 0.25em">
             {{newest_posts[each_chan]['last_post_past']}} ago | {{timestamp_to_date(newest_posts[each_chan]['latest_timestamp'])}}
         </div>

@@ -60,10 +60,38 @@
                         <td>Newer version messages (discarded)</td>
                         <td>{{settings.messages_newer}}</td>
                     </tr>
+                    <tr>
+                        <td>Attachment Space Used</td>
+                        <td>{{human_readable_size(attachment_size)}}</td>
+                    </tr>
+                </table>
+
+                <table class="table" style="margin-left: auto; margin-right: auto; padding-top: 2em;">
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-bottom: 0.5em">
+                            <h1 class="title themed bold">BitChan Environment</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Python Version</td>
+                        <td>{% if "version_python" in bc_env %}{{bc_env["version_python"]}}{% endif %}</td>
+                    </tr>
+                    <tr>
+                        <td>Tor Version</td>
+                        <td>{{tor_version}}</td>
+                    </tr>
+                    <tr>
+                        <td>i2pd Version</td>
+                        <td>{{i2pd_version}}</td>
+                    </tr>
+                    <tr>
+                        <td>Library: regex</td>
+                        <td>{% if "version_regex" in bc_env %}{{bc_env["version_regex"]}}{% endif %}</td>
+                    </tr>
                 </table>
 
                 {% if df %}
-                <table class="table" style="margin-left: auto; margin-right: auto; padding-top: 2em">
+                <table class="table" style="margin-left: auto; margin-right: auto; padding-top: 2em;">
                     <tr>
                         <td colspan=2 style="text-align: center; padding-bottom: 0.5em;">
                             <h1 class="title themed bold">Command: df</h1>
@@ -129,12 +157,50 @@
     {% endfor %}
                     <tr>
                         <td>Sync Complete</td>
-                        <td>{{bitmessage.bm_sync_complete()}}</td>
+                        <td>{{bm_sync_complete}}</td>
                     </tr>
                     <tr>
                         <td>messages.dat size</td>
                         <td>{{bm_messages_size}}</td>
                     </tr>
+                    <tr>
+                        <td>knownnodes.dat size</td>
+                        <td>{{bm_knownnodes_size}}</td>
+                    </tr>
+                    <tr>
+                        <td>keys.dat size</td>
+                        <td>{{bm_keys_size}}</td>
+                    </tr>
+                </table>
+
+                <table class="table" style="margin-left: auto; margin-right: auto; padding-bottom: 1em">
+    {% for each_key, connection_set in bm_connections.items() %}
+                    <tr>
+                        <td colspan=4 style="text-align: center; padding-top: 0.5em;">
+                            <h3 class="themed bold">{% if each_key == "inbound" %}Inbound{% elif each_key == "outbound" %}Outbound{% endif %} Connections</h3>
+                        </td>
+                    </tr>
+                    {% if connection_set %}
+                    <tr>
+                        <td>Host</td>
+                        <td>Port</td>
+                        <td>User Agent</td>
+                        <td>Fully Established</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan=4>No Connections</td>
+                    </tr>
+                    {% endif %}
+        {% for each_conn in connection_set %}
+                    <tr>
+                        <td>{{each_conn["host"]}}</td>
+                        <td>{{each_conn["port"]}}</td>
+                        <td>{{each_conn["userAgent"]}}</td>
+                        <td>{{each_conn["fullyEstablished"]}}</td>
+                    </tr>
+        {% endfor %}
+    {% endfor %}
                 </table>
 
                 <table class="table themed" style="margin-left: auto; margin-right: auto;">
@@ -166,10 +232,6 @@
                         <td colspan=2 style="text-align: center;">
                             <a class="link" target="_blank" href="https://check.torproject.org/">Check Browser IP Address at check.torproject.org</a>
                         </td>
-                    </tr>
-                    <tr>
-                        <td>Version</td>
-                        <td>{{tor_version}}</td>
                     </tr>
     {% for each_key, each_value in tor_status.items() %}
                     <tr>

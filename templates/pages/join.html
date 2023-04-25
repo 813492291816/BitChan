@@ -83,11 +83,9 @@
             {% include '/elements/rules.html' %}
             {% endif %}
 
-            {% if primary_addresses or secondary_addresses or tertiary_addresses or restricted_addresses %}
             <div class="themed" style="padding-bottom: 0.5em">
                 {% include '/elements/accordion_access.html' %}
             </div>
-            {% endif %}
 
             {% if dict_chan_info["extra_string"] %}
             <div class="themed" style="padding-bottom: 0.5em">

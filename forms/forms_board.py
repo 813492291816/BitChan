@@ -8,6 +8,7 @@ from wtforms import IntegerField
 from wtforms import MultipleFileField
 from wtforms import PasswordField
 from wtforms import SelectField
+from wtforms import SelectMultipleField
 from wtforms import StringField
 from wtforms import SubmitField
 
@@ -15,6 +16,7 @@ logger = logging.getLogger("bitchan.forms_board")
 
 
 class Log(FlaskForm):
+    log = StringField("Log")
     lines = IntegerField("Lines")
     submit = SubmitField("Submit")
 
@@ -46,11 +48,19 @@ class Post(FlaskForm):
     image2_spoiler = BooleanField("Image 2 Spoiler")
     image3_spoiler = BooleanField("Image 3 Spoiler")
     image4_spoiler = BooleanField("Image 4 Spoiler")
-    upload = SelectField("Upload", choices=[])
+    upload = StringField("Upload")
     upload_cipher_and_key = StringField("Upload Encryption Cipher")
     message_id = StringField("Message ID")
     page_id = StringField("Page ID")
     game_hash = StringField("Game Hash")
+
+    # GPG
+    gpg_body = StringField("GPG Body")
+    gpg_encrypt_msg = BooleanField("Encrypt Post")
+    gpg_sign_post = BooleanField("Sign Post")
+    gpg_hide_all_recipients = BooleanField("Hide All Recipients")
+    gpg_select_from = SelectField("From", choices=[])
+    gpg_select_to = SelectMultipleField("To", choices=[])
 
     # Additional options
     image_steg_insert = IntegerField("Image to insert steg")
@@ -58,7 +68,8 @@ class Post(FlaskForm):
     delete_password = StringField("Password to Delete")
 
     start_download = SubmitField("Download File")
-    submit = SubmitField("Submit")
+    preview_post = SubmitField("Preview")
+    submit_post = SubmitField("Post")
 
 
 class SetChan(FlaskForm):
@@ -75,7 +86,6 @@ class SetOptions(FlaskForm):
     modify_user_addresses = StringField("Modify User Addresses")
     modify_restricted_addresses = StringField("Modify Restricted Addresses")
     file_banner = FileField()
-    file_spoiler = FileField()
     long_description = StringField("Long Description")
     css = StringField("CSS")
     word_replace = StringField("Word Replace")
@@ -115,6 +125,7 @@ class List(FlaskForm):
     from_address = StringField("From Address")
     save_from = SubmitField("Save From")
     add = SubmitField("Add")
+    add_unlisted = BooleanField("Add Unlisted")
     add_bulk = SubmitField("Bulk Add")
     delete = SubmitField("Delete")
 
@@ -128,6 +139,10 @@ class DeleteComment(FlaskForm):
     address = StringField("Address")
     delete_comment = StringField("Delete Comment")
     send = SubmitField("Send")
+
+
+class Leave(FlaskForm):
+    clear_mod_log = BooleanField("Clear Mod Log")
 
 
 class Confirm(FlaskForm):
@@ -155,3 +170,9 @@ class Search(FlaskForm):
     bulk_restore_thread = SubmitField("Bulk Restore Threads")
     bulk_delete = SubmitField("Bulk Delete")
     submit = SubmitField("Search")
+
+
+class Recent(FlaskForm):
+    message_id = StringField("Message ID")
+    start_download = SubmitField("Download File")
+    bulk_delete_threads = SubmitField("Delete Selected Posts/Threads")

@@ -67,6 +67,10 @@
 
     {% if search_results or thread_results %}
     {% if total_pages > 1 %}<div class="themed" style="padding: 1em 0;">{{total_pages}} Pages</div>{% endif %}
+
+    {% include '/elements/footer_search_pages.html' %}
+    <div style="padding-top: 1em"></div>
+
     <form action="/search/{{search_string_b64}}/{{current_page}}" method="post">
 
         {% if search_type == "posts" and search_results %}

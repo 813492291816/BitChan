@@ -29,6 +29,7 @@ class GlobalSettings(CRUDMixin, db.Model):
     }
 
     id = db.Column(db.Integer, unique=True, primary_key=True)
+    maintenance_mode = db.Column(db.Boolean, default=False)
     theme = db.Column(db.String, default="Frosty")
     discard_message_ids = db.Column(db.String, default="[]")
     clear_inventory = db.Column(db.Boolean, default=False)
@@ -43,6 +44,7 @@ class GlobalSettings(CRUDMixin, db.Model):
     allow_net_book_quote = db.Column(db.Boolean, default=True)
     allow_net_ntp = db.Column(db.Boolean, default=False)
     never_auto_download_unencrypted = db.Column(db.Boolean, default=True)
+    allow_unencrypted_encryption_option = db.Column(db.Boolean, default=False)
     auto_dl_from_unknown_upload_sites = db.Column(db.Boolean, default=False)
     delete_sent_identity_msgs = db.Column(db.Boolean, default=False)
     enable_captcha = db.Column(db.Boolean, default=False)
@@ -57,13 +59,19 @@ class GlobalSettings(CRUDMixin, db.Model):
     results_per_page_catalog = db.Column(db.Integer, default=64)
     results_per_page_mod_log = db.Column(db.Integer, default=30)
     debug_posts = db.Column(db.Boolean, default=False)
+    post_timestamp = db.Column(db.String, default="sent")
+    post_timestamp_timezone = db.Column(db.String, default="UTC")
+    post_timestamp_hour = db.Column(db.String, default="24")
+
+    # Bitmessage
+    bm_connections_in_out = db.Column(db.String, default="in_tor_out_tor")
+    bitmessage_onion_services_only = db.Column(db.Boolean, default=False)
 
     # Security
     enable_page_rate_limit = db.Column(db.Boolean, default=False)
     max_requests_per_period = db.Column(db.Integer, default=10)
     rate_limit_period_seconds = db.Column(db.Integer, default=60)
     hide_all_board_list_passphrases = db.Column(db.Boolean, default=False)
-    bitmessage_onion_services_only = db.Column(db.Boolean, default=False)
 
     # Kiosk Mode
     enable_kiosk_mode = db.Column(db.Boolean, default=False)
@@ -71,10 +79,14 @@ class GlobalSettings(CRUDMixin, db.Model):
     kiosk_allow_posting = db.Column(db.Boolean, default=False)
     kiosk_disable_bm_attach = db.Column(db.Boolean, default=False)
     kiosk_allow_download = db.Column(db.Boolean, default=False)
+    kiosk_ttl_option = db.Column(db.String, default="selectable_max_28_days")
+    kiosk_ttl_seconds = db.Column(db.Integer, default=2419200)  # 28 days (max allowed by bitmessage)
     kiosk_post_rate_limit = db.Column(db.Integer, default=50)
+    kiosk_max_post_size_bytes = db.Column(db.Integer, default=0)
     kiosk_attempts_login = db.Column(db.Integer, default=5)
     kiosk_ban_login_sec = db.Column(db.Integer, default=300)
     kiosk_only_admin_access_mod_log = db.Column(db.Boolean, default=False)
+    kiosk_allow_gpg = db.Column(db.Boolean, default=False)
 
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(
@@ -88,6 +100,7 @@ class UploadSites(CRUDMixin, db.Model):
     }
 
     id = db.Column(db.Integer, unique=True, primary_key=True)
+    enabled = db.Column(db.Boolean, default=None)
     domain = db.Column(db.String, default=None)
     type = db.Column(db.String, default=None)
     subtype = db.Column(db.String, default=None)

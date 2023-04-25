@@ -1,0 +1,16 @@
+[Unit]
+Description=BitChan Backend
+After=bitchan_bitmessage.service
+
+[Service]
+Restart=on-failure
+RestartSec=15s
+Type=forking
+TimeoutSec=0
+ExecStartPre=/usr/local/bitchan/BitChan/database/upgrade_database.sh && /bin/sleep 5
+ExecStart=/usr/local/bitchan/venv3/bin/python /usr/local/bitchan/BitChan/bitchan_daemon.py
+ExecStop=/usr/local/bitchan/venv3/bin/python /usr/local/bitchan/BitChan/scripts_dev/shutdown_daemon.py
+
+[Install]
+WantedBy=multi-user.target
+Alias=bitchan_backend.service

@@ -6,11 +6,13 @@ import subprocess
 import time
 import zipfile
 from contextlib import closing
+from io import BytesIO
 from zipfile import ZipFile
-from filelock import Timeout
+
 import filelock
 from PIL import Image
 from PIL import ImageFile
+from PIL import ImageFilter
 
 import config
 from config import FILE_DIRECTORY
@@ -166,6 +168,26 @@ def data_file_multiple_insert(file_source, insert_starts_data, chunk=1000):
                     position += chunk
 
 
+def return_file_hashes(media_info_):
+    """Return file hashes of attachments"""
+    list_hashes = []
+    for e_file in media_info_:
+        if "sha256_hash" in media_info_[e_file] and media_info_[e_file]["sha256_hash"]:
+            list_hashes.append(media_info_[e_file]["sha256_hash"])
+        else:
+            list_hashes.append(None)
+
+        if "imagehash_hash" in media_info_[e_file] and media_info_[e_file]["imagehash_hash"]:
+            list_hashes.append(media_info_[e_file]["imagehash_hash"])
+        else:
+            list_hashes.append(None)
+
+    while len(list_hashes) < 8:
+        list_hashes.append(None)
+
+    return list_hashes
+
+
 def return_non_overlapping_sequences(
         number_sequences,
         sequence_start,
@@ -243,25 +265,115 @@ def get_directory_size(start_path):
     return total_size
 
 
-def generate_thumbnail(message_id, image, thumb, extension):
+def generate_thumbnail_image(message_id, imagefile, thumb, extension, size_x=200, size_y=200,
+                             blur=False, return_b64=False, spoiler_filename=None, overwrite_thumbs=False, sym_size=20000):
+    create_symlink = False
+
     try:
-        if not os.path.exists(thumb):
-            if os.path.getsize(image) < 400000:
-                os.symlink(image, thumb)
-            else:
-                logger.info("{}: Generating thumbnail: {}".format(message_id[-config.ID_LENGTH:].upper(), thumb))
+        if (not thumb or not os.path.exists(thumb) or overwrite_thumbs) and os.path.exists(imagefile):
+
+            if os.path.getsize(imagefile) <= sym_size and extension.lower() != 'gif':  # always generate thumbnails for GIFs
+                create_symlink = True
+
+            if create_symlink:
+                logger.info(f"Image <= {sym_size} bytes, creating symlink")
+                try:
+                    os.symlink(imagefile, thumb)
+                except:
+                    pass
+
+            if not create_symlink or return_b64 or spoiler_filename:
                 ImageFile.LOAD_TRUNCATED_IMAGES = True
-                if extension in ["jpg", "jpeg"]:
-                    image = Image.open(image).convert('RGB')
+                if extension.lower() in ["jpg", "jpeg"]:
+                    image_ = Image.open(imagefile).convert('RGB')
                 else:
-                    image = Image.open(image)
-                max_size = (250, 250)
-                image.thumbnail(max_size)
-                image.save(thumb)
+                    image_ = Image.open(imagefile)
+
+                if blur:
+                    try:
+                        image_ = image_.filter(ImageFilter.GaussianBlur(29))
+                    except:
+                        image_ = image_.convert('RGB')
+                        image_ = image_.filter(ImageFilter.GaussianBlur(29))
+
+                max_size = (size_x, size_y)
+                image_.thumbnail(max_size)
+                if image_.mode != 'RGB':
+                    image_ = image_.convert('RGB')
+
+                if return_b64:
+                    logger.info("{}: Generating b64 thumbnail".format(message_id[-config.ID_LENGTH:].upper()))
+                    buff = BytesIO()
+                    image_.save(buff, format="JPEG")
+                    return base64.b64encode(buff.getvalue())
+
+                if not create_symlink:
+                    logger.info("{}: Generating thumbnail: {}".format(message_id[-config.ID_LENGTH:].upper(), thumb))
+                    image_.save(thumb, format="JPEG")
+
+                    if not os.path.exists(thumb):
+                        logger.info("Couldn't generate thumbnail, creating symlink instead")
+                        try:
+                            os.symlink(imagefile, thumb)
+                        except:
+                            pass
+
+                if spoiler_filename:
+                    logger.info("{}: Generating spoiler: {}".format(message_id[-config.ID_LENGTH:].upper(), spoiler_filename))
+                    image_ = image_.filter(ImageFilter.GaussianBlur(20))
+                    image_.save(spoiler_filename)
+        else:
+            logger.info("{}: Image doesn't exist or thumbnail already exists: {}".format(message_id[-config.ID_LENGTH:].upper(), thumb))
+    except:
+        logger.exception("{}: Generating thumbnail".format(message_id[-config.ID_LENGTH:].upper()))
+
+
+def generate_thumbnail_video(message_id, videofile, thumb, size_x=200, size_y=200, spoiler_filename=None, overwrite_thumbs=False):
+    try:
+        if (not thumb or not os.path.exists(thumb) or overwrite_thumbs) and os.path.exists(videofile):
+            try:
+                os.remove(thumb)
+            except:
+                pass
+            subprocess.call(['ffmpeg', '-i', videofile, '-ss', '00:00:00.000', '-vframes', '1', thumb])
+
+            ImageFile.LOAD_TRUNCATED_IMAGES = True
+            try:
+                image_ = Image.open(thumb).convert('RGB')
+            except:
+                image_ = Image.open(thumb)
+
+            media_width, media_height = image_.size
+            thumb_width, thumb_height = calc_resize(media_width, media_height, size_x, size_y)
+            image_.thumbnail(size=(thumb_width, thumb_height))
+
+            logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: Generating max {size_x}x{size_y} video thumbnail: {thumb}")
+            image_.save(thumb)
+
+            if spoiler_filename:
+                logger.info("{}: Generating video spoiler: {}".format(message_id[-config.ID_LENGTH:].upper(), spoiler_filename))
+                try:
+                    image_ = image_.filter(ImageFilter.GaussianBlur(20))
+                except:
+                    image_ = image_.convert('RGB')
+                    image_ = image_.filter(ImageFilter.GaussianBlur(20))
+                image_.save(spoiler_filename)
         else:
             logger.info("{}: Thumbnail already exists: {}".format(message_id[-config.ID_LENGTH:].upper(), thumb))
     except:
         logger.exception("{}: Generating thumbnail".format(message_id[-config.ID_LENGTH:].upper()))
+
+
+def calc_resize(width, height, max_width, max_height):
+    if width > max_width:
+        w_ratio = height / width
+        width = max_width
+        height = width * w_ratio
+    if height > max_height:
+        h_ratio = width / height
+        height = max_height
+        width = height * h_ratio
+    return int(width), int(height)
 
 
 class LF:
@@ -277,7 +389,7 @@ class LF:
             self.log = logger.debug
 
     def lock_acquire(self, lf, to):
-        self.fl[lf] = filelock.FileLock(lf, timeout=1)
+        self.fl[lf] = filelock.FileLock(lf, timeout=to)
         self.is_lock[lf] = False
         timer = time.time() + to
         self.log("lock {} acquiring (try {} sec)".format(lf, to))

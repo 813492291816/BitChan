@@ -1,23 +1,29 @@
 import base64
 import datetime
-import glob
 import json
 import logging
-import subprocess
+import os
+import re
 import time
 from threading import Thread
 
+from flask import Response
 from flask import redirect
 from flask import render_template
 from flask import request
-from flask import send_file
 from flask import session
 from flask import url_for
 from flask.blueprints import Blueprint
+from sqlalchemy import and_
+from sqlalchemy import or_
+from zipstream import ZIP_DEFLATED
+from zipstream import ZipStream
 
 import config
 from bitchan_client import DaemonCom
 from database.models import Alembic
+from database.models import BanedHashes
+from database.models import BanedWords
 from database.models import Captcha
 from database.models import Chan
 from database.models import DeletedMessages
@@ -26,6 +32,7 @@ from database.models import GlobalSettings
 from database.models import Identity
 from database.models import Messages
 from database.models import ModLog
+from database.models import StringReplace
 from database.models import Threads
 from database.models import UploadSites
 from database.models import regenerate_upload_sites
@@ -35,15 +42,25 @@ from flask_routes.utils import is_verified
 from forms import forms_board
 from forms import forms_settings
 from utils import themes
+from utils.download import process_attachments
 from utils.files import LF
-from utils.files import delete_file
+from utils.files import delete_files_recursive
 from utils.gateway import api
 from utils.gateway import generate_identity
 from utils.general import process_passphrase
+from utils.hashing import regen_all_hashes
+from utils.posts import delete_post
 from utils.posts import process_message_replies
+from utils.posts import update_board_timestamp
+from utils.posts import update_thread_timestamp
 from utils.replacements import replace_lt_gt
 from utils.routes import allowed_access
+from utils.routes import ban_and_delete
+from utils.routes import ban_and_delete_word
+from utils.routes import get_logged_in_user_name
+from utils.routes import get_max_ttl
 from utils.routes import page_dict
+from utils.shared import add_mod_log_entry
 from utils.shared import regenerate_card_popup_post_html
 
 logger = logging.getLogger('bitchan.routes_diag')
@@ -94,7 +111,7 @@ def diag():
     from binascii import hexlify
     row = []
     try:
-        conn = sqlite3.connect('file:{}'.format(config.messages_dat), uri=True)
+        conn = sqlite3.connect('file:{}'.format(config.BM_MESSAGES_DAT), uri=True)
         conn.text_factory = bytes
         c = conn.cursor()
         c.execute(
@@ -124,7 +141,7 @@ def diag():
             cancel_send_id_list = []
             for each_input in request.form:
                 if each_input.startswith("delsendingmsgid_"):
-                    cancel_send_id_list.append(each_input.split("_")[1])
+                    cancel_send_id_list.append(each_input.split("delsendingmsgid_")[1])
 
             if not cancel_send_id_list:
                 status_msg['status_message'].append(
@@ -150,7 +167,331 @@ def diag():
                         time.sleep(config.API_PAUSE)
                         lf.lock_release(config.LOCKFILE_API)
 
-        if form_diag.del_inventory.data:
+        elif form_diag.del_banned_hashes.data:
+            list_unban_hashes = []
+            for each_input in request.form:
+                if each_input.startswith("delhashes_id_"):
+                    list_unban_hashes.append(each_input.split("delhashes_id_")[1])
+
+            if not list_unban_hashes:
+                status_msg['status_message'].append(
+                    "Must select at least one hash to unban.")
+
+            if not status_msg['status_message']:
+                user_name = get_logged_in_user_name()
+                admin_name = user_name if user_name else "LOCAL ADMIN"
+
+                for each_hash_id in list_unban_hashes:
+                    hash_entry = BanedHashes.query.filter(BanedHashes.id == each_hash_id).first()
+                    if hash_entry:
+                        add_mod_log_entry(
+                            f"Unbanned file attachment SHA256 hash {hash_entry.hash} "
+                            f"and hash fingerprint {hash_entry.imagehash} ({hash_entry.name})",
+                            user_from=admin_name)
+                        hash_entry.delete()
+
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append(
+                    "Unbanned selected hashes.")
+
+        elif form_diag.add_banned_hash.data:
+            user_name = get_logged_in_user_name()
+            admin_name = user_name if user_name else "LOCAL ADMIN"
+
+            try:
+                if not form_diag.hash_to_ban.data and not form_diag.imagehash_to_ban.data:
+                    status_msg['status_message'].append("A hash is required.")
+                else:
+                    ban_and_delete(
+                        sha256_hash=form_diag.hash_to_ban.data,
+                        imagehash_hash=form_diag.imagehash_to_ban.data,
+                        name=form_diag.hash_name.data,
+                        delete_posts=form_diag.delete_present_posts.data,
+                        delete_threads=form_diag.delete_present_threads.data,
+                        user_name=admin_name,
+                        only_board_address=form_diag.board_addresses.data)
+
+                    status_msg['status_title'] = "Success"
+                    status_msg['status_message'].append(f"Banned file with hash")
+            except Exception as err:
+                status_msg['status_message'].append(f"Couldn't ban file with hash: {err}")
+                logger.exception(f"Couldn't ban file with hash")
+
+        elif form_diag.edit_hash_table.data:
+            for each_input in request.form:
+                if each_input.startswith("hashname_"):
+                    try:
+                        entry_id = each_input.split("_")[1]
+                        hash_name = request.form[each_input]
+                        hash_entry = BanedHashes.query.filter(BanedHashes.id == int(entry_id)).first()
+                        if hash_entry and hash_entry.name != hash_name:
+                            hash_entry.name = hash_name
+                            hash_entry.save()
+                    except:
+                        logger.exception("Setting hash")
+
+                elif each_input.startswith("boardaddress_"):
+                    try:
+                        entry_id = each_input.split("_")[1]
+                        board_address = request.form[each_input]
+                        hash_entry = BanedHashes.query.filter(BanedHashes.id == int(entry_id)).first()
+                        if hash_entry and hash_entry.only_board_address != board_address:
+                            hash_entry.only_board_address = board_address
+                            hash_entry.save()
+                    except:
+                        logger.exception("Setting board address")
+
+            status_msg['status_title'] = "Success"
+            status_msg['status_message'].append(f"Renamed hash entries")
+
+        elif form_diag.regenerate_hashes.data:
+            try:
+                regen_hashes_thread = Thread(target=regen_all_hashes)
+                regen_hashes_thread.start()
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append(
+                    "Regenerating file hashes in the background. Give it sufficient time to complete.")
+            except Exception as err:
+                status_msg['status_message'].append("Couldn't regenerate hashes: {}".format(err))
+                logger.exception("Couldn't regenerate hashes")
+
+        elif form_diag.del_banned_words.data:
+            list_unban_words = []
+            for each_input in request.form:
+                if each_input.startswith("delwords_"):
+                    list_unban_words.append(each_input.split("delwords_")[1])
+
+            if not list_unban_words:
+                status_msg['status_message'].append(
+                    "Must select at least one word to unban.")
+
+            if not status_msg['status_message']:
+                user_name = get_logged_in_user_name()
+                admin_name = user_name if user_name else "LOCAL ADMIN"
+
+                for each_id in list_unban_words:
+                    word_entry = BanedWords.query.filter(BanedWords.id == int(each_id)).first()
+                    if word_entry:
+                        add_mod_log_entry(
+                            f"Unbanned word with name {word_entry.name}.",
+                            user_from=admin_name)
+                        word_entry.delete()
+
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append("Unbanned selected words.")
+
+        elif form_diag.add_banned_word.data:
+            user_name = get_logged_in_user_name()
+            admin_name = user_name if user_name else "LOCAL ADMIN"
+
+            try:
+                if not form_diag.word_to_ban.data:
+                    status_msg['status_message'].append("A word is required.")
+                else:
+                    ban_and_delete_word(
+                        word=form_diag.word_to_ban.data,
+                        name=form_diag.word_name.data,
+                        is_regex=form_diag.word_is_regex.data,
+                        delete_posts=form_diag.word_delete_present_posts.data,
+                        delete_threads=form_diag.word_delete_present_threads.data,
+                        user_name=admin_name,
+                        only_board_address=form_diag.word_board_addresses.data)
+
+                    status_msg['status_title'] = "Success"
+                    status_msg['status_message'].append(f"Banned word")
+            except Exception as err:
+                status_msg['status_message'].append(f"Couldn't ban word: {err}")
+                logger.exception(f"Couldn't ban file with hash")
+
+        elif form_diag.edit_word_table.data:
+            regex_checkboxes = {}
+
+            for each_input in request.form:
+                if each_input.startswith("wordname_"):
+                    try:
+                        entry_id = each_input.split("_")[1]
+                        word_name = request.form[each_input]
+                        word_entry = BanedWords.query.filter(BanedWords.id == int(entry_id)).first()
+                        if word_entry and word_entry.name != word_name:
+                            word_entry.name = word_name
+                            word_entry.save()
+                    except:
+                        logger.exception("Setting name")
+
+                elif each_input.startswith("wordword_"):
+                    try:
+                        entry_id = each_input.split("_")[1]
+                        if entry_id not in regex_checkboxes:
+                            regex_checkboxes[entry_id] = False
+                        word_word = request.form[each_input]
+                        word_entry = BanedWords.query.filter(BanedWords.id == int(entry_id)).first()
+                        if word_entry and word_entry.word != word_word:
+                            word_entry.word = word_word
+                            word_entry.save()
+                    except:
+                        logger.exception("Setting word")
+
+                elif each_input.startswith("wordboardaddress_"):
+                    try:
+                        entry_id = each_input.split("_")[1]
+                        board_address = request.form[each_input]
+                        word_entry = BanedWords.query.filter(BanedWords.id == int(entry_id)).first()
+                        if word_entry and word_entry.only_board_address != board_address:
+                            word_entry.only_board_address = board_address
+                            word_entry.save()
+                    except:
+                        logger.exception("Setting board address")
+
+                elif each_input.startswith("isregexword_"):
+                    try:
+                        entry_id = each_input.split("_")[1]
+                        is_regex = request.form[each_input]
+                        if is_regex:
+                            regex_checkboxes[entry_id] = True
+                    except:
+                        logger.exception("Setting board address")
+
+            # Change if entry is regex
+            for each_id in regex_checkboxes:
+                word_entry = BanedWords.query.filter(BanedWords.id == int(each_id)).first()
+                if word_entry:
+                    word_entry.is_regex = regex_checkboxes[each_id]
+                    word_entry.save()
+
+            status_msg['status_title'] = "Success"
+            status_msg['status_message'].append(f"Renamed word entries")
+
+        elif form_diag.del_string_replacement.data:
+            list_unban_words = []
+            for each_input in request.form:
+                if each_input.startswith("delstringreplace_"):
+                    list_unban_words.append(each_input.split("delstringreplace_")[1])
+
+            if not list_unban_words:
+                status_msg['status_message'].append(
+                    "Must select at least one word to unban.")
+
+            if not status_msg['status_message']:
+                user_name = get_logged_in_user_name()
+                admin_name = user_name if user_name else "LOCAL ADMIN"
+
+                for each_id in list_unban_words:
+                    string_entry = StringReplace.query.filter(StringReplace.id == int(each_id)).first()
+                    if string_entry:
+                        add_mod_log_entry(
+                            f"Removed string replacement: string '{string_entry.string}' "
+                            f"and/or regex '{string_entry.regex}' "
+                            f"to '{string_entry.string_replacement}' ({string_entry.name}).",
+                            user_from=admin_name)
+                        string_entry.delete()
+
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append("Removed string replacement.")
+
+        elif form_diag.add_string_replacement.data:
+            user_name = get_logged_in_user_name()
+            admin_name = user_name if user_name else "LOCAL ADMIN"
+
+            try:
+                if ((not form_diag.string_to_replace.data and
+                     not form_diag.regex_to_match.data) or
+                        not form_diag.string_to_replace_with.data):
+                    status_msg['status_message'].append("A string or regex and a string to replace with is required.")
+                else:
+                    # String replacement
+                    string_replace = StringReplace()
+                    string_replace.name = form_diag.string_name.data
+                    string_replace.string = form_diag.string_to_replace.data
+                    string_replace.regex = form_diag.regex_to_match.data
+                    string_replace.string_replacement = form_diag.string_to_replace_with.data
+                    string_replace.only_board_address = form_diag.string_board_addresses.data
+
+                    add_mod_log_entry(
+                        f"Added string replacement: string '{form_diag.string_to_replace.data}' and/or "
+                        f"regex '{form_diag.regex_to_match.data}' "
+                        f"to '{form_diag.string_to_replace_with.data}' ({form_diag.string_name.data})",
+                        user_from=admin_name)
+
+                    string_replace.save()
+
+                    status_msg['status_title'] = "Success"
+                    status_msg['status_message'].append(f"Added string replacement")
+            except Exception as err:
+                status_msg['status_message'].append(f"Couldn't add string replacement: {err}")
+                logger.exception(f"Couldn't add string replacement")
+
+        elif form_diag.edit_string_table.data:
+            for each_input in request.form:
+                if each_input.startswith("stringrepname_"):
+                    try:
+                        entry_id = each_input.split("_")[1]
+                        word_name = request.form[each_input]
+                        rep_entry = StringReplace.query.filter(StringReplace.id == int(entry_id)).first()
+                        if rep_entry and rep_entry.name != word_name:
+                            rep_entry.name = word_name
+                            rep_entry.save()
+                    except:
+                        logger.exception("Setting name")
+
+                elif each_input.startswith("stringtoreplace_"):
+                    try:
+                        entry_id = each_input.split("_")[1]
+                        string = request.form[each_input]
+                        rep_entry = StringReplace.query.filter(StringReplace.id == int(entry_id)).first()
+                        if rep_entry and rep_entry.string != string:
+                            rep_entry.string = string
+                            rep_entry.save()
+                    except:
+                        logger.exception("Setting string to replace")
+
+                elif each_input.startswith("regexreplace_"):
+                    try:
+                        entry_id = each_input.split("_")[1]
+                        regex_ = request.form[each_input]
+                        rep_entry = StringReplace.query.filter(StringReplace.id == int(entry_id)).first()
+                        if rep_entry and rep_entry.regex != regex_:
+                            rep_entry.regex = regex_
+                            rep_entry.save()
+                    except:
+                        logger.exception("Setting regex")
+
+                elif each_input.startswith("stringtoreplacewith_"):
+                    try:
+                        entry_id = each_input.split("_")[1]
+                        string_replacement = request.form[each_input]
+                        rep_entry = StringReplace.query.filter(StringReplace.id == int(entry_id)).first()
+                        if rep_entry and rep_entry.string_replacement != string_replacement:
+                            rep_entry.string_replacement = string_replacement
+                            rep_entry.save()
+                    except:
+                        logger.exception("Setting string to replace with")
+
+                elif each_input.startswith("stringrepboardaddress_"):
+                    try:
+                        entry_id = each_input.split("_")[1]
+                        board_address = request.form[each_input]
+                        rep_entry = StringReplace.query.filter(StringReplace.id == int(entry_id)).first()
+                        if rep_entry and rep_entry.only_board_address != board_address:
+                            rep_entry.only_board_address = board_address
+                            rep_entry.save()
+                    except:
+                        logger.exception("Setting board address")
+
+            status_msg['status_title'] = "Success"
+            status_msg['status_message'].append(f"Renamed hash entries")
+
+        elif form_diag.restart_bitmessage.data:
+            try:
+                daemon_com.restart_bitmessage()
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append(
+                    "Restarting Bitmessage. Give it time to complete.")
+            except Exception as err:
+                status_msg['status_message'].append(
+                    "Couldn't restart Bitmessage: {}".format(err))
+                logger.exception("Couldn't restart Bitmessage")
+
+        elif form_diag.del_inventory.data:
             try:
                 daemon_com.clear_bm_inventory()
                 status_msg['status_title'] = "Success"
@@ -360,19 +701,96 @@ def diag():
                     "Couldn't fix thread short hashes: {}".format(err))
                 logger.exception("Couldn't fix thread short hashes")
 
+        elif form_diag.fix_chan_thread_timestamps.data:
+            try:
+                for each_thread in Threads.query.all():
+                    update_thread_timestamp(each_thread.thread_hash)
+                for each_chan in Chan.query.all():
+                    update_board_timestamp(each_chan.address)
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append("Fixed chan/thread timestamps")
+            except Exception as err:
+                status_msg['status_message'].append(
+                    "Couldn't fix chan/thread timestamps: {}".format(err))
+                logger.exception("Couldn't fix chan/thread timestamps")
+
         elif form_diag.reset_downloads.data:
             try:
+                list_msg_ids = []
                 msgs = Messages.query.filter(Messages.file_currently_downloading.is_(True)).all()
                 for msg in msgs:
+                    list_msg_ids.append(msg.message_id)
                     msg.file_currently_downloading = False
-                    regenerate_card_popup_post_html(message_id=msg.message_id)
                     msg.save()
+                for msg_id in list_msg_ids:
+                    regenerate_card_popup_post_html(message_id=msg_id)
                 status_msg['status_title'] = "Success"
                 status_msg['status_message'].append("Reset downloads")
             except Exception as err:
                 status_msg['status_message'].append(
                     "Couldn't reset downloads: {}".format(err))
                 logger.exception("Couldn't reset downloads")
+
+        elif form_diag.start_all_downloads.data:
+            try:
+                settings = GlobalSettings.query.first()
+                if settings.maintenance_mode:
+                    status_msg['status_message'].append(
+                        "Cannot initiate attachment download while Maintenance Mode is enabled.")
+                else:
+                    msgs = Messages.query.filter(
+                        and_(or_(Messages.file_download_successful.is_(False),
+                                 Messages.file_download_successful.is_(None)),
+                             Messages.file_url.isnot(None))).all()
+                    for msg in msgs:
+                        logger.info(f"Starting download for post with message ID {msg.message_id}")
+                        daemon_com.set_start_download(msg.message_id)
+                    status_msg['status_title'] = "Success"
+                    status_msg['status_message'].append("Start all downloads")
+            except Exception as err:
+                status_msg['status_message'].append(
+                    "Couldn't start all downloads: {}".format(err))
+                logger.exception("Couldn't start all downloads")
+
+        elif form_diag.regenerate_all_thumbnails.data:
+            try:
+                for each_msg in Messages.query.filter(and_(Messages.file_amount.isnot(None), Messages.file_amount != 0)).all():
+                    extract_path = "{}/{}".format(config.FILE_DIRECTORY, each_msg.message_id)
+                    errors_files, media_info, message_steg = process_attachments(
+                        each_msg.message_id, extract_path, progress=False, silent=True, overwrite_thumbs=True)
+                    if errors_files:
+                        for each_err in errors_files:
+                            logger.error(f"Message {each_msg.message_id} Error: {each_err}")
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append("Regenerated all thumbnails.")
+            except Exception as err:
+                status_msg['status_message'].append(
+                    "Couldn't regenerated all thumbnails: {}".format(err))
+                logger.exception("Couldn't regenerated all thumbnails")
+
+        elif form_diag.regenerate_post_thumbnails.data:
+            if not form_diag.regenerate_post_thumbnails_id.data:
+                status_msg['status_message'].append("A Post ID is required")
+            else:
+                post_id = form_diag.regenerate_post_thumbnails_id.data.replace(" ", "").upper()
+                message = Messages.query.filter(Messages.post_id == post_id).first()
+                if message:
+                    try:
+                        extract_path = "{}/{}".format(config.FILE_DIRECTORY, message.message_id)
+                        errors_files, media_info, message_steg = process_attachments(
+                            message.message_id, extract_path, progress=False, overwrite_thumbs=True)
+                        if errors_files:
+                            for each_err in errors_files:
+                                status_msg['status_message'].append(f"Error: {each_err}.")
+                        else:
+                            status_msg['status_title'] = "Success"
+                            status_msg['status_message'].append(f"Regenerated thumbnails for post {post_id}.")
+                    except Exception as err:
+                        status_msg['status_message'].append(
+                            f"Couldn't regenerate thumbnails for post {post_id}: {err}")
+                        logger.exception(f"Couldn't regenerate thumbnails for post {post_id}")
+                else:
+                    status_msg['status_message'].append("Post not found")
 
         elif form_diag.regenerate_all_html.data:
             try:
@@ -385,6 +803,44 @@ def diag():
                 status_msg['status_message'].append(
                     "Couldn't delete HTML for all posts, popups, cards: {}".format(err))
                 logger.exception("Couldn't delete HTML for all posts, popups, cards")
+
+        elif form_diag.regenerate_post_html.data:
+            if not form_diag.regenerate_post_id.data:
+                status_msg['status_message'].append("A Post ID is required")
+            else:
+                post_id = form_diag.regenerate_post_id.data.replace(" ", "").upper()
+                message = Messages.query.filter(Messages.post_id == post_id).first()
+                if message:
+                    try:
+                        regenerate_card_popup_post_html(message_id=message.message_id)
+                        status_msg['status_title'] = "Success"
+                        status_msg['status_message'].append(f"Deleted HTML for post {post_id}.")
+                    except Exception as err:
+                        status_msg['status_message'].append(
+                            f"Couldn't delete HTML for post {post_id}: {err}")
+                        logger.exception(f"Couldn't delete HTML for post {post_id}")
+                else:
+                    status_msg['status_message'].append("Post not found")
+
+        elif form_diag.regenerate_thread_post_html.data:
+            if not form_diag.regenerate_thread_post_id.data:
+                status_msg['status_message'].append("A Post ID is required")
+            else:
+                post_id = form_diag.regenerate_thread_post_id.data.replace(" ", "").upper()
+                message = Messages.query.filter(Messages.post_id == post_id).first()
+                if message:
+                    messages = Messages.query.filter(Messages.thread_id == message.thread_id).all()
+                    try:
+                        for each_msg in messages:
+                            regenerate_card_popup_post_html(message_id=each_msg.message_id)
+                        status_msg['status_title'] = "Success"
+                        status_msg['status_message'].append(f"Deleted HTML for all posts of thread OP {post_id}.")
+                    except Exception as err:
+                        status_msg['status_message'].append(
+                            f"Couldn't delete HTML for all posts of thread OP {post_id}: {err}")
+                        logger.exception(f"Couldn't delete HTML for all posts of thread OP {post_id}")
+                else:
+                    status_msg['status_message'].append("Post not found")
 
         elif form_diag.regenerate_popup_html.data:
             try:
@@ -471,98 +927,195 @@ def diag():
                 logger.exception("Couldn't regenerate all upload sites")
 
         elif form_diag.download_backup.data:
-            date_now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-            filename = 'bitchan-backup_{}.tar'.format(date_now)
-            save_path = '/home/{}'.format(filename)
-
-            def delete_backup_files():
-                time.sleep(7200)
-                delete_files = glob.glob("/home/*.tar")
-                delete_files.append('/home/bitchan/bitchan_backup-usr_bitchan.tar')
-                delete_files.append('/home/bitchan/bitchan_backup-usr_bitmessage.tar')
-                delete_files.append('/home/bitchan/bitchan_backup-i2p.tar')
-                for each_file in delete_files:
-                    delete_file(each_file)
-
             try:
-                cmd = 'tar -cvf /home/bitchan/bitchan_backup-usr_bitchan.tar /usr/local/bitchan'
-                output = subprocess.check_output(cmd, shell=True, text=True)
-                logger.debug("Command: {}, Output: {}".format(cmd, output))
+                logger.info("Starting backup archive generation")
+                zs = ZipStream(compress_type=ZIP_DEFLATED, compress_level=9)
 
-                cmd = 'tar -cvf /home/bitchan/bitchan_backup-usr_bitmessage.tar /usr/local/bitmessage'
-                output = subprocess.check_output(cmd, shell=True, text=True)
-                logger.debug("Command: {}, Output: {}".format(cmd, output))
+                # First, delete invalid symlinks
+                for p, d, f in os.walk(config.FILE_DIRECTORY):
+                    for file in f:
+                        fp = f"{p}/{file}"
+                        if os.path.islink(fp) and not os.path.exists(fp):
+                            logger.info(f"Bad symlink, unlinking: {fp}")
+                            try:
+                                os.unlink(fp)
+                            except:
+                                logger.exception(1)
 
-                cmd = 'tar -cvf /home/bitchan/bitchan_backup-i2p.tar /i2p/.i2p'
-                output = subprocess.check_output(cmd, shell=True, text=True)
-                logger.debug("Command: {}, Output: {}".format(cmd, output))
+                if os.path.exists(config.CODE_DIR):
+                    zs.add_path(config.CODE_DIR, "BitChan")
+                if os.path.exists(config.DATABASE_BITCHAN):
+                    zs.add_path(config.DATABASE_BITCHAN, "bitchan.db")
+                if os.path.exists(config.BM_PATH):
+                    zs.add_path(config.BM_PATH, "bitmessage")
+                if os.path.exists(config.FILE_DIRECTORY):
+                    zs.add_path(config.FILE_DIRECTORY, "downloaded_files")
+                if os.path.exists(config.BAN_THUMB_DIRECTORY):
+                    zs.add_path(config.BAN_THUMB_DIRECTORY, "banned_thumbs")
+                if os.path.exists(config.GPG_DIR):
+                    zs.add_path(config.GPG_DIR, "gnupg")
+                if os.path.exists(config.LOG_DIRECTORY):
+                    zs.add_path(config.LOG_DIRECTORY, "log")
+                if os.path.exists(config.TOR_PATH):
+                    zs.add_path(config.TOR_PATH, "tor")
+                if os.path.exists(config.I2PD_PATH):
+                    zs.add_path(config.I2PD_PATH, "i2pd")
+                if os.path.exists(config.I2PD_DATA_PATH):
+                    zs.add_path(config.I2PD_DATA_PATH, "i2pd_data")
 
-                cmd = 'tar -cvf {} /home/bitchan'.format(save_path)
-                output = subprocess.check_output(cmd, shell=True, text=True)
-                logger.debug("Command: {}, Output: {}".format(cmd, output))
+                fn = f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_bitchan_backup.zip"
 
-                thread_download = Thread(target=delete_backup_files)
-                thread_download.start()
-
-                return send_file(save_path, mimetype='application/x-tar')
+                return Response(
+                    zs,
+                    mimetype="application/zip",
+                    headers={
+                        "Content-Disposition": f"attachment; filename={fn}",
+                        "Last-Modified": zs.last_modified,
+                    }
+                )
             except Exception as err:
                 status_msg['status_message'].append(
                     "Couldn't generate backup archive: {}".format(err))
                 logger.exception("Couldn't generate backup archive")
 
+        elif form_diag.recheck_attachments.data:
+            msg_ids = []
+            msgs_rebuild = {}
+
+            # find posts that indicate need to download attachments
+            for each_msg in Messages.query.filter(and_(
+                    Messages.file_amount.isnot(True),
+                    Messages.file_download_successful.isnot(True),
+                    Messages.file_currently_downloading.is_(False))).all():
+                msg_ids.append(each_msg.message_id)
+
+            # Check if those files already exist
+            for each_id in msg_ids:
+                attach_path = f"{config.FILE_DIRECTORY}/{each_id}"
+                if os.path.exists(attach_path):
+                    errors_files, media_info, message_steg = process_attachments(each_id, attach_path, silent=True)
+                    if errors_files:
+                        logger.error(
+                            f"{each_id[-config.ID_LENGTH:].upper()}: Error: {errors_files}")
+                    elif media_info:
+                        msgs_rebuild[each_id] = {"media_info": media_info, "message_steg": message_steg}
+
+            logger.info(f"Found {len(msgs_rebuild)} messages needing attachments to be fixed.")
+
+            # if they exist, modify message entry
+            for msg_id in msgs_rebuild:
+                logger.info(
+                    f"{msg_id[-config.ID_LENGTH:].upper()}: "
+                    f"Fixing message attachments: {msgs_rebuild[msg_id]['media_info']}")
+                msg = Messages.query.filter(Messages.message_id == msg_id).first()
+                if msg:
+                    msg.file_download_successful = True
+                    msg.file_do_not_download = False
+                    msg.file_progress = None
+                    msg.media_info = json.dumps(msgs_rebuild[msg_id]["media_info"])
+                    msg.file_sha256_hashes_match = True
+                    msg.message_steg = json.dumps(msgs_rebuild[msg_id]["message_steg"])
+                    msg.save()
+
+                    regenerate_card_popup_post_html(
+                        thread_hash=msg.thread.thread_hash,
+                        message_id=msg_id)
+
+        elif form_diag.delete_orphaned_attachments.data:
+            found = 0
+            n_found = 0
+            for dirpath, dirnames, filenames in os.walk(config.FILE_DIRECTORY):
+                for each_dir in dirnames:
+                    try:
+                        if "_" not in each_dir:
+                            message_id = each_dir
+                        else:
+                            message_id = each_dir.split("_")[0]
+                        if len(message_id) != 64:
+                            logger.info(f"Message ID not 64 len: {len(message_id)}, {message_id}")
+                        else:
+                            if not Messages.query.filter(Messages.message_id == message_id).first():
+                                n_found += 1
+                                path = os.path.join(dirpath, each_dir)
+                                logger.info(f"Message with ID {message_id} not found, deleting {path}")
+                                delete_files_recursive(path)
+                            else:
+                                found += 1
+                    except:
+                        logger.exception("scanning for orphaned attachments")
+            logger.info(f"Attachment summary: found {found} with posts, found {n_found} without posts (and were deleted).")
+
         elif form_diag.restore_backup_file.data:
             try:
-                save_path = '/tmp/bitchan-backup_to_restore.tar'
-                delete_file(save_path)
-                form_diag.restore_backup_file.data.save(save_path)
+                # save_path = '/tmp/bitchan-backup_to_restore.tar'
+                # delete_file(save_path)
+                # form_diag.restore_backup_file.data.save(save_path)
+                #
+                # cmd = 'tar -xvf {} -C /'.format(save_path)
+                # output = subprocess.check_output(cmd, shell=True, text=True)
+                # logger.debug("Command: {}, Output: {}".format(cmd, output))
+                #
+                # cmd = 'tar -xvf /home/bitchan/bitchan_backup-usr_bitchan.tar -C /'
+                # output = subprocess.check_output(cmd, shell=True, text=True)
+                # logger.debug("Command: {}, Output: {}".format(cmd, output))
+                #
+                # cmd = 'tar -xvf /home/bitchan/bitchan_backup-usr_bitmessage.tar -C /'
+                # output = subprocess.check_output(cmd, shell=True, text=True)
+                # logger.debug("Command: {}, Output: {}".format(cmd, output))
+                #
+                # cmd = 'tar -xvf /home/bitchan/bitchan_backup-i2p -C /'
+                # output = subprocess.check_output(cmd, shell=True, text=True)
+                # logger.debug("Command: {}, Output: {}".format(cmd, output))
+                #
+                # def delete_backup_files():
+                #     delete_files = [
+                #         save_path,
+                #         '/home/bitchan/bitchan_backup-usr_bitchan.tar',
+                #         '/home/bitchan/bitchan_backup-usr_bitmessage.tar'
+                #         '/home/bitchan/bitchan_backup-i2p.tar'
+                #     ]
+                #     for each_file in delete_files:
+                #         delete_file(each_file)
+                #
+                # if config.DOCKER:
+                #     subprocess.Popen('docker stop -t 15 bitchan_daemon 2>&1', shell=True)
+                #     time.sleep(15)
+                #     subprocess.Popen('docker start bitchan_daemon 2>&1', shell=True)
+                #
+                #     subprocess.Popen('docker stop -t 15 bitchan_bitmessage 2>&1', shell=True)
+                #     time.sleep(15)
+                #     subprocess.Popen('docker start bitchan_bitmessage 2>&1', shell=True)
+                #
+                #     subprocess.Popen('docker stop -t 15 bitchan_i2p 2>&1', shell=True)
+                #     time.sleep(15)
+                #     subprocess.Popen('docker start bitchan_i2p 2>&1', shell=True)
+                # else:
+                #     subprocess.Popen('service bitchan_backend restart', shell=True)
+                #     subprocess.Popen('service bitchan_bitmessage restart', shell=True)
+                #     # subprocess.Popen('service i2pd restart', shell=True)
+                #
+                # thread_download = Thread(target=delete_backup_files)
+                # thread_download.start()
+                #
+                # status_msg['status_title'] = "Success"
+                # status_msg['status_message'].append("Restored backup and restarted Bitmessage and BitChan")
 
-                cmd = 'tar -xvf {} -C /'.format(save_path)
-                output = subprocess.check_output(cmd, shell=True, text=True)
-                logger.debug("Command: {}, Output: {}".format(cmd, output))
-
-                cmd = 'tar -xvf /home/bitchan/bitchan_backup-usr_bitchan.tar -C /'
-                output = subprocess.check_output(cmd, shell=True, text=True)
-                logger.debug("Command: {}, Output: {}".format(cmd, output))
-
-                cmd = 'tar -xvf /home/bitchan/bitchan_backup-usr_bitmessage.tar -C /'
-                output = subprocess.check_output(cmd, shell=True, text=True)
-                logger.debug("Command: {}, Output: {}".format(cmd, output))
-
-                cmd = 'tar -xvf /home/bitchan/bitchan_backup-i2p -C /'
-                output = subprocess.check_output(cmd, shell=True, text=True)
-                logger.debug("Command: {}, Output: {}".format(cmd, output))
-
-                def delete_backup_files():
-                    delete_files = [
-                        save_path,
-                        '/home/bitchan/bitchan_backup-usr_bitchan.tar',
-                        '/home/bitchan/bitchan_backup-usr_bitmessage.tar'
-                        '/home/bitchan/bitchan_backup-i2p.tar'
-                    ]
-                    for each_file in delete_files:
-                        delete_file(each_file)
-
-                subprocess.Popen('docker stop -t 15 bitchan_daemon 2>&1', shell=True)
-                time.sleep(15)
-                subprocess.Popen('docker start bitchan_daemon 2>&1', shell=True)
-
-                subprocess.Popen('docker stop -t 15 bitchan_bitmessage 2>&1', shell=True)
-                time.sleep(15)
-                subprocess.Popen('docker start bitchan_bitmessage 2>&1', shell=True)
-
-                subprocess.Popen('docker stop -t 15 bitchan_i2p 2>&1', shell=True)
-                time.sleep(15)
-                subprocess.Popen('docker start bitchan_i2p 2>&1', shell=True)
-
-                thread_download = Thread(target=delete_backup_files)
-                thread_download.start()
-
-                status_msg['status_title'] = "Success"
-                status_msg['status_message'].append("Restored backup and restarted Bitmessage and BitChan")
+                status_msg['status_message'].append("Restore feature is disabled until it can be built for the new backup system")
             except Exception as err:
                 status_msg['status_message'].append(
                     "Couldn't restore backup: {}".format(err))
                 logger.exception("Couldn't restore backup archive")
+
+        elif form_diag.delete_post_id_submit.data:
+            if form_diag.delete_post_id.data:
+                post_id = form_diag.delete_post_id.data.replace(" ", "").upper()
+                post = Messages.query.filter(Messages.post_id == post_id).first()
+                if not post:
+                    status_msg['status_message'].append(f"Invalid Post ID: {post_id}")
+                else:
+                    delete_post(post.message_id)
+                    status_msg['status_title'] = "Success"
+                    status_msg['status_message'].append(f"Deleted post with ID {post_id}")
 
         elif form_diag.bulk_delete_threads_submit.data:
             address = "0"
@@ -575,6 +1128,22 @@ def diag():
                     address = board.address
 
             return redirect(url_for("routes_admin.bulk_delete_thread", current_chan=address))
+
+        elif form_diag.knownnodes_submit.data:
+            if form_diag.knownnodes_dat_txt.data:
+                try:
+                    knownnodes_dat_list = json.loads(form_diag.knownnodes_dat_txt.data)
+                    if type(knownnodes_dat_list) == list:
+                        combine_knownnodes = Thread(
+                            target=daemon_com.combine_bm_knownnodes, args=(knownnodes_dat_list,))
+                        combine_knownnodes.start()
+                    status_msg['status_title'] = "Success"
+                    status_msg['status_message'].append(
+                        f"Sent knownnodes.dat contents to daemon to be combined with current knownnodes.dat. "
+                        f"View the daemon log for further updates.")
+                except Exception as err:
+                    status_msg['status_message'].append(f"Error: {err}")
+
 
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
@@ -596,7 +1165,13 @@ def diag():
             if not bc_identities:
                 orphaned_identities_bm += 1
 
+    banned_hashes = BanedHashes.query.all()
+    banned_words = BanedWords.query.all()
+    replaced_strings = StringReplace.query.all()
+
     return render_template("pages/diag.html",
+                           banned_hashes=banned_hashes,
+                           banned_words=banned_words,
                            captcha_entry_count=captcha_entry_count,
                            flask_session_login=flask_session_login,
                            form_diag=form_diag,
@@ -604,6 +1179,7 @@ def diag():
                            orphaned_identities_bc=orphaned_identities_bc,
                            orphaned_identities_bm=orphaned_identities_bm,
                            replace_lt_gt=replace_lt_gt,
+                           replaced_strings=replaced_strings,
                            sending_msgs=sending_msgs,
                            settings=GlobalSettings.query.first(),
                            status_msg=status_msg,
@@ -672,7 +1248,7 @@ def bug_report():
                                         subject_b64,
                                         message_b64,
                                         2,
-                                        config.BM_TTL)
+                                        get_max_ttl())
                                     if return_str:
                                         status_msg['status_title'] = "Success"
                                         status_msg['status_message'].append(
@@ -695,3 +1271,32 @@ def bug_report():
                            settings=GlobalSettings.query.first(),
                            status_msg=status_msg,
                            themes=themes.themes)
+
+
+@blueprint.route('/regex', methods=('GET', 'POST'))
+@count_views
+def regex():
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    if not global_admin:
+        return allow_msg
+
+    regex_return = {}
+    form_data = {"regex": "", "text": ""}
+    status_msg = session.get('status_msg', {"status_message": []})
+    form_regex = forms_settings.Regex()
+
+    if request.method == "POST":
+        if form_regex.test_regex.data:
+            form_data = {"regex": form_regex.regex.data, "text": form_regex.text.data}
+            regex_return = {
+                "findall": re.findall(form_regex.regex.data, form_regex.text.data),
+                "search": re.search(form_regex.regex.data, form_regex.text.data),
+                "finditer": re.finditer(form_regex.regex.data, form_regex.text.data),
+                "match": re.match(form_regex.regex.data, form_regex.text.data)
+            }
+
+    return render_template("pages/regex.html",
+                           form_regex=form_regex,
+                           regex_return=regex_return,
+                           status_msg=status_msg,
+                           form_data=form_data)

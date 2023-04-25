@@ -21,6 +21,8 @@ from forms import forms_board
 from utils.general import process_passphrase
 from utils.general import set_clear_time_to_future
 from utils.routes import allowed_access
+from utils.routes import get_chan_passphrase
+from utils.routes import get_logged_in_user_name
 from utils.routes import page_dict
 from utils.shared import add_mod_log_entry
 from utils.shared import get_access
@@ -211,7 +213,7 @@ def list_chans(current_chan):
                 try:
                     dict_list_addresses = json.loads(mod_list.list)
                 except:
-                    dict_current_chanes = {}
+                    dict_list_addresses = {}
 
                 try:
                     rules = json.loads(mod_list.rules)
@@ -287,6 +289,9 @@ def list_chans(current_chan):
                 if not status_msg['status_message']:
                     status_msg['status_title'] = "Success"
 
+                    user_name = get_logged_in_user_name()
+                    admin_name = user_name if user_name else "LOCAL ADMIN"
+
                     if form_list.add.data:
                         dict_list_addresses[chan_add.address] = {
                             "passphrase": chan_add.passphrase
@@ -301,11 +306,8 @@ def list_chans(current_chan):
                             "Added {} to the List".format(address))
 
                         add_mod_log_entry(
-                            "Locally Added to List: {}".format(address),
-                            message_id=None,
-                            user_from=None,
-                            board_address=current_chan,
-                            thread_hash=None)
+                            f"Locally Added to List: {address}",
+                            board_address=current_chan, user_from=admin_name)
 
                     elif form_list.delete.data:
                         dict_list_addresses.pop(address)
@@ -313,11 +315,8 @@ def list_chans(current_chan):
                             "Deleted {} from the List".format(address))
 
                         add_mod_log_entry(
-                            "Locally Deleted from List: {}".format(address),
-                            message_id=None,
-                            user_from=None,
-                            board_address=current_chan,
-                            thread_hash=None)
+                            f"Locally Deleted from List: {address}",
+                            board_address=current_chan, user_from=admin_name)
 
                     # Set the time the list changed
                     if mod_list.list != json.dumps(dict_list_addresses):
@@ -327,7 +326,7 @@ def list_chans(current_chan):
                     mod_list.list_send = True
                     mod_list.save()
 
-                    time_to_send = 60 * 1
+                    time_to_send = 60 * 10
                     logger.info("Instructing send_lists() to run in {} minutes".format(time_to_send / 60))
                     daemon_com.update_timer_send_lists(time_to_send)
 
@@ -378,16 +377,7 @@ def list_chans(current_chan):
         else:
             chan_lists[each_chan.address]["label_short"] = each_chan.label
 
-    chan = Chan.query.filter(Chan.address == current_chan).first()
-    dict_join = {
-        "passphrase": chan.passphrase
-    }
-    passphrase_base64 = base64.b64encode(
-        json.dumps(dict_join).encode()).decode().replace("/", "&")
-    if chan.pgp_passphrase_msg != config.PGP_PASSPHRASE_MSG:
-        dict_join["pgp_msg"] = chan.pgp_passphrase_msg
-    passphrase_base64_with_pgp = base64.b64encode(
-        json.dumps(dict_join).encode()).decode().replace("/", "&")
+    passphrase_base64, passphrase_base64_with_pgp = get_chan_passphrase(current_chan, is_board=False)
 
     return render_template("pages/list.html",
                            board=board,
@@ -594,9 +584,9 @@ def list_bulk_add(list_address):
 
         for each_input in request.form:
             if each_input == "add_bulk":
-                for each_input in request.form:
-                    if each_input.startswith("add_bulk_"):
-                        add_bulk_list.append(each_input.split("_")[2])
+                for each_input_ in request.form:
+                    if each_input_.startswith("add_bulk_"):
+                        add_bulk_list.append(each_input_.split("_")[2])
                 break
 
         # Add boards or lists to a list in bulk
@@ -614,6 +604,8 @@ def list_bulk_add(list_address):
             if not mod_list:
                 status_msg["status_message"].append("Invalid list to modify")
             else:
+                list_unlisted = []
+
                 if form_list.from_address.data:
                     mod_list.default_from_address = form_list.from_address.data
 
@@ -629,6 +621,11 @@ def list_bulk_add(list_address):
 
                 for each_address in add_bulk_list:
                     chan_add = Chan.query.filter(Chan.address == each_address).first()
+                    if chan_add.unlisted and not form_list.add_unlisted.data:
+                        list_unlisted.append(chan_add)
+
+                        continue
+
                     if not chan_add:
                         status_msg["status_message"].append(
                             "Can't find board/list to add: {}".format(each_address))
@@ -708,6 +705,13 @@ def list_bulk_add(list_address):
                             dict_list_addresses[chan_add.address]["pgp_passphrase_attach"] = chan_add.pgp_passphrase_attach
                             dict_list_addresses[chan_add.address]["pgp_passphrase_steg"] = chan_add.pgp_passphrase_steg
 
+                if list_unlisted:
+                    status_msg["status_message"].append(
+                        f'Unlisted board/list detected. Cannot add unless "Add Unlisted" is selected.')
+                    for each_unlisted in list_unlisted:
+                        status_msg["status_message"].append(
+                            f'Unlisted: /{each_unlisted.label}/ {each_unlisted.address}')
+
             if not status_msg['status_message']:
                 status_msg["status_message"].append(
                     "Added to the List: {}".format(", ".join(add_bulk_list)))
@@ -725,15 +729,15 @@ def list_bulk_add(list_address):
                 mod_list.save()
 
                 add_mod_log_entry(
-                    "Locally Added to List: {}".format(", ".join(add_bulk_list)),
-                    message_id=None,
-                    user_from=None,
-                    board_address=list_address,
-                    thread_hash=None)
+                    f'Locally Added to List: {", ".join(add_bulk_list)}',
+                    board_address=list_address)
 
                 logger.info("Instructing send_lists() to run in {} minutes".format(
                     config.LIST_ADD_WAIT_TO_SEND_SEC / 60))
                 daemon_com.update_timer_send_lists(config.LIST_ADD_WAIT_TO_SEND_SEC)
+
+            if 'status_title' not in status_msg and status_msg['status_message']:
+                status_msg['status_title'] = "Error"
 
             return render_template("pages/alert.html",
                                    board=list_address,
@@ -766,11 +770,11 @@ def list_bulk_add(list_address):
         "passphrase": chan.passphrase
     }
     passphrase_base64 = base64.b64encode(
-        json.dumps(dict_join).encode()).decode().replace("/", "&")
+        json.dumps(dict_join).encode()).decode()
     if chan.pgp_passphrase_msg != config.PGP_PASSPHRASE_MSG:
         dict_join["pgp_msg"] = chan.pgp_passphrase_msg
     passphrase_base64_with_pgp = base64.b64encode(
-        json.dumps(dict_join).encode()).decode().replace("/", "&")
+        json.dumps(dict_join).encode()).decode()
 
     return render_template("pages/list_bulk_add.html",
                            board=board,

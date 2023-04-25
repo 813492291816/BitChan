@@ -33,6 +33,7 @@ def generate_post_html(message_id, board_view=False):
                                                table_messages=Messages,
                                                upload_sites=UploadSites)
         msg.post_html_board_view = post_html_board_view
+        msg.save()
 
     if msg.regenerate_post_html or not msg.post_html:
         board = {
@@ -49,8 +50,9 @@ def generate_post_html(message_id, board_view=False):
                                     table_messages=Messages,
                                     upload_sites=UploadSites)
         msg.post_html = post_html
+        msg.save()
 
-    if msg.regenerate_post_html or not msg.post_html or not msg.post_html_board_view:
+    if msg.regenerate_post_html:
         msg.regenerate_post_html = False
         msg.save()
 

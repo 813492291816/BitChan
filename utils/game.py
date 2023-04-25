@@ -11,12 +11,13 @@ import config
 from bitchan_client import DaemonCom
 from database.models import Chan
 from database.models import Games
+from database.models import GlobalSettings
 from database.models import Messages
 from database.models import Threads
 from database.utils import session_scope
 from utils.files import LF
-from utils.files import human_readable_size
 from utils.gateway import api
+from utils.shared import get_post_ttl
 from utils.tic_tac_toe import TicTacToe
 
 logger = logging.getLogger('bitchan.game')
@@ -454,9 +455,10 @@ def update_game(message_id, dict_msg, game_termination_password=None, game_playe
                 return
             time.sleep(1)
 
+        ttl = get_post_ttl()
+
         lf = LF()
         if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
-            return_str = None
             try:
                 return_str = api.sendMessage(
                     thread.chan.address,
@@ -464,7 +466,7 @@ def update_game(message_id, dict_msg, game_termination_password=None, game_playe
                     "",
                     message_send,
                     2,
-                    60 * 60 * 24 * 28)
+                    ttl)
                 if return_str:
                     logger.info("{}: Daemon game message sent from {} to {}: {}".format(
                         message_id[-config.ID_LENGTH:].upper(),
@@ -474,16 +476,6 @@ def update_game(message_id, dict_msg, game_termination_password=None, game_playe
             finally:
                 time.sleep(config.API_PAUSE)
                 lf.lock_release(config.LOCKFILE_API)
-                return_msg = "{}: Game post of size {} placed in send queue. The time it " \
-                             "takes to send a message is related to the size of the " \
-                             "post due to the proof of work required to send. " \
-                             "Generally, the larger the post, the longer it takes to " \
-                             "send. Posts ~10 KB take around a minute or less to send, " \
-                             "whereas messages >= 100 KB can take several minutes to " \
-                             "send. BM returned: {}".format(
-                    message_id[-config.ID_LENGTH:].upper(),
-                    human_readable_size(len(message_send)), return_str)
-
 
 def initialize_game(game_id):
     moves = None
@@ -677,9 +669,10 @@ Current turn: Player A ({pa}, {paa})""".format(
                     return
                 time.sleep(1)
 
+            ttl = get_post_ttl()
+
             lf = LF()
             if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
-                return_str = None
                 try:
                     return_str = api.sendMessage(
                         thread.chan.address,
@@ -687,7 +680,7 @@ Current turn: Player A ({pa}, {paa})""".format(
                         "",
                         message_send,
                         2,
-                        60 * 60 * 24 * 28)
+                        ttl)
                     if return_str:
                         logger.info("Daemon game message sent from {} to {}: {}".format(
                             game.host_from_address, thread.thread_hash_short, return_str))
@@ -697,11 +690,3 @@ Current turn: Player A ({pa}, {paa})""".format(
                 finally:
                     time.sleep(config.API_PAUSE)
                     lf.lock_release(config.LOCKFILE_API)
-                    return_msg = "Game post of size {} placed in send queue. The time it " \
-                                 "takes to send a message is related to the size of the " \
-                                 "post due to the proof of work required to send. " \
-                                 "Generally, the larger the post, the longer it takes to " \
-                                 "send. Posts ~10 KB take around a minute or less to send, " \
-                                 "whereas messages >= 100 KB can take several minutes to " \
-                                 "send. BM returned: {}".format(
-                        human_readable_size(len(message_send)), return_str)

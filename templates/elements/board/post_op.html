@@ -57,7 +57,19 @@
         </div>
 {% else %}
     {% for file_name in file_order if file_name and file_name in attach %}
-        <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 0px solid #000; border-radius: 5px; padding: 0.2em; margin-bottom: 1em; margin-right: 1em">
+        <div style="float: left; font-size: 0.8em; vertical-align: top; border: 0px solid #000; border-radius: 5px; padding: 0.2em; margin-bottom: 1em; margin-right: 1em">
+            <div tabindex="0" class="menu">
+                <span class="link clickable">▶</span>
+                <table class="menu-content">
+                    <tbody>
+                        <tr class="menu-entry">
+                            <td style="white-space: nowrap;">
+                                <a class="link" href="/attachment_options/{{board['current_chan'].address}}/{{post.message_id}}/1/{{quote(file_name)}}">Attachment Options</a>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
 
         {%- if attach[file_name]["size"] -%}
             {{"(%s" % (human_readable_size(attach[file_name]["size"]))}}
@@ -77,13 +89,13 @@
             {{")<br>"|safe}}
         {%- endif %}
 
-        <a class="link" title="{{file_name|safe}}" href="/files/file/{{post.message_id}}/{{quote(file_name)}}">
+            <a class="link" title="{{file_name|safe}}" href="/files/file/{{post.message_id}}/{{quote(file_name)}}">
         {%- if file_name|safe|length > 25 -%}
             {{(file_name|safe)[:19]}}...{{(file_name|safe)[-3:]}}
         {%- else -%}
             {{file_name|safe}}
         {%- endif -%}
-        </a> (<a class="link" href="/dl/{{post.message_id}}/{{quote(file_name)}}">dl</a>)<br/>
+            </a> (<a class="link" href="/dl/{{post.message_id}}/{{quote(file_name)}}">dl</a>)<br/>
 
         {% if attach[file_name]["extension"] in config.FILE_EXTENSIONS_IMAGE or
               attach[file_name]["extension"] in config.FILE_EXTENSIONS_VIDEO %}
@@ -100,22 +112,25 @@
 
             {% if attach[file_name]["extension"] in config.FILE_EXTENSIONS_IMAGE %}
             <input type="hidden" id="spoiler_{{post.message_id}}_{{loop.index}}" name="spoiler" value="{% if attach[file_name]['spoiler'] %}1{% else %}0{% endif %}"/>
-            <input type="hidden" id="src_thumb_{{post.message_id}}_{{loop.index}}" name="src_thumb" value="{% if attach[file_name]['spoiler'] %}/spoiler/{{board['current_chan'].address}}{% else %}/files/thumb/{{post.message_id}}/{{quote(file_name)}}{% endif %}"/>
+            <input type="hidden" id="src_thumb_{{post.message_id}}_{{loop.index}}" name="src_thumb" value="/files/thumb/{{post.message_id}}/{{quote(file_name)}}"/>
             <input type="hidden" id="filename_{{post.message_id}}_{{loop.index}}" name="filename" value="{{quote(file_name)}}"/>
-            <img loading="lazy" id="img_{{post.message_id}}_{{loop.index}}" style="height: {{130 * attach[file_name]['thumb_percent_height']}}px; border-radius: 2px" class="opimg pic" src="{% if attach[file_name]['spoiler'] %}/spoiler/{{board['current_chan'].address}}{% else %}/files/thumb/{{post.message_id}}/{{quote(file_name)}}{% endif %}">
+            <img loading="lazy" id="img_{{post.message_id}}_{{loop.index}}" style="max-height: 200px; max-width: 200px; border-radius: 2px" class="opimg pic clickable" src="/files/thumb/{{post.message_id}}/{{quote(file_name)}}"{% if attach[file_name]['spoiler'] %} title="Spoiler"{% endif %}>
             {% elif attach[file_name]["extension"] in config.FILE_EXTENSIONS_AUDIO %}
             <div id="audio_{{post.message_id}}_{{loop.index}}" class="video" style="border-radius: 5px; margin: 3px 3px 2px 2px; max-width: 450px;">
-                <audio preload="metadata" class="video-insert volume-75" controls>
+                <audio preload="metadata" class="video-horiz volume-75" controls>
                   <source src="/files/file/{{post.message_id}}/{{quote(file_name)}}">
                   Your browser does not support the audio tag.
                 </audio>
             </div>
             {% elif attach[file_name]["extension"] in config.FILE_EXTENSIONS_VIDEO %}
-            <div id="vid_{{post.message_id}}_{{loop.index}}" class="video" style="border: 0px solid #000; border-radius: 5px; margin: 3px 3px 2px 2px; width: 275px; height: 200px;">
-                Click to Enlarge/Shrink<br/>
-                <video class="video-insert volume-75" controls>
-                  <source src="/files/file/{{post.message_id}}/{{quote(file_name)}}">
-                  Your browser does not support the video tag.
+               {% set thumb_width, thumb_height = calc_resize(attach[file_name]['width'], attach[file_name]['height'], 200, 200) %}
+            <input type="hidden" id="thumb_width_{{post.message_id}}_{{loop.index}}" name="thumb_width" value="{{thumb_width}}px"/>
+            <input type="hidden" id="thumb_height_{{post.message_id}}_{{loop.index}}" name="thumb_height" value="{{thumb_height}}px"/>
+            <div id="vid_{{post.message_id}}_{{loop.index}}" class="video" style="border: 0px solid #000; border-radius: 5px; margin: 3px 3px 10px 2px; width: {{thumb_width}}px; height: {{thumb_height}}px;">
+                Click Expand<br/>
+                <video class="{% if attach[file_name]['height'] >= attach[file_name]['width'] %}video-vert{% else %}video-horiz{% endif %} volume-75" style="max-width: {% if attach[file_name]['width'] %}{{attach[file_name]['width']}}{% else %}250{% endif %}px; max-height: {% if attach[file_name]['height'] %}{{attach[file_name]['height']}}{% else %}250{% endif %}px;" controls preload="none" poster="/files/thumb_video/{{post.message_id}}/{{quote(file_name)}}">
+                    <source src="/files/file/{{post.message_id}}/{{quote(file_name)}}">
+                    Your browser does not support the video tag.
                 </video>
             </div>
             {% endif %}

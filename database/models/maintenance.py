@@ -4,23 +4,6 @@ from database import CRUDMixin
 from flask_extensions import db
 
 
-class DeletedMessages(CRUDMixin, db.Model):
-    __tablename__ = "deleted_message"
-    __table_args__ = {
-        'extend_existing': True
-    }
-
-    id = db.Column(db.Integer, unique=True, primary_key=True)
-    message_id = db.Column(db.String, unique=True, default=None)
-    address_from = db.Column(db.String, default=None)
-    address_to = db.Column(db.String, default=None)
-    expires_time = db.Column(db.Integer, default=None)
-
-    def __repr__(self):
-        return "<{cls}(id={rep.id})>".format(
-            cls=self.__class__.__name__, rep=self)
-
-
 class PostDeletePasswordHashes(CRUDMixin, db.Model):
     __tablename__ = "post_delete_password_hash"
     __table_args__ = {
@@ -39,6 +22,23 @@ class PostDeletePasswordHashes(CRUDMixin, db.Model):
             cls=self.__class__.__name__, rep=self)
 
 
+class DeletedMessages(CRUDMixin, db.Model):
+    __tablename__ = "deleted_message"
+    __table_args__ = {
+        'extend_existing': True
+    }
+
+    id = db.Column(db.Integer, unique=True, primary_key=True)
+    message_id = db.Column(db.String, unique=True, default=None)
+    address_from = db.Column(db.String, default=None)
+    address_to = db.Column(db.String, default=None)
+    expires_time = db.Column(db.Integer, default=None)
+
+    def __repr__(self):
+        return "<{cls}(id={rep.id})>".format(
+            cls=self.__class__.__name__, rep=self)
+
+
 class DeletedThreads(CRUDMixin, db.Model):
     __tablename__ = "deleted_threads"
     __table_args__ = {
@@ -47,6 +47,7 @@ class DeletedThreads(CRUDMixin, db.Model):
 
     id = db.Column(db.Integer, unique=True, primary_key=True)
     thread_hash = db.Column(db.String, unique=True, default=None)
+    subject = db.Column(db.String, default=None)
     board_address = db.Column(db.String, default=None)
     timestamp_utc = db.Column(db.Integer, default=None)
 
@@ -96,7 +97,7 @@ class PostCards(CRUDMixin, db.Model):
 
     id = db.Column(db.Integer, unique=True, primary_key=True)
     message_id = db.Column(db.String, default=None)
-    thread_id = db.Column(db.String, default=None)
+    thread_id = db.Column(db.Integer, default=None)
     card_html = db.Column(db.String, default=None)
     regenerate = db.Column(db.Boolean, default=False)
 

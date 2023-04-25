@@ -4,11 +4,11 @@
 
 {% block head %}
     <script>
-    function toggle(source) {
+    function toggle(source, name) {
         var inputs = document.getElementsByTagName("input");
         for (let x=0; x<inputs.length; x++){
             if (inputs[x].type == "checkbox" &&
-                    inputs[x].name.indexOf("delsendingmsgid_") == 0) {
+                    inputs[x].name.indexOf(name) == 0) {
                 inputs[x].checked = source.checked;
             }
         }
@@ -46,6 +46,14 @@
     <h1 class="title themed bold" style="text-align: center">Diagnostics</h1>
 
     <table class="table themed" style="max-width: 900px; text-align: left; margin-left: auto; margin-right: auto;">
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="restart_bitmessage" value="Restart Bitmessage"/>
+                </form>
+            </td>
+            <td>Restart Bitmessage associate with BitChan.</td>
+        </tr>
         <tr>
             <td>
                 <form method="post">
@@ -129,10 +137,42 @@
         <tr>
             <td>
                 <form method="post">
+                    <input type="submit" name="fix_chan_thread_timestamps" value="Fix Chan and Thread Timestamps"/>
+                </form>
+            </td>
+            <td>Set threads to the latest message timestamp and chan to the latest thread timestamp.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
                     <input type="submit" name="reset_downloads" value="Reset Downloads"/>
                 </form>
             </td>
             <td>Reset all downloads. Fixes issues with downloads, e.g. when a server restart during a download.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="start_all_downloads" value="Start All Downloads"/>
+                </form>
+            </td>
+            <td>Starts all pending post downloads.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="recheck_attachments" value="Recheck Attachments"/>
+                </form>
+            </td>
+            <td>Scan messages with pending attachment downloads, check if attachments already exist, and fix attachment display for messages.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="delete_orphaned_attachments" value="Delete Orphaned Attachments"/>
+                </form>
+            </td>
+            <td>Delete attachments for posts that do not exist.</td>
         </tr>
         <tr>
             <td>
@@ -153,10 +193,45 @@
         <tr>
             <td>
                 <form method="post">
+                    <input type="submit" name="regenerate_all_thumbnails" value="Regenerate All Thumbnails"/>
+                </form>
+            </td>
+            <td>Regenerate all post attachment thumbnails.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="text" id="regenerate_post_thumbnails_id" name="regenerate_post_thumbnails_id"/>
+                    <input type="submit" name="regenerate_post_thumbnails" value="Regenerate Post Thumbnails"/>
+                </form>
+            </td>
+            <td>Enter the post ID to regenerate the attachment thumbnails of that post.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
                     <input type="submit" name="regenerate_all_html" value="Regenerate All HTML"/>
                 </form>
             </td>
             <td>Regenerate post, popup, and card HTML.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="text" id="regenerate_post_id" name="regenerate_post_id"/>
+                    <input type="submit" name="regenerate_post_html" value="Regenerate Post HTML"/>
+                </form>
+            </td>
+            <td>Enter the post ID to regenerate the HTML of that post.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="text" id="regenerate_thread_post_id" name="regenerate_thread_post_id"/>
+                    <input type="submit" name="regenerate_thread_post_html" value="Regenerate HTML of all Posts of Thread"/>
+                </form>
+            </td>
+            <td>Enter the ID of any post in a thread to regenerate the HTML of all posts in that thread.</td>
         </tr>
         <tr>
             <td>
@@ -172,7 +247,7 @@
                     <input type="submit" name="regenerate_cards" value="Regenerate Card HTML"/>
                 </form>
             </td>
-            <td>Card HTML is generated and saved the frist time a card is called for. If new code is created to generate the card HTML, the saved card HTML needs to be deleted for the new code to generate cards that were created prior to the new code being implemented.</td>
+            <td>Card HTML is generated and saved the first time a card is called for. If new code is created to generate the card HTML, the saved card HTML needs to be deleted for the new code to generate cards that were created prior to the new code being implemented.</td>
         </tr>
         <tr>
             <td>
@@ -189,6 +264,14 @@
                 </form>
             </td>
             <td>Regenerate all post attachment upload sites. Warning: This will delete all upload sites before recreating them. Save any information you want to preserve before running.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="regenerate_hashes" value="Regenerate All Attachment Hashes"/>
+                </form>
+            </td>
+            <td>Regenerate all post attachment SHA256 hashes. If there are a lot of attachments, this can take a while to complete. A thread will be spawned to do this in the background.</td>
         </tr>
         <tr>
             <td>
@@ -231,11 +314,29 @@
         <tr>
             <td>
                 <form method="post">
+                    <input type="text" id="delete_post_id" name="delete_post_id"/>
+                    <input type="submit" name="delete_post_id_submit" value="Delete Post by ID"/>
+                </form>
+            </td>
+            <td>To delete a post, enter the post ID.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
                     <input type="text" id="bulk_delete_threads_address" name="bulk_delete_threads_address"/>
                     <input type="submit" name="bulk_delete_threads_submit" value="Bulk Delete Threads"/>
                 </form>
             </td>
             <td>To delete threads in bulk, leave the address field blank to load the latest 100 threads, or enter a board address to load all threads for a specific board. On the next page, you can select in bulk which threads to delete. It is also possible to delete threads from the Recent and Search pages, however this feature will only show threads, rather than threads and posts.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <textarea rows="7" id="knownnodes_dat_txt" name="knownnodes_dat_txt"></textarea>
+                    <input type="submit" name="knownnodes_submit" value="Combine with knownnodes.dat"/>
+                </form>
+            </td>
+            <td>Paste the contents of knownnodes.dat from another Bitmessage that's been running and connecting to nodes and it will be combined with BitChan's Bitmessage knownnodes.dat.</td>
         </tr>
     </table>
 
@@ -276,7 +377,7 @@
             <table class="themed">
                 <tr>
                     <td>
-                        <input type="checkbox" onClick="toggle(this)"/>
+                        <input type="checkbox" onClick="toggle(this, 'delsendingmsgid_')"/>
                     </td>
                     <td>From</td>
                     <td>To</td>
@@ -285,24 +386,243 @@
                     <td>status</td>
                 </tr>
         {% for each_row in sending_msgs %}
+            {% set from_label, from_desc, from_type = get_chan_mod_info(each_row[1]) %}
+            {% set to_label, to_desc, to_type = get_chan_mod_info(each_row[2]) %}
                 <tr>
                     <td>
                         <input type="checkbox" id="delsendingmsgid_{{each_row[0]}}" name="delsendingmsgid_{{each_row[0]}}" value="y">
                     </td>
-                    <td>{{each_row[1]}}</td>
-                    <td>{{each_row[2]}}</td>
-                    <td>{{each_row[3]}}</td>
-                    <td>{{each_row[4]}}</td>
+                    <td>{{each_row[1]}}{% if from_label %} (/{{from_label|safe}}/){% endif %}</td>
+                    <td>{{each_row[2]}}{% if to_label %} (/{{to_label|safe}}/){% endif %}</td>
+                    <td>{{each_row[3]}}{% if each_row[3] %} ({{timestamp_to_date(each_row[3])}}){% endif %}</td>
+                    <td>{% if each_row[4] %}{{human_readable_size(each_row[4])}}{% endif %}</td>
                     <td>{{each_row[5]}}</td>
                 </tr>
         {% endfor %}
             </table>
-            <input type="submit" name="del_sending_msg" value="Cancel Sending"/>
+            <input type="submit" name="del_sending_msg" value="Cancel Sending Selected Messages"/>
         </form>
     {% else %}
         <div class="themed">No Messages Sending</div>
     {% endif %}
     </div>
+
+    <div class="heading-2 head-center themed">Banned File Hashes</div>
+
+    <div class='outer' style="padding: 1.5em 0 1em 0">
+        <form method="post">
+            <table class="themed" style="padding-bottom: 0.5em">
+                <tr>
+                    <td>Name (optional)</td>
+                    <td><input type="text" id="hash_name" name="hash_name"/></td>
+                </tr>
+                <tr>
+                    <td>Board Addresses (CSV, optional)</td>
+                    <td><input type="text" id="board_addresses" name="board_addresses"/></td>
+                </tr>
+                <tr>
+                    <td>SHA256 Hash</td>
+                    <td><input type="text" id="hash_to_ban" name="hash_to_ban"/></td>
+                </tr>
+                <tr>
+                    <td>Image Hash</td>
+                    <td><input type="text" id="imagehash_to_ban" name="imagehash_to_ban"/></td>
+                </tr>
+                <tr>
+                    <td>Image File (optional)</td>
+                    <td>TODO</td>
+                </tr>
+                <tr>
+                    <td>Delete Current Posts</td>
+                    <td><input type="checkbox" id="delete_present_posts" name="delete_present_posts" value="y" checked/></td>
+                </tr>
+                <tr>
+                    <td>Delete Current Threads (if OP)</td>
+                    <td><input type="checkbox" id="delete_present_threads" name="delete_present_threads" value="y" checked/></td>
+                </tr>
+            </table>
+
+            <div class="themed">
+                Note: SHA256/Image hashes will be generated from Image File.
+            </div>
+
+            <div class="themed" style="padding-top: 1em; padding-bottom: 2em">
+                <input type="submit" name="add_banned_hash" value="Ban File Hash"/>
+            </div>
+        </form>
+    </div>
+
+    <div style="padding-top: 0.5em"></div>
+
+    <div class='outer' style="padding: 0.5em 0 3em 0">
+    {% if banned_hashes %}
+        <form method="post">
+            <table class="themed" style="padding-bottom: 1em">
+                <tr>
+                    <td><input type="checkbox" onClick="toggle(this, 'delhashes_id_')"/></td>
+                    <td>Thumb</td>
+                    <td>Name</td>
+                    <td>Board Addresses (CSV)</td>
+                    <td>SHA256 Hash</td>
+                    <td>Image Hash</td>
+                </tr>
+        {% for each_row in banned_hashes %}
+                <tr>
+                    <td><input type="checkbox" id="delhashes_id_{{each_row.id}}" name="delhashes_id_{{each_row.id}}" value="y"></td>
+                    <td>{% if each_row.thumb_b64 %}<img src="/files/banned_thumb/{{each_row.id}}/banned_thumb.jpeg">{% endif %}</td>
+                    <td><input type="text" id="hashname_{{each_row.id}}" name="hashname_{{each_row.id}}" value="{{each_row.name}}"/></td>
+                    <td><input type="text" id="boardaddress_{{each_row.id}}" name="boardaddress_{{each_row.id}}" value="{{each_row.only_board_address}}"/></td>
+                    <td style="font-family: monospace">{{each_row.hash}}</td>
+                    <td style="font-family: monospace">{{each_row.imagehash}}</td>
+                </tr>
+        {% endfor %}
+            </table>
+
+            <input type="submit" name="edit_hash_table" value="Edit Bans"/>
+            <input type="submit" name="del_banned_hashes" value="Unban Selected Hashes"/>
+        </form>
+    {% else %}
+            <div class="themed">No Banned File Hashes</div>
+    {% endif %}
+    </div>
+
+    <div class="heading-2 head-center themed">Banned Words/Regex</div>
+
+    <div class='outer' style="padding: 1.5em 0 1em 0">
+        <form method="post">
+            <table class="themed" style="padding-bottom: 0.5em">
+                <tr>
+                    <td>Name (optional)</td>
+                    <td><input type="text" id="word_name" name="word_name"/></td>
+                </tr>
+                <tr>
+                    <td>Board Addresses (CSV, optional)</td>
+                    <td><input type="text" id="word_board_addresses" name="word_board_addresses"/></td>
+                </tr>
+                <tr>
+                    <td>Word/String/Regex</td>
+                    <td><input type="text" id="word_to_ban" name="word_to_ban"/></td>
+                </tr>
+                <tr>
+                    <td>Is Regex?</td>
+                    <td><input type="checkbox" id="word_is_regex" name="word_is_regex" value="y"/></td>
+                </tr>
+                <tr>
+                    <td>Delete Current Posts</td>
+                    <td><input type="checkbox" id="word_delete_present_posts" name="word_delete_present_posts" value="y" checked/></td>
+                </tr>
+                <tr>
+                    <td>Delete Current Threads (if OP)</td>
+                    <td><input type="checkbox" id="word_delete_present_threads" name="word_delete_present_threads" value="y" checked/></td>
+                </tr>
+            </table>
+
+            <div class="themed" style="padding-top: 1em; padding-bottom: 2em">
+                <input type="submit" name="add_banned_word" value="Ban Word"/>
+            </div>
+        </form>
+    </div>
+
+    <div style="padding-top: 0.5em"></div>
+
+    <div class='outer' style="padding: 0.5em 0 3em 0">
+    {% if banned_words %}
+        <form method="post">
+            <table class="themed" style="padding-bottom: 1em">
+                <tr>
+                    <td><input type="checkbox" onClick="toggle(this, 'delwords_')"/></td>
+                    <td>Name</td>
+                    <td>Board Addresses (CSV)</td>
+                    <td>Word</td>
+                    <td>Is Regex</td>
+                </tr>
+        {% for each_row in banned_words %}
+                <tr>
+                    <td><input type="checkbox" id="delwords_{{each_row.id}}" name="delwords_{{each_row.id}}" value="y"></td>
+                    <td><input type="text" id="wordname_{{each_row.id}}" name="wordname_{{each_row.id}}" value="{{each_row.name}}"/></td>
+                    <td><input type="text" id="wordboardaddress_{{each_row.id}}" name="wordboardaddress_{{each_row.id}}" value="{{each_row.only_board_address}}"/></td>
+                    <td><input type="text" id="wordword_{{each_row.id}}" name="wordword_{{each_row.id}}" value="{{each_row.word}}"/></td>
+                    <td><input type="checkbox" id="isregexword_{{each_row.id}}" name="isregexword_{{each_row.id}}" value="y" {% if each_row.is_regex %} checked{% endif %}/></td>
+                </tr>
+        {% endfor %}
+            </table>
+
+            <input type="submit" name="edit_word_table" value="Edit Words"/>
+            <input type="submit" name="del_banned_words" value="Unban Selected Words"/>
+        </form>
+    {% else %}
+            <div class="themed">No Banned Words</div>
+    {% endif %}
+    </div>
+
+    <div class="heading-2 head-center themed">String Replacement</div>
+
+    <div class='outer' style="padding: 1.5em 0 1em 0">
+        <form method="post">
+            <table class="themed" style="padding-bottom: 0.5em">
+                <tr>
+                    <td>Name (optional)</td>
+                    <td><input type="text" id="string_name" name="string_name"/></td>
+                </tr>
+                <tr>
+                    <td>Board Addresses (CSV, optional)</td>
+                    <td><input type="text" id="string_board_addresses" name="string_board_addresses"/></td>
+                </tr>
+                <tr>
+                    <td>String to Replace</td>
+                    <td><input type="text" id="string_to_replace" name="string_to_replace"/></td>
+                </tr>
+                <tr>
+                    <td>Regex to Match</td>
+                    <td><input type="text" id="regex_to_match" name="regex_to_match"/></td>
+                </tr>
+                <tr>
+                    <td>String to Replace With</td>
+                    <td><input type="text" id="string_to_replace_with" name="string_to_replace_with"/></td>
+                </tr>
+            </table>
+
+            <div class="themed" style="padding-top: 1em; padding-bottom: 2em">
+                <input type="submit" name="add_string_replacement" value="Add String Replacement"/>
+            </div>
+        </form>
+    </div>
+
+    <div style="padding-top: 0.5em"></div>
+
+    <div class='outer' style="padding: 0.5em 0 3em 0">
+    {% if replaced_strings %}
+        <form method="post">
+            <table class="themed" style="padding-bottom: 1em">
+                <tr>
+                    <td><input type="checkbox" onClick="toggle(this, 'delwords_')"/></td>
+                    <td>Name</td>
+                    <td>Board Addresses (CSV)</td>
+                    <td>String to Replace</td>
+                    <td>Regex</td>
+                    <td>String to Replace With</td>
+                </tr>
+        {% for each_row in replaced_strings %}
+                <tr>
+                    <td><input type="checkbox" id="delstringreplace_{{each_row.id}}" name="delstringreplace_{{each_row.id}}" value="y"></td>
+                    <td><input type="text" id="stringrepname_{{each_row.id}}" name="stringrepname_{{each_row.id}}" value="{{each_row.name}}"/></td>
+                    <td><input type="text" id="stringrepboardaddress_{{each_row.id}}" name="stringrepboardaddress_{{each_row.id}}" value="{{each_row.only_board_address}}"/></td>
+                    <td><input type="text" id="stringtoreplace_{{each_row.id}}" name="stringtoreplace_{{each_row.id}}" value="{{each_row.string}}"/></td>
+                    <td><input type="text" id="regexreplace_{{each_row.id}}" name="regexreplace_{{each_row.id}}" value="{{each_row.regex}}"/></td>
+                    <td><input type="text" id="stringtoreplacewith_{{each_row.id}}" name="stringtoreplacewith_{{each_row.id}}" value="{{each_row.string_replacement}}"/></td>
+
+                </tr>
+        {% endfor %}
+            </table>
+
+            <input type="submit" name="edit_string_table" value="Edit String Replacements"/>
+            <input type="submit" name="del_string_replacement" value="Delete Selected String Replacements"/>
+        </form>
+    {% else %}
+            <div class="themed">No String Replacements</div>
+    {% endif %}
+    </div>
+
     <div style="padding-top: 1em"></div>
 </div>
 {% endblock %}

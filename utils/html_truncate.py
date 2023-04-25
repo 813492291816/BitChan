@@ -54,8 +54,8 @@ class SelfClosingTag(OpenTag):
 
 
 class Tokenizer:
-    def __init__(self, input):
-        self.input = input
+    def __init__(self, input_val):
+        self.input = input_val
         self.counter = 0  # points at the next unconsumed character of the input
 
     def __next_char(self):
@@ -130,22 +130,22 @@ class Tokenizer:
         return CloseTag(''.join(tag))
 
 
-def truncate(str, target_len, target_lines=None, ellipsis=''):
-    """Returns a copy of str truncated to target_len characters,
+def truncate(string, target_len, target_lines=None, ellip=''):
+    """Returns a copy of string truncated to target_len characters,
     preserving HTML markup (which does not count towards the length).
     Any tags that would be left open by truncation will be closed at
-    the end of the returned string.  Optionally append ellipsis if
+    the end of the returned string.  Optionally append ellip if
     the string was truncated."""
     stack = []   # open tags are pushed on here, then popped when the matching close tag is found
     retval = []  # string to be returned
     length = 0   # number of characters (not counting markup) placed in retval so far
     lines = 0
-    tokens = Tokenizer(str)
+    tokens = Tokenizer(string)
     tok = tokens.next_token()
     is_truncated = False
     while tok != END:
         if not length < target_len or (target_lines and lines >= target_lines):
-            retval.append(ellipsis)
+            retval.append(ellip)
             is_truncated = True
             break
         if tok.__class__.__name__ == 'OpenTag':

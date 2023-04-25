@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import time
 import zipfile
 from collections import OrderedDict
@@ -15,7 +16,6 @@ from threading import Thread
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 from PIL import Image
 from flask import current_app
 from flask import make_response
@@ -71,6 +71,7 @@ from utils.routes import get_logged_in_user_name
 from utils.routes import get_onion_info
 from utils.routes import page_dict
 from utils.shared import add_mod_log_entry
+from utils.shared import regenerate_card_popup_post_html
 
 logger = logging.getLogger('bitchan.routes_main')
 daemon_com = DaemonCom()
@@ -119,6 +120,9 @@ def index():
     if not allowed:
         return allow_msg
 
+    status_msg = {"status_message": []}
+    settings = GlobalSettings.query.first()
+
     try:
         inventory_timer_epoch = daemon_com.get_timer_clear_inventory()
         now = time.time()
@@ -130,27 +134,29 @@ def index():
         inventory_timer = None
 
     try:
-        status = daemon_com.get_api_status()
+        api_available = daemon_com.get_api_status()
     except:
-        status = False
+        api_available = False
 
-    status_msg = {"status_message": []}
-    settings = GlobalSettings.query.first()
-
-    if status is not True:
+    if not api_available:
         status_msg['status_title'] = "Error"
-        if status == "ConnectionRefusedError(111, 'Connection refused')":
-            status_msg['status_message'].append("Is Bitmessage running?")
+        status_msg['status_message'].append(
+            "Cannot connect to Bitmessage. Is it running and is BitChan configured to connect to its API?")
 
     # Get OP and up to 3 replies for up to 3 threads from each board
     cards = OrderedDict()
     now = time.time()
     ts_month = now - (60 * 60 * 24 * 30)
 
+    board_order = Chan.timestamp_sent.desc()
+    thread_order_desc = Threads.timestamp_sent.desc()
+    if settings.post_timestamp == 'received':
+        board_order = Chan.timestamp_received.desc()
+        thread_order_desc = Threads.timestamp_received.desc()
+
     boards = Chan.query.filter(
         Chan.type == "board",
-        Chan.unlisted.is_(False)).order_by(
-            Chan.timestamp_sent.desc())
+        Chan.unlisted.is_(False)).order_by(board_order)
 
     lists = Chan.query.filter(
         Chan.type == "list",
@@ -166,14 +172,21 @@ def index():
 
         threads = Threads.query.filter(and_(
             Threads.chan_id == each_board.id,
-            Threads.hide.is_(False))).order_by(
-                Threads.timestamp_sent.desc()).limit(4).all()
+            Threads.hide.is_(False))).order_by(thread_order_desc).limit(4).all()
         for each_thread in threads:
+            post_order_desc = Messages.timestamp_sent.desc()
+            if settings.post_timestamp == 'received':
+                post_order_desc = Messages.timestamp_received.desc()
+
             if each_board not in cards:
+                latest_timestamp = each_board.timestamp_sent
+                if settings.post_timestamp == 'received':
+                    latest_timestamp = each_board.timestamp_received
+
                 cards[each_board] = {
                     "type": "board",
                     "threads": OrderedDict(),
-                    "latest_timestamp": each_board.timestamp_sent,
+                    "latest_timestamp": latest_timestamp,
                     "total_threads": 0,
                     "total_posts": 0,
                     "wipe_epoch": wipe_epoch
@@ -202,8 +215,7 @@ def index():
             message = Messages.query.filter(
                 and_(
                     Messages.thread_id == each_thread.id,
-                    Messages.is_op.is_(False))).order_by(
-                        Messages.timestamp_sent.desc())
+                    Messages.is_op.is_(False))).order_by(post_order_desc)
             if message.first():
                 str_past = display_time(now - message.first().timestamp_sent)
                 cards[each_board]["threads"][each_thread.thread_hash]["last_post_past"] = str_past
@@ -311,7 +323,7 @@ def options_save():
             buffer.seek(0)
             return send_file(
                 buffer,
-                attachment_filename='bitchan_options_{}.json'.format(
+                download_name='bitchan_options_{}.json'.format(
                     datetime.datetime.now().strftime('%Y%m%d_%H%M%S')),
                 as_attachment=True)
         elif request.form.get('options_import'):
@@ -360,6 +372,10 @@ def overboard(address, current_page):
     status_msg = {"status_message": []}
     now = time.time()
 
+    thread_order_desc = Threads.timestamp_sent.desc()
+    if settings.post_timestamp == 'received':
+        thread_order_desc = Threads.timestamp_received.desc()
+
     # Get OP and up to 3 replies for up to 3 threads from each board
     thread_info = OrderedDict()
     ts_month = time.time() - (60 * 60 * 24 * 30)
@@ -399,8 +415,7 @@ def overboard(address, current_page):
                     sticky_thread_ids.append(each_stick.thread_hash)
 
             threads = Threads.query.filter(
-                Threads.chan_id == chan.id).order_by(
-                    Threads.timestamp_sent.desc())
+                Threads.chan_id == chan.id).order_by(thread_order_desc)
             overboard_info["thread_count"] = threads.count()
 
             threads_stickied_list = []
@@ -418,6 +433,10 @@ def overboard(address, current_page):
                     if thread_count > post_end:
                         break
                     if post_start <= thread_count:
+                        post_order_desc = Messages.timestamp_sent.desc()
+                        if settings.post_timestamp == 'received':
+                            post_order_desc = Messages.timestamp_received.desc()
+
                         thread_info[each_thread.thread_hash] = {
                             "board_address": each_thread.chan.address,
                             "board_label": each_thread.chan.label,
@@ -441,8 +460,7 @@ def overboard(address, current_page):
                         message = Messages.query.filter(
                             and_(
                                 Messages.thread_id == each_thread.id,
-                                Messages.is_op.is_(False))).order_by(
-                            Messages.timestamp_sent.desc()).first()
+                                Messages.is_op.is_(False))).order_by(post_order_desc).first()
                         if message:
                             str_past = display_time(now - message.timestamp_sent)
                             thread_info[each_thread.thread_hash]["last_post_past"] = str_past
@@ -456,14 +474,17 @@ def overboard(address, current_page):
         post_end = (current_page * per_page) - 1
 
         threads = Threads.query.join(Chan).filter(
-            Chan.unlisted.is_(False)).order_by(
-                Threads.timestamp_sent.desc())
+            Chan.unlisted.is_(False)).order_by(thread_order_desc)
         overboard_info["thread_count"] = threads.count()
 
         for i, each_thread in enumerate(threads.all()):
             if i > post_end:
                 break
             if post_start <= i:
+                post_order_desc = Messages.timestamp_sent.desc()
+                if settings.post_timestamp == 'received':
+                    post_order_desc = Messages.timestamp_received.desc()
+
                 thread_info[each_thread.thread_hash] = {
                     "board_address": each_thread.chan.address,
                     "board_label": each_thread.chan.label,
@@ -487,8 +508,7 @@ def overboard(address, current_page):
                 message = Messages.query.filter(
                     and_(
                         Messages.thread_id == each_thread.id,
-                        Messages.is_op.is_(False))).order_by(
-                            Messages.timestamp_sent.desc()).first()
+                        Messages.is_op.is_(False))).order_by(post_order_desc).first()
                 if message:
                     str_past = display_time(now - message.timestamp_sent)
                     thread_info[each_thread.thread_hash]["last_post_past"] = str_past
@@ -535,7 +555,6 @@ def delete_posts_threads(message_ids, user_from=None):
 
             add_mod_log_entry(
                 'Locally deleted thread "{}"'.format(msg.thread.subject),
-                message_id=None,
                 user_from=user_from,
                 board_address=msg.thread.chan.address,
                 thread_hash=msg.thread.thread_hash)
@@ -580,6 +599,8 @@ def recent_posts(address, current_page):
     if not allowed:
         return allow_msg
 
+    form_recent = forms_board.Recent()
+
     settings = GlobalSettings.query.first()
     status_msg = {"status_message": []}
 
@@ -592,36 +613,63 @@ def recent_posts(address, current_page):
     if request.method == 'POST':
         global_admin, allow_msg = allowed_access("is_global_admin")
         janitor, allow_msg = allowed_access("is_janitor")
-        if not global_admin or not janitor:
+        if not global_admin and not janitor:
             return allow_msg
 
-        try:
-            delete_bulk_message_ids = []
-            for each_input in request.form:
-                if each_input.startswith("selectbulk_"):
-                    delete_bulk_message_ids.append(each_input.split("_")[1])
+        if form_recent.start_download.data:
+            if not global_admin:
+                status_msg['status_message'].append("Only admins can start downloads.")
+            else:
+                message = Messages.query.filter(Messages.message_id == form_recent.message_id.data).first()
+                if message:
+                    can_download, allow_msg = allowed_access("can_download")
+                    board_list_admin, allow_msg = allowed_access(
+                        "is_board_list_admin", board_address=message.thread.chan.address)
+                    if not can_download and not board_list_admin:
+                        return allow_msg
 
-            lf = LF()
-            if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-                try:
-                    user_from = None
-                    if janitor:
-                        user_from = get_logged_in_user_name()
+                    if settings.maintenance_mode:
+                        status_msg['status_title'] = "Error"
+                        status_msg['status_message'].append(
+                            "Cannot initiate attachment download while Maintenance Mode is enabled.")
+                    else:
+                        daemon_com.set_start_download(form_recent.message_id.data)
+                        status_msg['status_title'] = "Success"
+                        status_msg['status_message'].append(
+                            "File download initialized in the background. Give it time to download.")
 
-                    delete_posts_threads(delete_bulk_message_ids, user_from=user_from)
-                    status_msg['status_message'].append("Deleted posts/threads")
-                    status_msg['status_title'] = "Success"
-                except Exception as err:
-                    logger.error("Exception while deleting posts/threads: {}".format(err))
-                finally:
-                    daemon_com.signal_generate_post_numbers()
-                    lf.lock_release(config.LOCKFILE_MSG_PROC)
-        except:
-            logger.exception("deleting posts/threads")
+        if form_recent.bulk_delete_threads.data:
+            try:
+                delete_bulk_message_ids = []
+                for each_input in request.form:
+                    if each_input.startswith("selectbulk_"):
+                        delete_bulk_message_ids.append(each_input.split("_")[1])
+
+                lf = LF()
+                if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
+                    try:
+                        user_from = None
+                        if janitor:
+                            user_from = get_logged_in_user_name()
+
+                        delete_posts_threads(delete_bulk_message_ids, user_from=user_from)
+                        status_msg['status_message'].append("Deleted posts/threads")
+                        status_msg['status_title'] = "Success"
+                    except Exception as err:
+                        logger.error("Exception while deleting posts/threads: {}".format(err))
+                    finally:
+                        daemon_com.signal_generate_post_numbers()
+                        lf.lock_release(config.LOCKFILE_MSG_PROC)
+            except:
+                logger.exception("deleting posts/threads")
 
     post_start = (current_page - 1) * settings.results_per_page_recent
     post_end = (current_page * settings.results_per_page_recent) - 1
     recent_results = []
+
+    post_order_desc = Messages.timestamp_sent.desc()
+    if settings.post_timestamp == 'received':
+        post_order_desc = Messages.timestamp_received.desc()
 
     if address != "0":
         chan = Chan.query.filter(
@@ -633,8 +681,7 @@ def recent_posts(address, current_page):
             recent_info["board_address"] = chan.address
 
             messages = Messages.query.join(Threads).join(Chan).filter(
-                Chan.address == address).order_by(
-                    Messages.timestamp_sent.desc())
+                Chan.address == address).order_by(post_order_desc)
             msg_count = messages.count()
 
             msg_total = 0
@@ -646,8 +693,7 @@ def recent_posts(address, current_page):
                 msg_total += 1
     else:
         messages = Messages.query.join(Threads).join(Chan).filter(
-            Chan.unlisted.is_(False)).order_by(
-                Messages.timestamp_sent.desc())
+            Chan.unlisted.is_(False)).order_by(post_order_desc)
         msg_count = messages.count()
         for i, result in enumerate(messages.all()):
             if i > post_end:
@@ -701,7 +747,7 @@ def search(search_b64, current_page):
         elif form_search.bulk_delete.data:
             global_admin, allow_msg = allowed_access("is_global_admin")
             janitor, allow_msg = allowed_access("is_janitor")
-            if not global_admin or not janitor:
+            if not global_admin and not janitor:
                 return allow_msg
 
             try:
@@ -787,12 +833,21 @@ def search(search_b64, current_page):
         search_msgs = search_msgs.filter(Messages.is_op.is_(True))
 
     if search_type == "posts":
+        post_order_desc = Messages.timestamp_sent.desc()
+        if settings.post_timestamp == 'received':
+            post_order_desc = Messages.timestamp_received.desc()
+
         search_msgs = search_msgs.join(Threads).join(Chan).filter(
-            Chan.unlisted.is_(False)).order_by(Messages.timestamp_sent.desc())
+            Chan.unlisted.is_(False)).order_by(post_order_desc)
         result_count = search_msgs.count()
+
     elif search_type == "threads":
+        thread_order_desc = Threads.timestamp_sent.desc()
+        if settings.post_timestamp == 'received':
+            thread_order_desc = Threads.timestamp_received.desc()
+
         search_threads = search_threads.join(Chan).filter(
-            Chan.unlisted.is_(False)).order_by(Threads.timestamp_sent.desc())
+            Chan.unlisted.is_(False)).order_by(thread_order_desc)
         result_count = search_threads.count()
 
     search_start = (current_page - 1) * settings.results_per_page_search
@@ -940,9 +995,6 @@ def mod_log(address, current_page):
     if address != "0":
         mod_log_msgs = mod_log_msgs.filter(
             ModLog.board_address == address)
-    else:
-        mod_log_msgs = mod_log_msgs.join(Chan).filter(
-            Chan.unlisted.is_(False))
 
     arg_filter_remote_moderate = request.args.get('frm', default=False, type=bool)
     arg_filter_failed_attempts = request.args.get('ffa', default=False, type=bool)
@@ -1087,18 +1139,46 @@ def configure():
                 flag.delete()
 
         elif form_settings.save.data:
+            timestamp_change = False
+            successes = []
+
             settings = GlobalSettings.query.first()
             if form_settings.theme.data:
                 settings.theme = form_settings.theme.data
+
+            if settings.maintenance_mode is False and form_settings.maintenance_mode.data is True:
+                logger.info("Enabling maintenance mode. Stopping Bitmessage")
+                if config.DOCKER:
+                    subprocess.Popen('docker stop -t 15 bitchan_bitmessage 2>&1', shell=True)
+                else:
+                    subprocess.Popen('service bitchan_bitmessage stop', shell=True)
+
+            if settings.maintenance_mode is True and form_settings.maintenance_mode.data is False:
+                logger.info("Disabling maintenance mode. Starting Bitmessage")
+                if config.DOCKER:
+                    subprocess.Popen('docker start bitchan_bitmessage 2>&1', shell=True)
+                else:
+                    subprocess.Popen('service bitchan_bitmessage start', shell=True)
+                time.sleep(3)  # Allow bitmessage to start
+
+            settings.maintenance_mode = form_settings.maintenance_mode.data
             settings.max_download_size = form_settings.max_download_size.data
             settings.max_extract_size = form_settings.max_extract_size.data
             settings.allow_net_file_size_check = form_settings.allow_net_file_size_check.data
             settings.allow_net_book_quote = form_settings.allow_net_book_quote.data
             settings.allow_net_ntp = form_settings.allow_net_ntp.data
             settings.never_auto_download_unencrypted = form_settings.never_auto_download_unencrypted.data
+            settings.allow_unencrypted_encryption_option = form_settings.allow_unencrypted_encryption_option.data
             settings.auto_dl_from_unknown_upload_sites = form_settings.auto_dl_from_unknown_upload_sites.data
             settings.delete_sent_identity_msgs = form_settings.delete_sent_identity_msgs.data
             settings.debug_posts = form_settings.debug_posts.data
+            settings.post_timestamp = form_settings.post_timestamp.data
+            if settings.post_timestamp_timezone != form_settings.post_timestamp_timezone.data:
+                timestamp_change = True
+                settings.post_timestamp_timezone = form_settings.post_timestamp_timezone.data
+            if settings.post_timestamp_hour != form_settings.post_timestamp_hour.data:
+                timestamp_change = True
+                settings.post_timestamp_hour = form_settings.post_timestamp_hour.data
             settings.home_page_msg = form_settings.home_page_msg.data
             settings.html_head = form_settings.html_head.data
             settings.html_body = form_settings.html_body.data
@@ -1109,6 +1189,16 @@ def configure():
             settings.results_per_page_catalog = form_settings.results_per_page_catalog.data
             settings.results_per_page_mod_log = form_settings.results_per_page_mod_log.data
 
+            # Bitmessage
+            update_bm_settings = False
+            update_bm_onion = False
+            if settings.bm_connections_in_out != form_settings.bm_connections_in_out.data:
+                settings.bm_connections_in_out = form_settings.bm_connections_in_out.data
+                update_bm_settings = True
+            if bool(settings.bitmessage_onion_services_only) != bool(form_settings.bitmessage_onion_services_only.data):
+                settings.bitmessage_onion_services_only = form_settings.bitmessage_onion_services_only.data
+                update_bm_onion = True
+
             # Security
             settings.enable_captcha = form_settings.enable_captcha.data
             settings.enable_verification = form_settings.enable_verification.data
@@ -1116,17 +1206,12 @@ def configure():
             settings.max_requests_per_period = form_settings.max_requests_per_period.data
             settings.rate_limit_period_seconds = form_settings.rate_limit_period_seconds.data
             settings.hide_all_board_list_passphrases = form_settings.hide_all_board_list_passphrases.data
-            if bool(settings.bitmessage_onion_services_only) != bool(form_settings.bitmessage_onion_services_only.data):
-                settings.bitmessage_onion_services_only = form_settings.bitmessage_onion_services_only.data
-                change_onion = Thread(
-                    target=daemon_com.enable_onion_services_only,
-                    args=(form_settings.bitmessage_onion_services_only.data,))
-                change_onion.start()
 
-            # Kioks mode
+            # Kiosk mode
             settings.enable_kiosk_mode = form_settings.enable_kiosk_mode.data
             settings.kiosk_login_to_view = form_settings.kiosk_login_to_view.data
             settings.kiosk_allow_posting = form_settings.kiosk_allow_posting.data
+            settings.kiosk_allow_gpg = form_settings.kiosk_allow_gpg.data
             settings.kiosk_disable_bm_attach = form_settings.kiosk_disable_bm_attach.data
             settings.kiosk_allow_download = form_settings.kiosk_allow_download.data
             settings.kiosk_post_rate_limit = form_settings.kiosk_post_rate_limit.data
@@ -1134,19 +1219,62 @@ def configure():
             settings.kiosk_ban_login_sec = form_settings.kiosk_ban_login_sec.data
             settings.kiosk_only_admin_access_mod_log = form_settings.kiosk_only_admin_access_mod_log.data
 
+            if (form_settings.kiosk_max_post_size_bytes.data < 0 or
+                    form_settings.kiosk_max_post_size_bytes.data > config.BM_PAYLOAD_MAX_SIZE):
+                status_msg['status_message'].append(
+                    f"Max post size (bytes) must be >= 0 and <= {config.BM_PAYLOAD_MAX_SIZE}.")
+            else:
+                settings.kiosk_max_post_size_bytes = form_settings.kiosk_max_post_size_bytes.data
+
+            settings.kiosk_ttl_option = form_settings.kiosk_ttl_option.data
+            if form_settings.kiosk_ttl_seconds.data < 3600 or form_settings.kiosk_ttl_seconds.data > 2419200:
+                status_msg['status_message'].append(
+                    "TTL must be >= 3600 seconds (1 hour) and <= 2419200 seconds (28 days).")
+            else:
+                settings.kiosk_ttl_seconds = form_settings.kiosk_ttl_seconds.data
+
             if (form_settings.chan_update_display_number.data and
                     form_settings.chan_update_display_number.data >= 0):
                 settings.chan_update_display_number = form_settings.chan_update_display_number.data
+
+            if not status_msg['status_message']:
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append("Settings saved without errors.")
+            else:
+                status_msg['status_message'].append("Settings saved (except those with errors).")
+
             settings.save()
+
+            if status_msg['status_title'] == "Success":
+                if update_bm_settings:
+                    change_bm_settings = Thread(
+                        target=daemon_com.bm_change_connection_settings)
+                    change_bm_settings.start()
+                    successes.append(
+                        f"Applying changed bitmessage connection settings. Give at least 60 seconds for the changes to take effect.")
+
+                if update_bm_onion:
+                    change_onion = Thread(
+                        target=daemon_com.enable_onion_services_only,
+                        args=(form_settings.bitmessage_onion_services_only.data,))
+                    change_onion.start()
+                    successes.append(
+                        f"Applying changed bitmessage onion settings. Give at least 60 seconds for the changes to take effect.")
+
+                for each_success in successes:
+                    status_msg['status_message'].append(each_success)
+
+            if timestamp_change:
+                # Instructed to use different timestamp format, regenerate all HTML
+                for board in Chan.query.all():
+                    regenerate_card_popup_post_html(
+                        all_posts_of_board_address=board.address)
 
             refresh_settings = Thread(target=daemon_com.refresh_settings)
             refresh_settings.start()
 
-            status_msg['status_title'] = "Success"
-            status_msg['status_message'].append("Settings saved")
-
         elif form_settings.export_chans.data:
-            def export_boards_lists(chans):
+            def export_boards_lists(chans_):
                 data = StringIO()
                 w = csv.writer(data)
 
@@ -1155,14 +1283,14 @@ def configure():
                 data.seek(0)
                 data.truncate(0)
 
-                for each_chan in chans:
+                for each_chan_ in chans_:
                     w.writerow((
-                        each_chan.type,
-                        each_chan.label,
-                        each_chan.description,
-                        each_chan.access,
-                        each_chan.address,
-                        each_chan.passphrase
+                        each_chan_.type,
+                        each_chan_.label,
+                        each_chan_.description,
+                        each_chan_.access,
+                        each_chan_.address,
+                        each_chan_.passphrase
                     ))
                     yield data.getvalue()
                     data.seek(0)
@@ -1250,12 +1378,12 @@ def configure():
                     try:
                         logger.info("Saving zip")
                         zip_filename = html.escape(form_settings.tor_file.data.filename)
-                        save_path = "/usr/local/tor/cus/{}".format(zip_filename)
+                        save_path = f"{config.TOR_HS_CUS}/{zip_filename}"
                         form_settings.tor_file.data.save(save_path)
 
                         logger.info("Extracting zip")
                         with zipfile.ZipFile(save_path, 'r') as zipObj:
-                            zipObj.extractall("/usr/local/tor/cus/")
+                            zipObj.extractall(f"{config.TOR_HS_CUS}/")
 
                         logger.info("Deleting zip")
                         delete_file(save_path)
@@ -1381,6 +1509,7 @@ def upload_site(action, upload_site_id):
             if action == "add_msg_id":
                 if site_options:
                     upload_site = UploadSites()
+                    upload_site.enabled = True
                     upload_site.domain = site_options["domain"]
                     upload_site.type = site_options["type"]
                     upload_site.subtype = site_options["subtype"]
@@ -1400,6 +1529,7 @@ def upload_site(action, upload_site_id):
                     status_msg['status_msg'].append("Message not found")
             elif action == "add":
                 new_site = UploadSites()
+                new_site.enabled = form_upload_site.enabled.data
                 new_site.domain = form_upload_site.domain.data
                 new_site.type = form_upload_site.type.data
                 new_site.subtype = form_upload_site.subtype.data
@@ -1422,6 +1552,10 @@ def upload_site(action, upload_site_id):
         elif form_upload_site.save.data:
             upload_site = UploadSites.query.filter(UploadSites.id == int(upload_site_id)).first()
             if upload_site:
+                if form_upload_site.enabled.data:
+                    upload_site.enabled = form_upload_site.enabled.data
+                else:
+                    upload_site.enabled = None
                 if form_upload_site.domain.data:
                     upload_site.domain = form_upload_site.domain.data
                 else:
@@ -1503,7 +1637,15 @@ def upload_site(action, upload_site_id):
                            upload_sites=UploadSites.query.all())
 
 
-def generate_charts(past_minutes=(60 * 24), include_update=0):
+def generate_charts(past_minutes=(60 * 24)):
+    boards = {}
+    threads = {}
+    verify_data = {}
+    x_axis_ts = []
+    y_wait = []
+    y_test = []
+    ts_day_last = None
+    last_epoch = None
     charts = {}
     data = OrderedDict()
     time_end = datetime.datetime.now()
@@ -1530,8 +1672,8 @@ def generate_charts(past_minutes=(60 * 24), include_update=0):
                 data[entry.timestamp_epoch]["thread"][entry.thread_hash] = {}
             if entry.new_posts:
                 data[entry.timestamp_epoch]["thread"][entry.thread_hash]["new_posts"] = entry.new_posts
-            else:
-                data[entry.timestamp_epoch]["thread"][entry.thread_hash]["general"] = entry.requests
+            if entry.requests:
+                data[entry.timestamp_epoch]["thread"][entry.thread_hash]["requests"] = entry.requests
         if entry.chan_address:
             data[entry.timestamp_epoch]["chan"][entry.chan_address] = entry.requests
         if entry.endpoint and not entry.thread_hash and not entry.chan_address:
@@ -1540,15 +1682,6 @@ def generate_charts(past_minutes=(60 * 24), include_update=0):
     #
     # Chart: Verifications
     #
-
-    verify_data = {}
-    x_axis_ts = []
-    y_wait = []
-    y_test = []
-
-    dt_start_last = None
-    ts_day_last = None
-    last_epoch = None
 
     # Get first timestamp
     for ts in data:
@@ -1639,13 +1772,6 @@ def generate_charts(past_minutes=(60 * 24), include_update=0):
 
         charts["verify"] = base64.b64encode(figfile.getvalue()).decode()
 
-    #
-    # Chart: Boards/Lists
-    #
-
-    boards = {}
-    labels_chans = []
-
     for ts in data:
         if "chan" in data[ts] and data[ts]["chan"]:
             for address, value in data[ts]["chan"].items():
@@ -1653,53 +1779,11 @@ def generate_charts(past_minutes=(60 * 24), include_update=0):
                     boards[address] = 0
                 boards[address] += value
 
-    boards_sorted = OrderedDict(
-        sorted(boards.items(), key=lambda kv: kv[1]))
-
-    for address in boards_sorted:
-        chan = Chan.query.filter(Chan.address == address).first()
-        if chan:
-            labels_chans.append("/{}/ - {} ({})".format(
-                html.unescape(chan.label),
-                html.unescape(chan.description),
-                chan.type))
-        else:
-            labels_chans.append("Unknown: {}".format(address))
-    values_chans = [y for x, y in boards_sorted.items()]
-
-    if labels_chans:
-        plt.clf()
-        figure = plt.gcf()
-        figure.set_size_inches(7, 1.1 + len(labels_chans) * 0.25)
-        plt.rc('ytick', labelsize=8)
-        plt.title('Boards/Lists ({})\n{} - {}'.format(
-            len(labels_chans),
-            time_start.strftime('%Y-%m-%d %H:%M'),
-            time_end.strftime('%Y-%m-%d %H:%M')))
-        plt.xlabel('Requests')
-        plt.barh(labels_chans, values_chans)
-        plt.tight_layout()
-        figfile = BytesIO()
-        plt.savefig(figfile, dpi=125, format='png')
-        figfile.seek(0)
-
-        charts["chans"] = base64.b64encode(figfile.getvalue()).decode()
-
-    #
-    # Chart: Threads
-    #
-
-    threads = {}
-    labels_threads = []
-
     # Combine thread hashes and sum counts
     for ts in data:
         if "thread" in data[ts] and data[ts]["thread"]:
             for thread_hash, categories in data[ts]["thread"].items():
                 for category, value in categories.items():
-                    if not include_update and category == "new_posts":
-                        continue
-
                     # Ensure short and non-short thread hash are condensed to the short hash
                     thread = Threads.query.filter(
                         or_(Threads.thread_hash == thread_hash,
@@ -1710,46 +1794,26 @@ def generate_charts(past_minutes=(60 * 24), include_update=0):
                         save_hash = thread_hash
 
                     if save_hash not in threads:
-                        threads[save_hash] = 0
-                    threads[save_hash] += value
+                        threads[save_hash] = {'requests': 0, 'requests_update': 0, 'total': 0}
 
-    # Get labels from thread hashes
-    for thread_hash in threads:
-        thread = Threads.query.filter(
-            or_(Threads.thread_hash == thread_hash,
-                Threads.thread_hash_short == thread_hash)).first()
-        if thread and thread.chan:
-            labels_threads.append("/{}/ - {}".format(
-                html.unescape(thread.chan.label),
-                html.unescape(thread.subject)))
-        else:
-            labels_threads.append("Unknown: {}".format(thread_hash))
-    values_threads = [y for x, y in threads.items()]
+                    if category == "new_posts":
+                        threads[save_hash]['requests_update'] += value
+                    elif category == "requests":
+                        threads[save_hash]['requests'] += value
+                    threads[save_hash]['total'] += value
 
-    # Sort threads by values
-    df = pd.DataFrame(
-        dict(threads=labels_threads, values=values_threads))
-    df_sorted = df.sort_values('values')
+    threads_sorted_keys = sorted(threads, key=lambda x: (threads[x]['total']), reverse=True)
+    threads_sorted = {}
+    for each_key in threads_sorted_keys:
+        threads_sorted[each_key] = threads[each_key]
+    boards_sorted = dict(sorted(boards.items(), key=lambda item: item[1], reverse=True))
 
-    if labels_threads:
-        plt.clf()
-        figure = plt.gcf()
-        figure.set_size_inches(7, 1.1 + len(labels_threads) * 0.25)
-        plt.rc('ytick', labelsize=8)
-        plt.title('Threads ({})\n{} - {} '.format(
-            len(labels_threads),
-            time_start.strftime('%Y-%m-%d %H:%M'),
-            time_end.strftime('%Y-%m-%d %H:%M')))
-        plt.xlabel('Requests')
-        plt.barh("threads", "values", data=df_sorted)
-        plt.tight_layout()
-        figfile = BytesIO()
-        plt.savefig(figfile, dpi=125, format='png')
-        figfile.seek(0)
+    dict_stats = {
+        'boards': boards_sorted,
+        'threads': threads_sorted,
+    }
 
-        charts["threads"] = base64.b64encode(figfile.getvalue()).decode()
-
-    return charts
+    return charts, dict_stats
 
 
 @blueprint.route('/stats', methods=('GET', 'POST'))
@@ -1773,25 +1837,40 @@ def stats():
         past_min = (60 * 24)
 
     try:
-        include_update = request.args.get('include_update', default=0, type=int)
-    except:
-        include_update = 0
-
-    try:
         view_counter = daemon_com.get_view_counter()
     except:
         view_counter = {}
+
+    charts, dict_stats = generate_charts(past_min)
 
     return render_template("pages/stats.html",
                            attachment_size=attachment_size,
                            count_posts=count_posts,
                            count_threads=count_threads,
-                           generated_charts=generate_charts(past_min, include_update),
-                           include_update=include_update,
+                           generated_charts=charts,
+                           dict_stats=dict_stats,
                            past_min=past_min,
                            status_msg=status_msg,
                            table_endpoint_count=EndpointCount,
                            view_counter=view_counter)
+
+
+@blueprint.route('/upload_progress/<upload_id>', methods=('GET', 'POST'))
+@count_views
+def upload_progress(upload_id):
+    can_view, allow_msg = allowed_access("can_view")
+    if not can_view:
+        return allow_msg
+
+    upload_entry = UploadProgress.query.filter(
+        UploadProgress.upload_id == upload_id).first()
+
+    status_msg = session.get('status_msg', {"status_message": []})
+
+    return render_template("pages/upload_progress.html",
+                           status_msg=status_msg,
+                           upload_entry=upload_entry,
+                           upload_id=upload_id)
 
 
 @blueprint.route('/status', methods=('GET', 'POST'))
@@ -1803,6 +1882,7 @@ def status():
 
     status_msg = session.get('status_msg', {"status_message": []})
     bm_status = {}
+    bm_connections = {}
     tor_status = {"Circuit Established": False}
     form_status = forms_settings.Status()
     logging.getLogger("stem").setLevel(logging.WARNING)
@@ -1812,13 +1892,23 @@ def status():
      tor_enabled_cus, tor_address_cus) = get_onion_info()
 
     try:
-        bm_messages_size = human_readable_size(os.path.getsize('/usr/local/bitmessage/messages.dat'))
+        bm_messages_size = human_readable_size(os.path.getsize(config.BM_MESSAGES_DAT))
     except:
         bm_messages_size = "ERROR"
 
     try:
+        bm_knownnodes_size = human_readable_size(os.path.getsize(config.BM_KNOWNNODES_DAT))
+    except:
+        bm_knownnodes_size = "ERROR"
+
+    try:
+        bm_keys_size = human_readable_size(os.path.getsize(config.BM_KEYS_DAT))
+    except:
+        bm_keys_size = "ERROR"
+
+    try:
         df = subprocess.check_output(
-            "/usr/bin/df-host -h", shell=True, text=True).replace("\n", "<br/>")
+            "/bin/df -h", shell=True, text=True).replace("\n", "<br/>")
     except:
         df = None
 
@@ -1845,11 +1935,53 @@ def status():
             lf.lock_release(config.LOCKFILE_API)
 
     try:
-        tor_version = subprocess.check_output(
-            'docker exec -i bitchan_tor tor --version --quiet', shell=True, text=True)
+        bm_sync_complete = daemon_com.bm_sync_complete()
+    except Exception as err:
+        bm_sync_complete = f"Error: {err}"
+
+    lf = LF()
+    if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+        try:
+            bm_connections = api.listConnections()
+        except Exception as err:
+            logger.exception("Error: {}".format(err))
+        finally:
+            time.sleep(config.API_PAUSE)
+            lf.lock_release(config.LOCKFILE_API)
+
+    try:
+        if config.DOCKER:
+            tor_version = subprocess.check_output(
+                'docker exec -i bitchan_tor tor --version --quiet', shell=True, text=True)
+        else:
+            tor_version = subprocess.check_output(
+                'tor --version --quiet', shell=True, text=True)
     except:
         logger.exception("getting tor version")
         tor_version = "Error getting tor version"
+
+    try:
+        if config.DOCKER:
+            i2pd_version = subprocess.check_output(
+                'docker exec -i bitchan_i2p i2pd --version', shell=True, text=True)
+        else:
+            i2pd_version = subprocess.check_output(
+                'i2pd --version', shell=True, text=True)
+    except:
+        logger.exception("getting i2pd version")
+        i2pd_version = "Error getting i2pd version"
+
+    try:
+        if config.DOCKER:
+            attachment_size = subprocess.check_output(
+                f'docker exec -i bitchan_flask du {config.FILE_DIRECTORY} --max-depth=0', shell=True, text=True)
+        else:
+            attachment_size = subprocess.check_output(
+                f'du {config.FILE_DIRECTORY} --max-depth=0', shell=True, text=True)
+        attachment_size = int(attachment_size.split("\t")[0]) * 1000
+    except:
+        logger.exception("getting size of attachments")
+        attachment_size = "Error getting size of attachments"
 
     tor_circuit_dict = {}
     try:
@@ -1885,11 +2017,26 @@ def status():
     except Exception:
         logger.exception("Tor stats")
 
+    bc_env = {}
+    try:
+        import re
+        bc_env['version_python'] = sys.version
+        bc_env['version_regex'] = re.__version__
+    except:
+        logger.exception("BitChan environment information")
+
     return render_template("pages/status.html",
+                           attachment_size=attachment_size,
+                           bc_env=bc_env,
+                           bm_connections=bm_connections,
+                           bm_knownnodes_size=bm_knownnodes_size,
                            bm_messages_size=bm_messages_size,
                            bm_status=bm_status,
+                           bm_sync_complete=bm_sync_complete,
                            df=df,
                            form_status=form_status,
+                           i2pd_version=i2pd_version,
+                           bm_keys_size=bm_keys_size,
                            status_msg=status_msg,
                            tor_circuit_dict=tor_circuit_dict,
                            tor_address_bm=tor_address_bm,
@@ -1905,31 +2052,46 @@ def status():
 
 @blueprint.route('/log', methods=('GET', 'POST'))
 @count_views
-def log():
+def log_view():
     global_admin, allow_msg = allowed_access("is_global_admin")
     if not global_admin:
         return allow_msg
 
     form_log = forms_board.Log()
 
-    log_file = "/usr/local/bitchan/log/bitchan.log"
+    log_cmd = ""
+    log_output = ""
 
-    lines = 40
+    lines = 30
     if form_log.lines.data:
         lines = form_log.lines.data
 
-    command = 'cat {log} | tail -n {lines}'.format(
-        log=log_file, lines=lines)
+    log = "daemon"
+    if form_log.log.data:
+        log = form_log.log.data
 
-    if command:
-        log_ = subprocess.Popen(
-            command, stdout=subprocess.PIPE, shell=True)
+    if log == "daemon":
+        log_cmd = f'cat {config.LOG_BACKEND_FILE} | tail -n {lines}'
+    elif log == "flask":
+        log_cmd = f'cat {config.LOG_FRONTEND_FILE} | tail -n {lines}'
+    elif log == "tor":
+        if config.DOCKER:
+            log_cmd = f'docker logs -n {lines} bitchan_tor'
+        else:
+            log_cmd = f'cat /var/log/syslog | grep tor -i | tail -n {lines}'
+    elif log == "i2p":
+        if config.DOCKER:
+            log_cmd = f'docker logs -n {lines} bitchan_i2p'
+        else:
+            log_cmd = f'cat /var/log/i2pd/i2pd.log | grep tor -i | tail -n {lines}'
+
+    if log_cmd:
+        log_ = subprocess.Popen(log_cmd, stdout=subprocess.PIPE, shell=True)
         (log_output, _) = log_.communicate()
         log_.wait()
         log_output = html.escape(str(log_output, 'latin-1')).replace("\n", "<br/>")
-    else:
-        log_output = 404
 
     return render_template("pages/log.html",
                            lines=lines,
+                           log=log,
                            log_output=log_output)

@@ -6,13 +6,20 @@
 </div>
 {% endif %}
 
-<div class="intro bold themed" style="overflow-wrap: break-word;">
-    <center><h1 class="error bold">{{replace_lt_gt(status_msg["status_title"])|safe}}</h1></center>
-    {% if status_msg["status_message"] %}
+<div class="intro bold themed
+    {%- if replace_lt_gt(status_msg['status_title']) == 'Error' %} error
+    {%- elif replace_lt_gt(status_msg['status_title']) == 'Success' %} success
+    {%- endif %}" style="overflow-wrap: break-word;">
+    <center><h1 class="bold" style="font-size: 20px; letter-spacing: -1px; margin-top: 0px;">{{replace_lt_gt(status_msg['status_title'])|safe}}</h1></center>
+    {% if status_msg['status_message'] %}
     <br/>
     <center>
-        {% for each_msg in status_msg["status_message"] %}
-        {{replace_lt_gt(each_msg)|safe}}<br/>
+        {% for each_msg in status_msg['status_message'] %}
+            {% if "no_escape" in status_msg and status_msg["no_escape"] %}
+                {{each_msg|safe}}<br/>
+            {% else %}
+                {{replace_lt_gt(each_msg)|safe}}<br/>
+            {% endif %}
         {% endfor %}
     </center>
     {% endif %}

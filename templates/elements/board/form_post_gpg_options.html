@@ -1,0 +1,62 @@
+<section>
+  <details>
+    <summary>GPG Options</summary>
+    <table style="width: 100%;">
+      <tbody>
+        <tr>
+          <td class="form themed bold"><label for="gpg_body">Message</label></td>
+          <td>
+            <textarea rows="7" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="gpg_body" name="gpg_body">{% if "gpg_body" in form_populate and form_populate["gpg_body"] %}{{form_populate["gpg_body"]}}{% endif %}</textarea>
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold"><label for="gpg_encrypt_msg">GPG Encrypt Message</label></td>
+          <td>
+              <input type="checkbox" id="gpg_encrypt_msg" name="gpg_encrypt_msg" value="y"{% if "gpg_encrypt_msg" in form_populate and form_populate["gpg_encrypt_msg"] %} checked{% endif %}/>
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold"><label for="gpg_sign_post">GPG Sign Message</label></td>
+          <td>
+              <input type="checkbox" id="gpg_sign_post" name="gpg_sign_post" value="y"{% if "gpg_sign_post" in form_populate and form_populate["gpg_sign_post"] %} checked{% endif %}/>
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold"><label for="gpg_hide_all_recipients">Hide All Recipients</label></td>
+          <td>
+              <input type="checkbox" id="gpg_hide_all_recipients" name="gpg_hide_all_recipients" value="y"{% if "gpg_hide_all_recipients" in form_populate and form_populate["gpg_hide_all_recipients"] %} checked{% endif %}/>
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold"><label for="gpg_select_from">GPG From</label></td>
+          <td>
+            {% if not list_gpg_from %}
+            None Found
+            {% else %}
+            <select name="gpg_select_from" id="gpg_select_from">
+              <option value=""></option>
+              {% for each_from in list_gpg_from %}
+              <option value="{{each_from['value']}}"{% if "gpg_select_from" in form_populate and form_populate["gpg_select_from"] == value %} selected{% endif %}>{{each_from['name']}}</option>
+              {% endfor %}
+            </select>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold"><label for="gpg_select_to">GPG To</label></td>
+          <td>
+            {% if not list_gpg_to %}
+            None Found
+            {% else %}
+            <select name="gpg_select_to" id="gpg_select_to" multiple>
+              {% for each_to in list_gpg_to %}
+              <option value="{{each_to['value']}}">{{each_to['name']}}</option>
+              {% endfor %}
+            </select>
+            {% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </details>
+</section>

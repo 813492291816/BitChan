@@ -4,6 +4,8 @@ class DarkTheme:
         self.gradient_top = "#000000"
         self.bgcolor = "#333333"
         self.textcolor = "#DDDDDD"
+        self.texterror = "#C43030"
+        self.textsuccess = "#31952E"
         self.divborder = "#000000"
         self.post_padding = "5px 5px 5px 5px"
         self.head_from = "#888888"
@@ -28,11 +30,14 @@ class DarkTheme:
         self.color_replace_start = "#e68888"
         self.color_replace_end = "#e6bbbb"
         self.new_post = "#7E7EBF"
+        self.refreshed_post = "#c6dde8"
         self.navbg = "#575757"
         self.spoiler = "#000000"
         self.spoiler_hover_text = "#DDDDDD"
         self.spoiler_hover_bg = "#000000"
         self.shadow = "#000000"
+        self.gpg_outer = "#555"
+        self.gpg_inner = "#5e3232"
 
 class ClassicTheme:
     def __init__(self):
@@ -40,6 +45,8 @@ class ClassicTheme:
         self.gradient_top = "#FFD6AC"
         self.bgcolor = "#FFFFED"
         self.textcolor = "#820000"
+        self.texterror = "#e30909"
+        self.textsuccess = "#218427"
         self.divborder = "#D9BFB7"
         self.post_padding = "5px 5px 5px 5px"
         self.head_from = "#047841"
@@ -64,11 +71,14 @@ class ClassicTheme:
         self.color_replace_start = "#920092"
         self.color_replace_end = "#57007F"
         self.new_post = "#FF0A0A"
+        self.refreshed_post = "#fd6b3e"
         self.navbg = "#FFEEE4"
         self.spoiler = "#000000"
         self.spoiler_hover_text = "#820000"
         self.spoiler_hover_bg = "#FFFFFF"
         self.shadow = "#000000"
+        self.gpg_outer = "#D9BFB7"
+        self.gpg_inner = "#D9BFB7"
 
 
 class BlueTheme:
@@ -77,6 +87,8 @@ class BlueTheme:
         self.gradient_top = "#D1D5EF"
         self.bgcolor = "#EEF2FF"
         self.textcolor = "#000000"
+        self.texterror = "#e12222"
+        self.textsuccess = "#6cc15f"
         self.divborder = "#B7C5DA"
         self.post_padding = "5px 5px 5px 5px"
         self.head_from = "#047841"
@@ -101,11 +113,14 @@ class BlueTheme:
         self.color_replace_start = "#009284"
         self.color_replace_end = "#006056"
         self.new_post = "#445EF0"
+        self.refreshed_post = "#66b3d9"
         self.navbg = "#E3E7FF"
         self.spoiler = "#000000"
         self.spoiler_hover_text = "#000000"
         self.spoiler_hover_bg = "#FFFFFF"
         self.shadow = "#000000"
+        self.gpg_outer = "#B7C5DA"
+        self.gpg_inner = "#B7C5DA"
 
 
 class ConsoleTheme:
@@ -114,6 +129,8 @@ class ConsoleTheme:
         self.gradient_top = "#050505"
         self.bgcolor = "#050505"
         self.textcolor = "#AAAAAA"
+        self.texterror = "#682121"
+        self.textsuccess = "#1B9344"
         self.divborder = "#050505"
         self.post_padding = "5px 5px 10px 5px"
         self.head_from = "#AAAAAA"
@@ -138,11 +155,14 @@ class ConsoleTheme:
         self.color_replace_start = "#009284"
         self.color_replace_end = "#006056"
         self.new_post = "#445EF0"
+        self.refreshed_post = "#64a845"
         self.navbg = "#282828"
         self.spoiler = "#AAAAAA"
         self.spoiler_hover_text = "#000000"
         self.spoiler_hover_bg = "#AAAAAA"
         self.shadow = "#FFF"
+        self.gpg_outer = "#373A40;"
+        self.gpg_inner = "#373A40"
 
 
 themes = {"Dark": DarkTheme(), "Classic": ClassicTheme(), "Frosty": BlueTheme(), "Console": ConsoleTheme()}

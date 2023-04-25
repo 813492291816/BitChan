@@ -1,3 +1,4 @@
+import datetime
 import hashlib
 import html
 import json
@@ -5,8 +6,11 @@ import logging
 import random
 import string
 import time
-import datetime
+
+import pytz
+
 import config
+from database.models import GlobalSettings
 
 logger = logging.getLogger('bitchan.general')
 
@@ -107,7 +111,7 @@ def process_passphrase(passphrase):
 
     try:
         if len(list_passphrase) < 7:
-            errors.append("Not enough items in passphrase")
+            errors.append(f"Not enough items in passphrase: {list_passphrase}")
             return errors, {}
 
         if len(list_passphrase) > 10:
@@ -355,5 +359,19 @@ def display_time(seconds, granularity=2):
 
 
 def timestamp_to_date(timestamp):
-    return datetime.datetime.fromtimestamp(
-        timestamp).strftime('%d %b %Y (%a) %H:%M:%S')
+    settings = GlobalSettings.query.first()
+
+    if settings and settings.post_timestamp_timezone:
+        if settings and settings.post_timestamp_hour and settings.post_timestamp_hour == '12':
+            return datetime.datetime.fromtimestamp(
+                timestamp, tz=pytz.timezone(settings.post_timestamp_timezone)).strftime('%d %b %Y (%a) %-I:%M:%S %p %Z')
+        else:
+            return datetime.datetime.fromtimestamp(
+                timestamp, tz=pytz.timezone(settings.post_timestamp_timezone)).strftime('%d %b %Y (%a) %H:%M:%S %Z')
+
+    if settings and settings.post_timestamp_hour and settings.post_timestamp_hour == '12':
+        return datetime.datetime.fromtimestamp(
+            timestamp).strftime('%d %b %Y (%a) %-I:%M:%S %p')
+    else:
+        return datetime.datetime.fromtimestamp(
+            timestamp).strftime('%d %b %Y (%a) %H:%M:%S')

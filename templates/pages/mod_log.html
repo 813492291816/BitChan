@@ -74,6 +74,9 @@
     <span class="themed">No Entries Found</span>
     {% endif %}
 
+    {% include '/elements/footer_mod_log_pages.html' %}
+    <div style="padding-top: 1em"></div>
+
         {% if global_admin %}
     <div class="themed" style="width: 90%; margin-left: auto; margin-right: auto; text-align: right; padding-bottom: 0.5em">
         <form action="/mod_log/{{address}}/1" method="post">

@@ -52,7 +52,7 @@
 
         <tr>
             <td rowspan="2" style="padding-top: 8px; vertical-align: top"><img style="position: relative; width: 35px; height: 35px" src="/icon/{{address}}"></td>
-            <td><a class="link" href="/board/{{address}}/1">/{{chans_board_info[address]["label_short"]|safe}}/ - {{chans_board_info[address]['description']|safe}}</a></td>
+            <td><a class="link" href="/board/{{address}}/1">/{{chans_board_info[address]["label_short"]|safe}}/ - {{chans_board_info[address]["description"]|safe}}</a></td>
             <td><a class="link" style="font-family: monospace" href="/board/{{address}}/1">{{address}}</a></td>
         </tr>
         <tr>
@@ -80,11 +80,15 @@
                             The current configuration does not permit board passphrases to be shown
                         </div>
                         {% else %}
+
+                            {% set passphrase_base64_escaped = html.escape(passphrase_base64) %}
+                            {% set passphrase_base64_with_pgp_escaped = html.escape(passphrase_base64_with_pgp) %}
+
                         <span class="themed">Board Join Link{% if passphrase_base64 != passphrase_base64_with_pgp %}s{% endif %}</span>
                         <div style="padding-bottom: 0.5em">
-                            <a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64}}">Share Link</a>
+                            <a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64_escaped}}">Share Link</a>
                             {% if passphrase_base64 != passphrase_base64_with_pgp %}
-                            <br/><a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64_with_pgp}}">Share Link With PGP Passphrases</a>
+                            <br/><a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64_with_pgp_escaped}}">Share Link With PGP Passphrases</a>
                             {% endif %}
                         </div>
 
@@ -123,11 +127,9 @@
                         {% include '/elements/rules.html' %}
                         {% endif %}
 
-                        {% if primary_addresses or secondary_addresses or tertiary_addresses or restricted_addresses %}
                         <div class="themed" style="padding-bottom: 0.5em">
                             {% include '/elements/accordion_access.html' %}
                         </div>
-                        {% endif %}
 
                         <span class="themed">Options:</span>
                         <form method="post" action="/set_info_options/{{board['current_chan'].address}}" enctype="multipart/form-data">

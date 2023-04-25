@@ -102,7 +102,7 @@ def generate_reply_link_and_popup_html(
                 lstr=link_str)
             return ret_str
 
-        if use_thread_id or board_view:
+        if use_thread_id or board_view or external_thread:
             post_url = "/thread/{ch}/{tp}#{pi}".format(
                 ch=message.thread.chan.address,
                 tp=message.thread.thread_hash_short,
@@ -172,38 +172,30 @@ def generate_popup_post_html(message, moderating=False):
                     file_name in attach and
                     attach[file_name]["extension"] in config.FILE_EXTENSIONS_IMAGE):
 
-                if ((i == 1 and message.image1_spoiler) or
-                        (i == 2 and message.image2_spoiler) or
-                        (i == 3 and message.image3_spoiler) or
-                        (i == 4 and message.image4_spoiler)):
-                    ret_str += '<div class="reply-attach" ' \
-                               'style="width: 200px; height: 200px; ' \
-                               'background-image: url(\'/static/spoiler.png\');"></div>'
-                else:
-                    if ("height" not in attach[file_name] or "width" not in attach[file_name] or
-                            not attach[file_name]["height"] or not attach[file_name]["width"]):
-                        continue
+                if ("height" not in attach[file_name] or "width" not in attach[file_name] or
+                        not attach[file_name]["height"] or not attach[file_name]["width"]):
+                    continue
 
-                    # Calculate height/width
-                    width = 200
-                    height = 200
-                    if attach[file_name]["width"] <= 200 and attach[file_name]["height"] <= 200:
-                        width = attach[file_name]["width"]
-                        height = attach[file_name]["height"]
-                    elif attach[file_name]["width"] > 200 or attach[file_name]["height"] > 200:
-                        w_to_h_ratio = attach[file_name]["width"] / attach[file_name]["height"]
-                        if attach[file_name]["width"] > attach[file_name]["height"]:
-                            height = 200 / w_to_h_ratio
-                        elif attach[file_name]["height"] > attach[file_name]["width"]:
-                            width = w_to_h_ratio * 200
+                # Calculate height/width
+                width = 200
+                height = 200
+                if attach[file_name]["width"] <= 200 and attach[file_name]["height"] <= 200:
+                    width = attach[file_name]["width"]
+                    height = attach[file_name]["height"]
+                elif attach[file_name]["width"] > 200 or attach[file_name]["height"] > 200:
+                    w_to_h_ratio = attach[file_name]["width"] / attach[file_name]["height"]
+                    if attach[file_name]["width"] > attach[file_name]["height"]:
+                        height = 200 / w_to_h_ratio
+                    elif attach[file_name]["height"] > attach[file_name]["width"]:
+                        width = w_to_h_ratio * 200
 
-                    ret_str += '<div class="reply-attach" ' \
-                               'style="width: {w}px; height: {h}px; ' \
-                               'background-image: url(\'/files/thumb/{mid}/{fn}\');"></div>'.format(
-                                w=width,
-                                h=height,
-                                mid=message.message_id,
-                                fn=quote(file_name))
+                ret_str += '<div class="reply-attach" ' \
+                           'style="width: {w}px; height: {h}px; ' \
+                           'background-image: url(\'/files/thumb/{mid}/{fn}\');"></div>'.format(
+                            w=width,
+                            h=height,
+                            mid=message.message_id,
+                            fn=quote(file_name))
         ret_str += '<div class="reply-break"></div>'
 
     ret_str += '<div class="reply-text themed">{}</div>'.format(
@@ -445,6 +437,7 @@ def attachment_info(message_id):
         for i, each_file in enumerate(file_order, start=1):
             number_files += 1
             if each_file in media_info:
+                media_info[each_file]["file_number"] = i
                 if i == 1:
                     media_info[each_file]["spoiler"] = message.image1_spoiler
                 elif i == 2:

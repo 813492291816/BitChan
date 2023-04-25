@@ -202,7 +202,7 @@ def send_commands():
 def admin_set_options(msg_dict, admin_dict):
     """
     Set custom options for board or list
-    e.g. Banner, spoiler, CSS, word replace, access
+    e.g. Banner, CSS, word replace, access
     """
     error = []
 
@@ -223,16 +223,6 @@ def admin_set_options(msg_dict, admin_dict):
         media_width, media_height = im.size
         if media_width > config.BANNER_MAX_WIDTH or media_height > config.BANNER_MAX_HEIGHT:
             logger.error("{}: Banner image too large. Discarding admin message.".format(
-                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-            daemon_com.trash_message(msg_dict["msgid"])
-            return
-
-    if "spoiler_base64" in admin_dict["options"]:
-        # Verify spoiler is not larger than max dimensions
-        im = Image.open(BytesIO(base64.b64decode(admin_dict["options"]["spoiler_base64"])))
-        media_width, media_height = im.size
-        if media_width > config.SPOILER_MAX_WIDTH or media_height > config.SPOILER_MAX_HEIGHT:
-            logger.error("{}: Spoiler image too large. Discarding admin message.".format(
                 msg_dict["msgid"][-config.ID_LENGTH:].upper()))
             daemon_com.trash_message(msg_dict["msgid"])
             return
@@ -409,24 +399,6 @@ def admin_set_options(msg_dict, admin_dict):
                 if do_log:
                     log_description_list.append("Banner Image: {}".format(do_log))
 
-            # Set spoiler
-            if "spoiler_base64" in admin_dict["options"]:
-                do_log = False
-                if "spoiler_base64_timestamp_utc" in options:
-                    if admin_dict["timestamp_utc"] > options["spoiler_base64_timestamp_utc"]:
-                        if options["spoiler_base64"] != admin_dict["options"]["spoiler_base64"]:
-                            add_mod_log = True
-                        options["spoiler_base64"] = admin_dict["options"]["spoiler_base64"]
-                        options["spoiler_base64_timestamp_utc"] = admin_dict["timestamp_utc"]
-                        do_log = "Update"
-                else:
-                    options["spoiler_base64"] = admin_dict["options"]["spoiler_base64"]
-                    options["spoiler_base64_timestamp_utc"] = admin_dict["timestamp_utc"]
-                    do_log = "Set"
-                    add_mod_log = True
-                if do_log:
-                    log_description_list.append("Spoiler Image: {}".format(do_log))
-
             # Set Long Description
             if "long_description" in admin_dict["options"]:
                 do_log = False
@@ -568,11 +540,6 @@ def admin_set_options(msg_dict, admin_dict):
                 options["banner_base64_timestamp_utc"] = admin_dict["timestamp_utc"]
                 log_description_list.append("Banner Image")
 
-            if "spoiler_base64" in admin_dict["options"]:
-                options["spoiler_base64"] = admin_dict["options"]["spoiler_base64"]
-                options["spoiler_base64_timestamp_utc"] = admin_dict["timestamp_utc"]
-                log_description_list.append("Spoiler Image")
-
             if "long_description" in admin_dict["options"]:
                 options["long_description"] = admin_dict["options"]["long_description"]
                 options["long_description_display"] = process_replacements(
@@ -611,10 +578,8 @@ def admin_set_options(msg_dict, admin_dict):
         if add_mod_log and not error:
             add_mod_log_entry(
                 log_description,
-                message_id=None,
                 user_from=msg_dict['fromAddress'],
-                board_address=msg_dict['toAddress'],
-                thread_hash=None)
+                board_address=msg_dict['toAddress'])
 
         if error:
             logger.info("{}: Errors found while processing custom options for {}".format(
@@ -946,7 +911,6 @@ def admin_delete_from_board(msg_dict, admin_dict):
 
                         add_mod_log_entry(
                             log_description,
-                            message_id=None,
                             user_from=msg_dict['fromAddress'],
                             board_address=msg_dict['toAddress'],
                             thread_hash=admin_dict["options"]["delete_thread"]["thread_id"],
@@ -1101,10 +1065,8 @@ def admin_ban_address_from_board(msg_dict, admin_dict):
                         log_description += ": Reason: {}".format(admin_dict["reason"])
                     add_mod_log_entry(
                         log_description,
-                        message_id=None,
                         user_from=msg_dict["fromAddress"],
-                        board_address=admin_dict["chan_address"],
-                        thread_hash=None)
+                        board_address=admin_dict["chan_address"])
 
             # Find messages and delete
             with session_scope(DB_PATH) as new_session:

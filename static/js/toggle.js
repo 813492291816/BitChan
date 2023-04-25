@@ -64,29 +64,41 @@ $(function() {
     });
 });
 
+function calc_resize(width, height, max_width, max_height) {
+    if (width > max_width) {
+        w_ratio = height / width;
+        width = max_width;
+        height = width * w_ratio;
+    }
+    if (height > max_height) {
+        h_ratio = width / height;
+        height = max_height;
+        width = height * h_ratio;
+    }
+    return {'width': width, 'height': height};
+}
+
 $(function() {
     $('#body').on('click', '.video', function() {
         post_id = $(this).attr('id').split('_')[1];
         index = $(this).attr('id').split('_')[2];
         let type = document.getElementById("type_" + post_id).value;
         current_height = $(this).css('height');
+        let thumb_width = document.getElementById("thumb_width_" + post_id + "_" + index).value;
+        let thumb_height = document.getElementById("thumb_height_" + post_id + "_" + index).value;
         let width = document.getElementById("width_" + post_id + "_" + index).value;
         let height = document.getElementById("height_" + post_id + "_" + index).value;
         let num_files = parseInt(document.getElementById("num_files_" + post_id).value);
         let truncate = document.getElementById("truncate_" + post_id).value;
         let newline = document.getElementById("newline_" + post_id);
-        if (type === "op") {
-            thumb_width = "275px";
-            thumb_height = "200px";
-        }
-        else if (type === "reply") {
-            thumb_width = "190px";
-            thumb_height = "130px";
-        }
+
+        console.log("Current: " + current_height + ", Thumb: " + thumb_height);
+
         if (current_height === thumb_height) {
             if (width > window.innerWidth) {
-                new_width = "98%";
-                new_height = "98%";
+                calc_dim = calc_resize(width, height, window.innerWidth, window.innerHeight);
+                new_width = calc_dim.width + "px";
+                new_height = calc_dim.height + "px";
             }
             else {
                 new_width = width + "px";
@@ -100,8 +112,8 @@ $(function() {
         } else {
             expanded_files[post_id] = expanded_files[post_id].filter(e => e !== post_id + "_" + index);
             if (expanded_files[post_id].length == 0 && num_files < 3 && truncate === "0") newline.style.display = "none";
-            $(this).animate({width: thumb_width}, 0);
-            $(this).animate({height: thumb_height}, 0);
+            $(this).animate({'width': thumb_width}, 0);
+            $(this).animate({'height': thumb_height}, 0);
         }
     });
 });

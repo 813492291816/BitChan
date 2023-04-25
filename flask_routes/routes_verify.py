@@ -31,7 +31,7 @@ blueprint = Blueprint('routes_verify',
 def verify_wait(full_path_b64):
     if "banned" in session:
         if session["banned"] == 1:
-            return "lol"
+            return "err"
         elif session["banned"] == 2:
             abort(404)
 
@@ -56,7 +56,7 @@ def verify_wait(full_path_b64):
 def verify_test(page_id, full_path_b64):
     if "banned" in session:
         if session["banned"] == 1:
-            return "lol"
+            return "err"
         elif session["banned"] == 2:
             abort(404)
 

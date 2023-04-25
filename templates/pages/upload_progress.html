@@ -1,0 +1,63 @@
+{% extends "layout.html" %}
+
+{% block title %}Upload Progress - {% endblock %}
+
+{% block head %}
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div class="themed head-center" style="max-width: 1000px;">
+
+            <h1 class="title themed bold">Upload Progress</h1>
+
+            {% if not upload_entry %}
+            Upload ID {{upload_id}} Not Found
+            {% else %}
+            <table style="margin-right: auto; margin-left: auto;">
+                <tr>
+                    <td>Upload ID</td>
+                    <td>Uploading</td>
+                    <td>Subject</td>
+                    <td>Total Size</td>
+                    <td>Uploaded Size</td>
+                    <td>Percent Uploaded</td>
+                    <td>Progress TS</td>
+                    <td>Progress</td>
+                </tr>
+                <tr>
+                    <td>{{upload_entry.upload_id}}</td>
+                    <td>{{upload_entry.uploading}}</td>
+                    <td>{{upload_entry.subject}}</td>
+                    <td>{{upload_entry.total_size_bytes}}</td>
+                    <td>{{upload_entry.progress_size_bytes}}</td>
+                    <td>{{upload_entry.progress_percent}} %</td>
+                    <td>{{upload_entry.progress_ts}}</td>
+                    <td>{{upload_entry.progress}}</td>
+                </tr>
+                <tr>
+                    <td colspan="8">{{upload_entry.post_message}}</td>
+                </tr>
+            </table>
+            {% endif %}
+            <div style="padding-top: 1em"></div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

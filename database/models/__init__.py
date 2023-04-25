@@ -6,11 +6,15 @@ import config
 from .alembic import Alembic
 from .chans import AddressBook
 from .chans import AdminMessageStore
+from .chans import BanedHashes
+from .chans import BanedWords
 from .chans import Chan
 from .chans import Command
 from .chans import Games
 from .chans import Identity
 from .chans import Messages
+from .chans import PGP
+from .chans import StringReplace
 from .chans import Threads
 from .chans import UploadProgress
 from .maintenance import Captcha
@@ -32,6 +36,7 @@ def regenerate_upload_sites():
     if not UploadSites.query.count():
         for domain, upload_info in config.DICT_UPLOAD_SERVERS.items():
             UploadSites(
+                enabled=True,
                 domain=domain,
                 type=upload_info["type"],
                 subtype=upload_info["subtype"],

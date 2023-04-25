@@ -1,9 +1,9 @@
 build:
-	docker-compose up --build
+	docker compose up --build
 
 daemon:
-	docker-compose up --build -d
+	docker compose up --build -d
 
 clean:
-	docker-compose down
+	docker compose down
 	docker system prune -a

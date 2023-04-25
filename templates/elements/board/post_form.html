@@ -14,7 +14,7 @@
     {% if thread %}
     <input type="hidden" name="subject" value="{{thread.subject|safe}}"/>
     {% endif %}
-    <input type="hidden" name="submit" value="Post"/>
+    <input type="hidden" name="submit_post" value="Post"/>
     {{form_post.csrf_token}}
     <table class="form themed bold" style="table-layout: fixed; max-width: 600px;">
       <tbody>
@@ -83,19 +83,24 @@
           <td colspan="3">
             <section>
               <details>
-                  <summary>Post Options</summary>
-                  <table style="width: 100%;">
-                    <tbody>
-            {% include '/elements/board/form_post_options.html' %}
-            {% include '/elements/board/form_post_game_options.html' %}
-                      </tbody>
-                    </table>
-                </details>
+                <summary>Post Options</summary>
+                <table style="width: 100%;">
+                  <tbody>
+          {% include '/elements/board/form_post_options.html' %}
+          {% include '/elements/board/form_post_game_options.html' %}
+                  </tbody>
+                </table>
+            {% if not settings.enable_kiosk_mode or
+                  (settings.enable_kiosk_mode and settings.kiosk_allow_gpg) or
+                  (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) %}
+          {% include '/elements/board/form_post_gpg_options.html' %}
+            {% endif %}
+              </details>
             </section>
           </td>
         </tr>
         <tr>
-          <td class="form themed bold">Upload Images/Files<br/><span style="font-size: 0.7em">(Check to spoiler image)</span></td>
+          <td class="form themed bold">Upload Images/Files<br/><span style="font-size: 0.7em">(Check to spoiler media)</span></td>
           <td colspan="2">
             1 <input style="vertical-align: middle;" type="checkbox" id="image1_spoiler" name="image1_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file1')">&#8856;</button> <input id="file1" name="file1" type="file"/>
             <br/>2 <input style="vertical-align: middle;" type="checkbox" id="image2_spoiler" name="image2_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file2')">&#8856;</button> <input id="file2" name="file2" type="file"/>
@@ -114,14 +119,14 @@
           <td colspan="2"><input type="checkbox" id="strip_exif" name="strip_exif" value="y"{% if "strip_exif" in form_populate and not form_populate["strip_exif"] %}{% else %} checked{% endif %}/></td>
         </tr>
           <tr>
-            <td class="form themed bold">Upload Method</td>
+            <td class="form themed bold">Upload Method - {% if "upload" in form_populate %}{{form_populate["upload"]}}{% endif %}</td>
           <td>
             <select style="width: 100%;" name="upload">
             {% if not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and not settings.kiosk_disable_bm_attach) %}
               <option value="bitmessage"{% if "upload" in form_populate and form_populate["upload"] == "bitmessage" %} selected{% endif %}>Bitmessage (most secure, ~250KB)</option>
             {% endif %}
-            {% for each_server in upload_sites.query.all() %}
-              <option value="{{each_server.domain}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.domain %} selected{% endif %}>{{each_server.form_name}}</option>
+            {% for each_server in upload_sites.query.all() if each_server.enabled or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) %}
+              <option value="{{each_server.id}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.id|string %} selected{% endif %}>{{each_server.form_name}}</option>
             {% endfor %}
               </select>
             </td>
@@ -130,7 +135,7 @@
           <td class="form themed bold">Upload Encryption</td>
           <td>
             <select style="width: 100%;" name="upload_cipher_and_key">
-            {% for each_cipher in config.UPLOAD_ENCRYPTION_CIPHERS -%}
+            {% for each_cipher in config.UPLOAD_ENCRYPTION_CIPHERS if each_cipher[1] != "No Encryption" or (each_cipher[1] == "No Encryption" and settings.allow_unencrypted_encryption_option) -%}
               <option value="{{each_cipher[0]}}"{% if "upload_cipher_and_key" in form_populate and form_populate["upload_cipher_and_key"] == each_cipher[0] %} selected{% endif %}>{{each_cipher[1]}}</option>
             {%- endfor %}
             </select>
@@ -139,13 +144,16 @@
         </tr>
         <tr>
           <td>{{captcha(page_id=page_id, img_id="post_captcha")}}</td>
-          <td>
-            <input type="text" name="captcha">
-          </td>
+          <td><input type="text" name="captcha"></td>
             {% endif %}
 
           <td>
-            <input class="postbutton" type="submit" name="submit_post" value="Post"/>
+            <div style="float: left;">
+              <input class="postbutton" type="submit" name="preview_post" value="Preview"/>
+            </div>
+            <div style="float: left;">
+              <input class="postbutton" type="submit" name="submit_post" value="Post"/>
+            </div>
           </td>
         </tr>
         <tr>
@@ -176,6 +184,16 @@
             </section>
           </td>
         </tr>
+        {% if "preview" in form_populate %}
+        <tr>
+          <td colspan="3" class="form themed bold" style="padding: 0.4em;">Preview</td>
+        </tr>
+        <tr>
+          <td colspan="3">
+            <div style="font-weight: initial; overflow-wrap: break-word; table-layout: fixed; display: table; width: 100%;">{{form_populate["preview"]|safe}}</div>
+          </td>
+        </tr>
+        {% endif %}
       </tbody>
     </table>
   </form>

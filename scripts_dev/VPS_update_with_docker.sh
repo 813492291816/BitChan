@@ -1,6 +1,6 @@
 #
 # Dependencies:
-# sudo apt install realpath torsocks sshpass
+# sudo apt install coreutils torsocks sshpass
 #
 NOW=$(date '+%Y-%m-%d_%H-%M-%S')
 
@@ -36,6 +36,11 @@ if [ -z $5 ]; then
   provide_path
 fi
 
+if [ -z $6 ]; then
+  echo "Missing sixth argument: torsocks (1) (default) or no torsocks (0)."
+  provide_path
+fi
+
 if [ ! -d "$1" ]; then
    echo "Invalid directory"
    provide_path
@@ -59,13 +64,18 @@ DIR_BITCHAN_TAR=$(realpath ~)
 TAR_DIR="${DIR_BITCHAN_TAR}/bitchan-${NOW}.tar.gz"
 TAR="bitchan-${NOW}.tar.gz"
 
-if ! tar --exclude='.idea' --exclude='.git' --exclude='env' --exclude='test' --exclude='tests' -zcf "${TAR_DIR}" -C "${DIR_BITCHAN_PARENT}" ./bitchan ; then
+if ! tar --exclude='.idea' --exclude='.git' --exclude='env' --exclude='test' --exclude='tests' --exclude='venv' -zcf "${TAR_DIR}" -C "${DIR_BITCHAN_PARENT}" ./bitchan ; then
    echo "Could not archive BitChan directory"
    exit
 fi
 
 read -s -p "Password: " password
-sshpass -p ${password} torsocks scp "${TAR_DIR}" "${2}@${3}:${4}"
+
+if [ "$6" -ne "0" ]; then
+    sshpass -p ${password} torsocks scp "${TAR_DIR}" "${2}@${3}:${4}"
+else
+    sshpass -p ${password} scp "${TAR_DIR}" "${2}@${3}:${4}"
+fi
 
 printf "\n"
 
@@ -78,7 +88,12 @@ cp ~/bitchan-${NOW}/docker/docker-compose.yml ~/bitchan/docker/ &&
 cp ~/bitchan-${NOW}/docker/tor/torrc ~/bitchan/docker/tor/ &&
 cp ~/bitchan-${NOW}/docker/i2pd/* ~/bitchan/docker/i2pd/"
 
-RESULTS1=$(sshpass -p ${password} torsocks ssh "${2}@${3}" ${CMD1} 2>&1)
+if [ "$6" -ne "0" ]; then
+    RESULTS1=$(sshpass -p ${password} torsocks ssh "${2}@${3}" ${CMD1} 2>&1)
+else
+    RESULTS1=$(sshpass -p ${password} ssh "${2}@${3}" ${CMD1} 2>&1)
+fi
+
 echo $RESULTS1
 
 printf "Finished transferring and moving directories.\n"
@@ -90,7 +105,12 @@ if [ "$5" -eq "1" ]; then
     make daemon &&
     printf 'SUCCESS'"
 
-    RESULTS2=$(sshpass -p ${password} torsocks ssh "${2}@${3}" ${CMD2} 2>&1)
+    if [ "$6" -ne "0" ]; then
+        RESULTS2=$(sshpass -p ${password} torsocks ssh "${2}@${3}" ${CMD2} 2>&1)
+    else
+        RESULTS2=$(sshpass -p ${password} ssh "${2}@${3}" ${CMD2} 2>&1)
+    fi
+
     echo $RESULTS2
 else
     printf "Not Building. You will need to log in and build yourself.\n"

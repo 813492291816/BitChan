@@ -378,7 +378,7 @@ def replace_flip_flop(text, seed):
     return "\n".join(lines)
 
 
-def replace_god_song(text, seed, message_id):
+def replace_god_song(text, seed, message_id, preview=False):
     regex = r"(?i)(?<!\S)#godsong(?!\S)"
     lines = text.split("\n")
     stichomancy_lf = "/var/lock/stichomancy.lock"
@@ -399,8 +399,15 @@ def replace_god_song(text, seed, message_id):
                 book_link = None
                 if lf.lock_acquire(stichomancy_lf, to=600):
                     try:
-                        line_number, quote, book_url, title, author = stichomancy_pull(
-                            "{}{}{}".format(seed, line_index, i), select_book_id=10900)
+                        if preview:
+                            line_number = 47414
+                            quote = "Fake quote."
+                            book_url = "https://fakeurl"
+                            title = "Fake Title"
+                            author = "Fake Author"
+                        else:
+                            line_number, quote, book_url, title, author = stichomancy_pull(
+                                "{}{}{}".format(seed, line_index, i), select_book_id=10900)
 
                         if not line_number:
                             continue
@@ -414,12 +421,12 @@ def replace_god_song(text, seed, message_id):
 
                         title_str = title
                         if author and "Various" not in author:
-                            title_str += " by {}".format(title, author)
+                            title_str += f" by {author}"
 
-                        book_link = '<a class="link" target="_blank" href="{url}">{name}, {title}</a>'.format(
-                            url=book_url,
-                            name=replacements_data.bible_books[previous_line],
-                            title=title_str)
+                        if preview:
+                            book_link = f'<a class="link" target="_blank" href="{book_url}">Fake Book, {title_str}</a>'
+                        else:
+                            book_link = f'<a class="link" target="_blank" href="{book_url}">{replacements_data.bible_books[previous_line]}, {title_str}</a>'
                     finally:
                         lf.lock_release(stichomancy_lf)
 
@@ -641,7 +648,7 @@ def replace_rune_pulls(text, seed):
     return "\n".join(lines)
 
 
-def replace_stich(text, message_id):
+def replace_stich(text, message_id, preview=False):
     lines = text.split("\n")
     regex = r"(?i)(?<!\S)#stich(?!\S)"
     stichomancy_lf = "/var/lock/stichomancy.lock"
@@ -669,7 +676,13 @@ def replace_stich(text, message_id):
                         url = None
                         if lf.lock_acquire(stichomancy_lf, to=600):
                             try:
-                                _, quote, url, title, author = stichomancy_pull(new_seed)
+                                if preview:
+                                    quote = "Fake quote."
+                                    url = "https://fakeurl"
+                                    title = "Fake Title"
+                                    author = "Fake Author"
+                                else:
+                                    _, quote, url, title, author = stichomancy_pull(new_seed)
                             except:
                                 logger.exception("getting quote")
                             finally:

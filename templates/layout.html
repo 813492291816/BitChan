@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <title>{% block title %}{% endblock %}BitChan {{config.VERSION_BITCHAN}}</title>
+        <title>{% if settings.maintenance_mode %}MAINTENANCE - {% endif %}{% block title %}{% endblock %}BitChan {{config.VERSION_BITCHAN}}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" type="image/x-icon" />
         <script src="/static/js/jquery-3.5.1.min.js"></script>
@@ -104,6 +104,8 @@ $(document).ready(function() {
                 / <a class="bold link" href="/configure">Configure</a>
                 / <a class="bold link" href="/status">Status</a>
                 / <a class="bold link" href="/stats">Stats</a>
+                / <a class="bold link" href="/gpg">GPG</a>
+                / <a class="bold link" href="/diag">Diag</a>
             {% endif -%}
             {% if not settings.enable_kiosk_mode or
                       (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_mod_log and logged_in and has_permission("is_global_admin")) or

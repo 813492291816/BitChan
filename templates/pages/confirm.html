@@ -47,7 +47,10 @@
                 Leave <a class="link" href="/board/{{chan.address}}/1">/{{replace_lt_gt(chan.label)|safe}}/ - {{replace_lt_gt(chan.description)|safe}} ({{address}})</a>?
             </div>
             <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
-                This will delete all content and cannot be undone.
+                This will delete all threads/posts/attachments and cannot be undone.
+            </div>
+            <div class="themed" style="padding-bottom: 1.5em; text-align: center;">
+                <input type="checkbox" id="clear_mod_log" name="clear_mod_log" value="y" checked/> Clear Mod Log for Address
             </div>
             <div style="padding-top: 1em; text-align: center;">
                 <input type="submit" name="confirm" value="Confirm"/>

@@ -28,6 +28,7 @@
         <div class="themed" style="display: inline-block; text-align: left">
             Private Keys:
         {% for each_key in private_keys %}
+            {% set db_info = pgp.query.filter(pgp.fingerprint == each_key["fingerprint"]).first() %}
             <section>
                 <details>
                     <summary>{{each_key["uids"][0]}} - {{each_key["keyid"]}}</summary>
@@ -56,9 +57,58 @@
                     {% endfor %}
                         {% if each_key["keyid"] in exported_public_keys %}
                                 <tr>
-                                    <td colspan="2" class="themed">{{exported_public_keys[each_key["keyid"]].replace("\n", "<br/>")|safe}}</td>
+                                    <td colspan="2" class="themed" style="font-family: monospace">{{exported_public_keys[each_key["keyid"]].replace("\n", "<br/>")|safe}}</td>
                                 </tr>
                         {% endif %}
+                        {% if each_key["fingerprint"] in private_key %}
+                                <tr>
+                                    <td colspan="2" class="themed" style="font-family: monospace">{{private_key[each_key["fingerprint"]].replace("\n", "<br/>")|safe}}</td>
+                                </tr>
+                        {% endif %}
+                            </table>
+
+                            <table class="themed" style="padding-top: 1em">
+                                <tr>
+                                    <td colspan="2">DB Info</td>
+                                </tr>
+                        {% if db_info %}
+                                <tr>
+                                    <td>Keyring File</td>
+                                    <td>{{config.GPG_DIR}}/{{db_info.keyring_name}}</td>
+                                </tr>
+                                <tr>
+                                    <td>Passphrase Saved</td>
+                                    <td>{% if db_info.passphrase %}True{% else %}False{% endif %}</td>
+                                </tr>
+                        {% else %}
+                                <tr>
+                                    <td colspan="2">No Database Entry Found</td>
+                                </tr>
+                        {% endif %}
+                            </table>
+
+                            <table class="themed" style="padding-top: 1em">
+                                <tr>
+                                    <td>Options</td>
+                                </tr>
+                                <tr>
+                                    <td colspan="2">
+                                        <form method="post">
+                                            <input name="fingerprint" value="{{each_key['fingerprint']}}" type="hidden">
+                                            <div>
+                                                Passphrase: <input name="passphrase" value="" type="password">
+                                                <input type="submit" name="delete_private_key" value="Delete Private Key"/>
+                                            </div>
+                                            <div>
+                                                Save Passphrase: <input name="passphrase_save" value="" type="password">
+                                                <input type="submit" name="save_passphrase" value="Save"/>
+                                            </div>
+                                            <div>
+                                                <input type="submit" name="show_private_key_block" value="Show Private Key Block"/>
+                                            </div>
+                                        </form>
+                                    </td>
+                                </tr>
                             </table>
                         </div>
                 </details>
@@ -77,7 +127,7 @@
                 <details>
                     <summary>{{each_key["uids"][0]}} - {{each_key["keyid"]}}</summary>
                         <div>
-                            <table>
+                            <table class="themed">
                     {% for each_option, each_value in each_key.items() %}
                                 <tr>
                                     <td class="themed">{{each_option}}</td>
@@ -100,7 +150,21 @@
                                 </tr>
                     {% endfor %}
                                 <tr>
-                                    <td colspan="2" class="themed">{{exported_public_keys[each_key["keyid"]].replace("\n", "<br/>")|safe}}</td>
+                                    <td colspan="2" class="themed" style="font-family: monospace">{{exported_public_keys[each_key["keyid"]].replace("\n", "<br/>")|safe}}</td>
+                                </tr>
+                            </table>
+
+                            <table class="themed" style="padding-top: 1em">
+                                <tr>
+                                    <td>Options</td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <form method="post">
+                                            <input name="fingerprint" value="{{each_key['fingerprint']}}" type="hidden">
+                                            <input type="submit" name="delete_public_key" value="Delete Public Key"/>
+                                        </form>
+                                    </td>
                                 </tr>
                             </table>
                         </div>
@@ -118,7 +182,7 @@
                     <details>
                         <summary>Generate Key</summary>
                             <div>
-                                <table class="table">
+                                <table class="themed">
                                     <tr>
                                         <td class="themed">Name</td>
                                         <td>
@@ -158,13 +222,54 @@
                             </div>
                     </details>
                 </section>
+            </div>
+        </center>
+    </form>
 
-                <div class="themed" style="text-align: center; padding-bottom: 1em">
-                    <div style="display: inline-block; text-align: left">
-                        <h2>Diagnostics</h2>
-                        <input type="submit" name="delete_all" value="Delete All"/>
-                    </div>
-                </div>
+    <form method="post">
+        <center>
+            <div style="max-width: 500px; padding-bottom: 1em">
+                <section>
+                    <details>
+                        <summary>Add Key</summary>
+                        <div style="padding: 0.5em">
+                            <textarea rows="6" class="form" name="text_key"></textarea>
+                        </div>
+                        <div class="themed" style="padding: 0.5em">
+                            Private Key Passphrase: <input type="password" name="passphrase"/>
+                        </div>
+                        <div style="padding: 0.5em">
+                            <input type="submit" name="add_key" value="Add Key"/>
+                        </div>
+                    </details>
+                </section>
+            </div>
+        </center>
+    </form>
+
+    <form method="post" enctype="multipart/form-data">
+        <center>
+            <div style="max-width: 500px; padding-bottom: 1em">
+                <section>
+                    <details>
+                        <summary>Diagnostics</summary>
+                        <div style="padding: 0.5em">
+                            <input type="submit" name="delete_all" value="Delete All Keyrings" onclick="return confirm('Are you sure you want to do this? This will delete all public and private keys.')"/>
+                        </div>
+                        <div style="padding: 0.5em">
+                            <input type="submit" name="export_keyring" value="Export Keyring Archive"/>
+                        </div>
+                        <div style="padding: 0.5em">
+                            <div class="themed" style="padding-bottom: 0.5em">
+                                Importing a keyring will delete the current keyring. If you want to save the current keyring, export it before performing this action.
+                            </div>
+                            <div class="themed">
+                                <input id="keyring_archive" name="keyring_archive" type="file"/>
+                                <input type="submit" name="import_keyring" value="Import Keyring Archive" onclick="return confirm('Are you sure you want to do this? Importing a keyring archive will delete all current keyrings.')"/>
+                            </div>
+                        </div>
+                    </details>
+                </section>
             </div>
         </center>
     </form>

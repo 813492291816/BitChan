@@ -31,7 +31,8 @@
 - [Address Book](#address-book){.link}
 - [Configuration](#configuration){.link}
   - [General Settings](#general-settings){.link}
-  - [Kiosk Mode Settings](#kiosk-mode-settings){.link}
+  - [Bitmessage Settings](#bitmessage-settings){.link}
+  - [Kiosk Settings](#kiosk-settings){.link}
   - [Security Settings](#security-settings){.link}
   - [Export](#export){.link}
   - [Post Attachment Upload Sites](#post-attachment-upload-sites){.link}
@@ -566,13 +567,17 @@ The configuration page contains configuration options and functions such as expo
 
 ## General Settings
 
+### Enable Maintenance Mode
+
+Maintenance mode prevents new posts from being made or automatic downloads from starting. This allows for a safe restart of the server, for instance in if an upgrade needs to occur, without the possibility of interrupting a post or download. Maintenance mode can be enabled, a short wait period to allow any posts or downloads to complete, then an upgrade or server restart can safely be performed.
+
 ### Theme
 
 The theme can be changed to affect the text style on pages. The following themes are available:
 
 - Dark: a dark color theme
 - Classic: A red theme, similar to Yotsuba
-- Frosty: A blue theme, similar to Yousuba B
+- Frosty: A blue theme, similar to Yotsuba B
 - Console: Another dark theme
 
 ### Max Home Page Updates
@@ -605,6 +610,10 @@ Permit connecting (not through tor) to an NTP server to ensure your time is accu
 
 If a post has unencrypted attachments from upload sites, always require the Download button to be pressed to download them. Enable this option if you don't want to auto-download any unencrypted file regardless of your **Auto-Download Max Size** setting.
 
+### Remove unencrypted as attachment option
+
+Allow "Unencrypted" as an encryption option for post attachments.
+
 ### Automatically download from unknown upload sites
 
 BitChan comes with a number of upload sites by default that may be used to provide attachments for messages. However, because it is unknown whether these upload sites will exist in the future, users may add and use their own upload sites. Therefore, to ensure that future users can obtain these new upload site settings from other users posting with attachments, the information for where and how to download an attachment is contained within the message itself. When a message is received with an attachment and the upload site settings within the message are not currently saved to BitChan, you can easily save those settings to your database via a link that appears on the message. To give the user more control over what attachments are automatically downloaded, BitChan by default will not automatically download attachments from an upload site that is within a message if it doesn't already exist in the BitChan database. To download attachments from such a message, select the link to save the upload site settings, then manually start the download. Once the settings have been saved to the BitChan database, and if your other auto-download settings allow it, any attachments from subsequent messages that are received will be automatically downloaded since you have reviewed and acknowledged the upload site settings by saving them to the database. If you would like to override this feature and allow automatic downloading of attachments from upload sites that are not saved in the database, check this option.
@@ -612,6 +621,14 @@ BitChan comes with a number of upload sites by default that may be used to provi
 ### Automatically delete sent Identity messages
 
 Any message you send from an Identity address stays in your mailbox unless it gets deleted. This setting automatically deletes all of these messages.
+
+### Show Debug Information for Boards/Threads/Posts
+
+This will show the entire database table entry for boards/threads/posts in an accordion. If kiosk is enabled, must be an Admin.
+
+### Post Timestamp Use
+
+This will determine which timestamp to use to sort posts, threads, and boards when order is considered.
 
 ### Threads Per Page on Board Page
 
@@ -649,7 +666,31 @@ This is HTML that will be inserted into the template's \<HEAD\>. Useful for easi
 
 This is HTML that will be inserted into the template's \<BODY\>. Useful for applying certain styles to all pages when HTML needs to be inserted in the \<BODY\> of all pages, such as an image overlay that you want to be displayed on every page.
 
-## Kiosk Mode Settings
+## Bitmessage Settings
+
+Bitmessage can be partly configured from BitChan. If these settings change, bitmessage will be restarted for the changes to take effect.
+
+### Incoming and Outgoing Connections
+
+Set how bitmessage allows incoming and outgoing connections. Keep in mind that you may need to initially set Outgoing Connections to use the clearnet to build up a list of hosts prior to setting it to use Tor, otherwise the bitmessage tor bootstrap address may take an incredibly long time to establish an initial connection.
+
+The installation procedure provides a version of knownnodes.dat that has aggregated many reliable hosts to make an initial connection to the bitmessage network. Alternatively, you can copy the contents of your own knownnodes.dat with your own bitmessage to BitChan's /usr/local/bitchan/bitmessage/knownnodes.dat (especially if bootstraping is not occurring in a timely manner).
+
+Here are the keys.dat settings for each option (from [Bitmessage FAQ: How do I setup Bitmessage as a hidden service on Tor](https://wiki.bitmessage.org/index.php/FAQ#How_do_I_setup_Bitmessage_as_a_hidden_service_on_Tor)):
+
+In: Clearnet<br/>Out: Clearnet | In: Tor + Clearnet<br/>Out: Clearnet | In: Tor<br/>Out: Clearnet
+---|---|---
+socksproxytype = none<br/>onionhostname = none | socksproxytype = none<br/>onionhostname = abcdefgh.onion<br/>onionport = 8444<br/>sockslisten = True | socksproxytype = none<br/>onionhostname = abcdefgh.onion<br/>onionbindip = 127.0.0.1<br/>onionport = 8444<br/>sockslisten = False |
+
+In: Clearnet<br/>Out: Tor | In: Tor + Clearnet<br/>Out: Tor | In: Tor<br/>Out: Tor
+---|---|---
+socksproxytype = SOCKS5<br/>onionhostname = none<br/>sockslisten = True | socksproxytype = SOCKS5<br/>onionhostname = abcdefgh.onion<br/>onionport = 8444<br/>sockslisten = True | socksproxytype = SOCKS5<br/>onionhostname = abcdefgh.onion<br/>onionbindip = 127.0.0.1<br/>onionport = 8444<br/>sockslisten = False |
+
+### Only Allow Bitmessage to Connect to Onion Services
+
+If tor is permitted to be used for incoming/outgoing connections, bitmessage can be forced to only connect to onion addresses.
+
+## Kiosk Settings
 
 Kiosk mode allows BitChan users to turn their local instance into a hidden onion service. The kiosk operator can customize who can access the service and what they can do. Operators can grant kiosk privileges such as administration rights, turn captcha on or off as well as a number of other alterations.
 
@@ -663,7 +704,11 @@ Enabling this setting forces kiosk users to log in to use the service. The opera
 
 ### Allow Users to Post
 
-Turn the kiosk into read-only by enabling this setting.
+Allow users to post on boards. Turn the kiosk into read-only by enabling this setting.
+
+### Allow Users to Encrypt PGP Messages in Posts
+
+Allow users to encrypt or sign PGP messages in posts.
 
 ### Disable Bitmessage as a Post Upload Method
 
@@ -672,6 +717,14 @@ Large messages are expensive in terms of proof of work (POW), thus disabling Bit
 ### Allow Users to Initiate Post Downloads
 
 Used in tandem with the 'Auto-Download Max Size', preventing kiosk users from downloading attachments which exceed the maximum auto-download size can help prevent you kiosk's hard drive from getting filled up too fast. Only enable this setting if you are sure large downloads are not a problem.
+
+### TTL Option
+
+Force posts to use a specific Time To Live (TTL) or allow the user to set the TTL with a maximum.
+
+### TTL Value
+
+The custom TTL, in seconds, when forcing a specific TTL or setting a maximum TTL. Must be between 3600 and 2419200 seconds.
 
 ### Post Refractory Period (seconds)
 
@@ -738,7 +791,7 @@ Backups of BitChan information can be performed for boards/lists, identities, an
 
 ## Post Attachment Upload Sites
 
-Here is a list of all current external host upload sites that your instance of BitChan can use to attach files to posts. You can edit, add or delete from this list. If a user posts with an upload site that is not on your list, a link will appear in the message header. It appears as a hyperlinked 'a' and clicking it will bring you to a page allowing you to add the host to your list. In place of the 'a' a 'v' will appear if the host is already on your list, allowing you to view or edit the configuration of this host. Adding or deleting entries on this list will affect the options seen in the 'Upload Method' dropdown menu.
+Here is a list of all current external host upload sites that your instance of BitChan can use to attach files to posts. You can edit, add or delete from this list. If a user posts with an upload site that is not on your list, a link will appear in the message header. It appears as a hyperlinked 'a' and clicking it will bring you to a page allowing you to add the host to your list. In place of the 'a' a 'v' will appear if the host is already on your list, allowing you to view or edit the configuration of this host. Adding or deleting entries on this list will affect the options seen in the 'Upload Method' dropdown menu. Disabling an entry will prevent it from being viewed or used when Kiosk Mode is enabled (and as long as you aren't logged in as an Admin).
 
 ## Custom Flags
 
@@ -760,19 +813,19 @@ A hidden I2P service can be used to create a tunnel to your BitChan install via 
 
 Follow these instructions to set up an I2P tunnel to allow access to your BitChan install:
 
-1. Bring the docker containers down with `cd BitChan/docker && sudo docker-compose down`
+1. Bring the docker containers down with `cd BitChan/docker && sudo docker compose down`
 2. Delete the I2P volume to allow reconfiguring the tunnels and i2pd config files: `sudo docker volume rm docker_i2pd`
 3. Open Bitchan/docker/i2pd/Dockerfile and uncomment the COPY line that copies tunnels.conf to the i2pd volume.
 4. If you have a tunnel private key file, you can uncomment the COPY line that copies that key file to the i2pd volume. Make sure the file name is correct in Dockerfile and tunnels.conf, and place that file in BitChan/docker/i2pd/ prior to building.
 5. If you need to access the webconsole of a remote computer, either uncomment the port section of the i2pd container in docker-compose.yml, exposing port 7999 to the internet, or set up an SSH tunnel to access port 7070 at 172.28.1.6.
 6. Build and bring the containers back up: `cd BitChan/docker && sudo make daemon`
-7. Open a browser to http://172.28.1.6:7070 (or http://PublicIPAddress:7999) to open the i2pd webconsole to view your I2P Tunnels and determine your .i2p address.
+7. Open a browser to http://172.28.1.6:7070 (or http://PublicIPAddress:7999 if enabled in docker-compose.yaml) to open the i2pd webconsole to view your I2P Tunnels and determine your .i2p address.
 8. After the tunnel has started and peers have connected, your BitChan install will be accessible at that .i2p address.
 9. You can register a short i2p address with a jump server, otherwise you can give out the b32 address for people to connect to.
 
 Additionally, you can use 172.28.1.6:4444 as an HTTP proxy in your browser to connect to I2P sites.
 
-Warning: If you expose port 7999 of the I2P service in docker-compose.yaml and your server is publicly-accessible, be sure to comment this port back and rebuild the containers to prevent potential unauthorized access.
+Warning: If you expose port 7999 of the I2P service in docker-compose.yaml and your server is publicly-accessible, be sure to change the deafult credentials in i2pd.conf and/or comment this port back out and rebuild the containers to prevent potential unauthorized access.
 
 # Kiosk Mode
 

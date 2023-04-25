@@ -120,9 +120,14 @@ a.reply-tooltip:hover div {
     text-decoration: none;
 }
 
-.video-insert {
+.video-horiz {
     width: 100% !important;
     height: auto !important;
+}
+
+.video-vert {
+    width: auto !important;
+    height: 100% !important;
 }
 
 .container {
@@ -205,9 +210,7 @@ input:checked + label + .content {
 }
 
 @keyframes colorfultext {
-    to {
-        background-position: 200% center;
-    }
+    to {background-position: 200% center;}
 }
 
 .animated {
@@ -244,16 +247,11 @@ input:checked + label + .content {
 }
 
 .replace-blinking {
-    animation: blinkingText .5s infinite;
+    animation: blink 1s step-start infinite;
 }
 
-@keyframes blinkingText {
-    100% {
-        color: transparent;
-    }
-    100% {
-        color:  transparent;
-    }
+@keyframes blink {
+  50% {opacity: 0;}
 }
 
 .replace-spoiler {
@@ -279,6 +277,15 @@ input:checked + label + .content {
     background-color: #282828;
 }
 
+.language-ascii-art a {
+    color: #D3DBC2;
+    font-family: "Lucida Console", Monaco, monospace;
+}
+
+.language-ascii-art a:hover {
+    color: #E359B4;
+}
+
 .language-ascii-art-s {
     display: inline-block;
     padding: 1em;
@@ -291,6 +298,16 @@ input:checked + label + .content {
     text-shadow: 0 0 20px , 0 0 40px, 0 0 80px , 0 0 100px;
     white-space: pre;
     background-color: #282828;
+}
+
+.language-ascii-art-s a {
+    font-size: inherit;
+    color: #D3DBC2;
+    font-family: "Lucida Console", Monaco, monospace;
+}
+
+.language-ascii-art-s a:hover {
+    color: #E359B4;
 }
 
 .language-ascii-art-xs {
@@ -307,6 +324,16 @@ input:checked + label + .content {
     background-color: #282828;
 }
 
+.language-ascii-art-xs a {
+    font-size: inherit;
+    color: #D3DBC2;
+    font-family: "Lucida Console", Monaco, monospace;
+}
+
+.language-ascii-art-xs a:hover {
+    color: #E359B4;
+}
+
 .god-text {
     font-size: 1.1em;
     width: auto;
@@ -316,6 +343,24 @@ input:checked + label + .content {
     background-color: #C0C0C0;
     -webkit-text-stroke-width: 0.4px;
     -webkit-text-stroke-color: red;
+}
+
+.gpg-outer {
+    border: 1px solid {{theme.gpg_outer}};
+    word-break: break-word;
+    display: inline-block;
+    padding: .5em;
+}
+
+.gpg-detail {
+    width: 40em;
+    padding-top: 0.5em;
+}
+
+.gpg-inner {
+    border: 1px solid {{theme.gpg_inner}};
+    padding: 0.6em;
+    font-family: monospace;
 }
 
 /*beginning of popup*/

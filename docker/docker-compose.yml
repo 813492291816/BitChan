@@ -14,8 +14,8 @@ services:
       - bitchan:/usr/local/bitchan
       - run_vol:/run
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
-    ports:
-      - "8000:8000"
+#    ports:
+#      - "8000:8000"
     cpuset: '0'
 
   bitchan_tor:
@@ -31,10 +31,9 @@ services:
     privileged: true
     volumes:
       - tor:/usr/local/tor
-      - tor_etc:/etc/tor
       - run_vol:/run
     cpuset: '0'
-    command: tor -f /etc/tor/torrc
+    command: tor -f /usr/local/tor/torrc
     depends_on:
       - bitchan_nginx
 
@@ -53,7 +52,7 @@ services:
     cpuset: '1,2'
     command: >
       bash -c "/home/bitchan/docker/bitmessage_setup.sh &&
-               /home/bitchan/database/upgrade_database.sh &&
+               /home/bitchan/database/upgrade_database_docker.sh &&
                /usr/local/bin/pybitmessage -d"
     depends_on:
       - bitchan_tor
@@ -70,11 +69,10 @@ services:
       - bitchan:/usr/local/bitchan
       - bitmessage:/usr/local/bitmessage
       - flask_session:/home/bitchan/flask_session
+      - gnupg:/usr/local/gnupg
       - tor:/usr/local/tor
-      - tor_etc:/etc/tor
       - var_lock:/var/lock
       - run_vol:/run
-      - /usr/bin/df:/usr/bin/df-host  # Change to the location of df on host system
       - /var/run/docker.sock:/var/run/docker.sock:ro  # For bitchan to control docker containers
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
@@ -94,8 +92,8 @@ services:
     volumes:
       - bitchan:/usr/local/bitchan
       - bitmessage:/usr/local/bitmessage
+      - gnupg:/usr/local/gnupg
       - tor:/usr/local/tor
-      - tor_etc:/etc/tor
       - var_lock:/var/lock
       - /var/run/docker.sock:/var/run/docker.sock:ro  # For bitchan to control docker containers
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
@@ -125,7 +123,7 @@ services:
       - i2pd:/home/i2pd/data
     cpuset: '0'
 #    ports:
-#      - "7999:7070"  # Console UI port
+#      - "7999:7070"  # I2P Console UI port
 
 volumes:
   run_vol:
@@ -134,9 +132,9 @@ volumes:
       device: tmpfs
   bitchan:
   bitmessage:
+  gnupg:
   flask_session:
   tor:
-  tor_etc:
   i2pd:
   var_lock:
 

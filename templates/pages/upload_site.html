@@ -32,6 +32,12 @@
                 <input name="stage" value="join" type="hidden">
                 <table class="themed">
                     <tr>
+                        <td>{{form_upload_site.enabled.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="checkbox" id="enabled" name="enabled" value="y" checked/>
+                        </td>
+                    </tr>
+                    <tr>
                         <td>{{form_upload_site.domain.label(class_='heading-bold')}}</td>
                         <td>
                             <input type="text" id="domain" name="domain"/>
@@ -129,6 +135,10 @@
                 <input name="stage" value="join" type="hidden">
                 <table class="themed">
                     <tr>
+                        <td>{{form_upload_site.enabled.label(class_='heading-bold')}}</td>
+                        <td>{{site_options['enabled']}}</td>
+                    </tr>
+                    <tr>
                         <td>{{form_upload_site.domain.label(class_='heading-bold')}}</td>
                         <td>{{site_options['domain']}}</td>
                     </tr>
@@ -197,6 +207,12 @@
                 <form method="post" enctype="multipart/form-data" autocomplete="off">
                 <input name="stage" value="join" type="hidden">
                 <table class="themed">
+                    <tr>
+                        <td>{{form_upload_site.enabled.label(class_='heading-bold')}}</td>
+                        <td>
+                            <input type="checkbox" id="enabled" name="enabled" value="y"{% if current_upload_site.enabled %} checked{% endif %}/>
+                        </td>
+                    </tr>
                     <tr>
                         <td>{{form_upload_site.domain.label(class_='heading-bold')}}</td>
                         <td>

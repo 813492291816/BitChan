@@ -52,18 +52,20 @@ Board
 
 {% block head %}
     <script>
-        function checkForm(form) {
-            form.submit_post.disabled = true;
-            form.submit_post.value = "Please wait...";
-        }
-
         $(document).ready(function() {
+
+            $("#btn_reply_submit").click(function (event) {
+                $("#btn_reply_submit").prop("disabled", true);
+                $("#btn_reply_submit").prop("value", "Posting...");
+            }
+
             var volume_set = document.getElementsByClassName("volume-75");
             if (volume_set.length) {
                 for(var i = 0; i <= volume_set.length; i++) {
                     volume_set[i].volume = 0.75;
                 }
             }
+
         });
 
         function randomString(id_field) {
@@ -165,7 +167,7 @@ Board
 {% endblock %}
 
 {% block body %}
-    {% if thread and not is_private or (is_private and on_any_access_list) %}
+    {% if (thread and not is_private or (is_private and on_any_access_list)) and not thread.hide %}
     <div id="popup_reply" class="overlay" style="z-index: 2;">
         <div id="popup_content" class="themed popup_reply_bg popup_reply">
             <span class="themed">Replying to {{thread.subject|safe}}</span>
@@ -184,6 +186,10 @@ Board
     {% include '/elements/display_lists.html' %}
     {% include '/elements/banner.html' %}
     <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
 
     <center>
         <span class="themed" style="font-size: 1.5em">
@@ -208,10 +214,6 @@ Board
             </div>
         </div>
     </div>
-    {% endif %}
-
-    {% if status_msg["status_message"] %}
-        {% include '/elements/status.html' %}
     {% endif %}
 
     <div style="padding-top: 1em">
@@ -262,29 +264,44 @@ Board
            .filter(board["messages"].message_steg.isnot("{}"))
            .order_by(board["messages"].timestamp_sent.asc()) %}
 
-    <div class="thread">
-    {% if not message_op_steg and not message_replies_steg.count() %}
-        <center><span class="god-text">[No steg found]</span></center>
-    {% elif message_op_steg %}
-        {% set post = message_op_steg %}
-        {% set text = format_message_steg(message_op_steg.message_id) %}
-        {% include '/elements/board/post_op.html' %}
-    {% elif message_op %}
+    {% if message_op %}
         {% set post = message_op %}
-        {% set text = '<span class="god-text">[No steg in OP]</span>' %}
-        {% include '/elements/board/post_op.html' %}
-    {% else %}
-        {% include '/elements/board/op_missing.html' %}
+        {% set text = post.message %}
     {% endif %}
 
-    {% for each_message in message_replies_steg %}
-        {% set post = each_message %}
-        {% set text = format_message_steg(each_message.message_id) %}
+    {% if thread.hide %}
+
+    <div class="thread" style="padding-bottom: 1em">
+        {% include '/elements/board/thread_hidden.html' %}
+    </div>
+
+    {% else %}
+
+    <div class="thread">
+        {% if not message_op_steg and not message_replies_steg.count() %}
+        <center><span class="god-text">[No steg found]</span></center>
+        {% elif message_op_steg %}
+            {% set post = message_op_steg %}
+            {% set text = format_message_steg(message_op_steg.message_id) %}
+            {% include '/elements/board/post_op.html' %}
+        {% elif message_op %}
+            {% set post = message_op %}
+            {% set text = '<span class="god-text">[No steg in OP]</span>' %}
+            {% include '/elements/board/post_op.html' %}
+        {% else %}
+            {% include '/elements/board/op_missing.html' %}
+        {% endif %}
+
+        {% for each_message in message_replies_steg %}
+            {% set post = each_message %}
+            {% set text = format_message_steg(each_message.message_id) %}
         <div class="post plaque" id="{{post.post_id}}">
             {% include '/elements/board/post_reply.html' %}
         </div>
-    {% endfor %}
+        {% endfor %}
     </div>
+
+    {% endif %}
 
     <div class="themed" style="clear: both; text-align: left; padding-left: 1.5em;">
         <div class="themed">

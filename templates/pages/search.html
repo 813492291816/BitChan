@@ -1,7 +1,8 @@
 {% extends "layout.html" %}
 
 {% set total_pages = (result_count / settings.results_per_page_search)|round(0, "ceil")|int %}
-{% set global_admin, allow_msg = allowed_access("is_global_admin") %}
+
+{%- set global_admin, allow_msg = allowed_access("is_global_admin") -%}
 
 {% block title %}Search - {% endblock %}
 
@@ -56,7 +57,13 @@
                 <option value="posts"{% if search_type == 'posts' %} selected{% endif %}>Posts</option>
                 <option value="threads"{% if search_type == 'threads' %} selected{% endif %}>Threads</option>
             </select>
-            <input type="text" id="search" name="search" value="{{search_string}}"/>
+            <select name="search_boards">
+                <option value="all"{% if search_boards == 'all' %} selected{% endif %}>All Boards</option>
+        {% for each_chan in table_boards.query.all() if each_chan.type == 'board' and ((not global_admin and not each_chan.restricted) or global_admin) %}
+                <option value="{{each_chan.address}}"{% if search_boards == each_chan.address %} selected{% endif %}>({{(each_chan.address)[:8]}}...) /{{each_chan.label|safe}}/</option>
+        {% endfor %}
+            </select>
+            <input type="text" id="search" name="search" value="{{search_string}}" autofocus/>
             OP <input type="checkbox" id="filter_op" name="filter_op" value="y"{% if filter_op %} checked{% endif %}>
         {% if global_admin %}
             Hidden <input type="checkbox" id="filter_hidden" name="filter_hidden" value="y"{% if filter_hidden %} checked{% endif %}>
@@ -65,16 +72,17 @@
         </form>
     </div>
 
-    {% if search_results or thread_results %}
-    {% if total_pages > 1 %}<div class="themed" style="padding: 1em 0;">{{total_pages}} Pages</div>{% endif %}
+    <div class="themed" style="padding: 1em 0;">
+        {{result_count}} Search Results{% if total_pages > 1 %}, {{total_pages}} Pages{% endif %}
+    </div>
 
-    {% include '/elements/footer_search_pages.html' %}
+    {% if search_results or thread_results %}
+        {% include '/elements/footer_search_pages.html' %}
     <div style="padding-top: 1em"></div>
 
     <form action="/search/{{search_string_b64}}/{{current_page}}" method="post">
 
         {% if search_type == "posts" and search_results %}
-        <div class="themed" style="padding: 1em 0;">{{result_count}} Posts</div>
     <table class="table themed" style="margin-left: auto; margin-right: auto;">
         <tr>
             {% if global_admin %}
@@ -84,6 +92,7 @@
             <td>Sent</td>
             <td>Age</td>
             <td>OP</td>
+            <td>Replies</td>
             <td>Sticky</td>
             <td>Lock</td>
             <td>Anchor</td>
@@ -106,6 +115,15 @@
             <td style="font-family: monospace">{{timestamp_to_date(each_msg.timestamp_sent)}}</td>
             <td>{{display_time(now - each_msg.timestamp_sent)}}</td>
             <td style="text-align: center">{% if each_msg.is_op %}X{% endif %}</td>
+            <td  class="pad" style="text-align: center">
+                {%- if each_msg.post_ids_replying_to_msg == "[]" -%}
+                0
+                {%- elif each_msg.post_ids_replying_to_msg|length == 13 -%}
+                1
+                {%- else -%}
+                {{(each_msg.post_ids_replying_to_msg | length) - (each_msg.post_ids_replying_to_msg | replace(",","") | length) + 1}}
+                {%- endif -%}
+            </td>
             <td style="text-align: center">
                     {% if thread_options["sticky"] %}
                 <img style="position: relative; top: 3px; height: 15px" title="Sticky{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
@@ -168,7 +186,6 @@
         {% endif %}
 
         {% if search_type == "threads" and thread_results %}
-    <div class="themed" style="padding: 1em 0;">{{result_count}} Threads</div>
     <table class="table themed" style="margin-left: auto; margin-right: auto;">
         <tr>
             {% if global_admin %}

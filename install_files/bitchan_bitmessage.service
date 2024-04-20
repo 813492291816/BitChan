@@ -11,7 +11,7 @@ KillMode=process
 WorkingDirectory=/usr/local/bitchan/bitmessage
 Environment="BITMESSAGE_HOME=/usr/local/bitchan/bitmessage"
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/local/bitchan/venv2/bin/python /usr/local/bin/pybitmessage -d
+ExecStart=/usr/local/bitchan_venv2/bin/python /usr/local/bin/pybitmessage -d
 ExecReload=/bin/kill -HUP $MAINPID
 
 [Install]

@@ -104,6 +104,7 @@ Board
                                 document.getElementById("post_preview").style.display = '';
                                 document.getElementById("post_preview_body").style.display = '';
                                 $("#reply_submit_preview").html(data.preview);
+                                if (document.getElementById('popup_captcha') != null) document.getElementById('popup_captcha').value = "";
                             }
                             output_str += '</span>';
                             $("#reply_submit_output").html(output_str);
@@ -119,7 +120,7 @@ Board
                                 document.getElementById("post_preview_body").style.display = 'none';
                             }
 
-                            refresh_captcha();
+                            if (document.getElementById('popup_captcha') != null) refresh_captcha();
 
                         },
                         error: function (e) {
@@ -130,7 +131,7 @@ Board
                             $("#btn_preview_submit").prop("disabled", false);
                             $("#btn_reply_submit").prop("value", "Post");
                             $("#btn_reply_submit").prop("disabled", false);
-                            refresh_captcha();
+                            if (document.getElementById('popup_captcha') != null) refresh_captcha();
 
                         }
                     });
@@ -144,8 +145,7 @@ Board
                     $("#btn_preview_submit").prop("disabled", false);
                     $("#btn_reply_submit").prop("value", "Post");
                     $("#btn_reply_submit").prop("disabled", false);
-                    refresh_captcha();
-
+                    if (document.getElementById('popup_captcha') != null) refresh_captcha();
                 }
             });
         }
@@ -331,7 +331,11 @@ Board
     {% else %}
             Public
     {% endif %}
-            Board <span style="font-size: 0.7em">[<a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a> / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a>]</span>
+            Board <span style="font-size: 0.7em">[<a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a>
+            / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a>
+            / <a class="link" title="Search" href="/search/0/1?sb={{board['current_chan'].address}}">Search</a>
+            {% if settings.rss_enable %}/ <a class="link" title="RSS via Tor" href="/rss/tor/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}">RSS-tor</a>{% endif %}
+            {% if settings.rss_enable_i2p %}/ <a class="link" title="RSS via I2P" href="/rss/i2p/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}">RSS-i2p</a>{% endif %}]</span>
         </span>
     </center>
     <br/>
@@ -383,18 +387,18 @@ Board
 
     {%- set steg_found = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
-           .filter(board["messages"].message_steg.isnot("{}")).count() -%}
+           .filter(board["messages"].message_steg != "{}").count() -%}
 
     {%- set message_op_steg = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
-           .filter(board["messages"].message_steg.isnot("{}"))
+           .filter(board["messages"].message_steg != "{}")
            .first() -%}
 
     {%- set message_replies_steg = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
-           .filter(board["messages"].message_steg.isnot("{}"))
+           .filter(board["messages"].message_steg != "{}")
            .order_by(post_order_asc) -%}
 
     {% if message_op_steg or message_replies_steg.count() -%}
@@ -486,7 +490,7 @@ Board
             {%- set text = each_message.message -%}
             {%- set reply_steg = board["messages"].query
                .filter(board["messages"].message_id == each_message.message_id)
-               .filter(board["messages"].message_steg.isnot("{}")).count() -%}
+               .filter(board["messages"].message_steg != "{}").count() -%}
         <div class="post plaque" id="{{post.post_id}}">
             {{generate_post_html(post.message_id)|safe}}
         </div>
@@ -508,6 +512,9 @@ Board
             / <a class="link" title="Last 100" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}?last=100">Last 100</a>
             / <a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a>
             / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a>
+            / <a class="link" title="Search" href="/search/0/1?sb={{board['current_chan'].address}}">Search</a>
+            {% if settings.rss_enable %}/ <a class="link" title="RSS via Tor" href="/rss/tor/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}">RSS-tor</a>{% endif %}
+            {% if settings.rss_enable_i2p %}/ <a class="link" title="RSS via I2P" href="/rss/i2p/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}">RSS-i2p</a>{% endif %}
             <span id="new-post-update-init"></span><span id="new-post-update"></span>
         </div>
     </div>

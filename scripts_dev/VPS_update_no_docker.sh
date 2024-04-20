@@ -67,8 +67,6 @@ CMD1="rsync -e ssh -r -a --progress --partial \
 	${DIR_BITCHAN}/bitchan_daemon.py \
 	${DIR_BITCHAN}/bitchan_flask.py \
 	${DIR_BITCHAN}/config.py \
-	${DIR_BITCHAN}/install_packages.sh \
-	${DIR_BITCHAN}/install_tor.sh \
 	${DIR_BITCHAN}/requirements.txt \
 	${DIR_BITCHAN}/requirements_bitmessage.txt \
 	${2}@${3}:${4}"

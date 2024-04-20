@@ -6,14 +6,12 @@ import tempfile
 
 import gnupg
 
-from config import DATABASE_BITCHAN
+from config import DB_PATH
 from config import GPG_DIR
 from database.models import PGP
 from database.utils import session_scope
 from utils.files import delete_file
 from utils.general import get_random_alphanumeric_string
-
-DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 
 logger = logging.getLogger("bitchan.gpg")
 

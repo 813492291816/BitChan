@@ -1,6 +1,9 @@
 import json
 import logging
+import os
 import time
+
+import qbittorrentapi
 
 import config
 from bitchan_client import DaemonCom
@@ -11,7 +14,9 @@ from database.models import Games
 from database.models import Messages
 from database.models import PostCards
 from database.models import Threads
+from database.models import UploadTorrents
 from database.utils import session_scope
+from utils.files import delete_file
 from utils.files import delete_message_files
 from utils.replacements import is_board_post_reply
 from utils.replacements import is_post_id_reply
@@ -21,14 +26,12 @@ from utils.shared import regenerate_ref_to_from_post
 
 daemon_com = DaemonCom()
 
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
-
 logger = logging.getLogger('bitchan.posts')
 
 
 def delete_message_replies(message_id):
     post_id = get_post_id(message_id)
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         messages = new_session.query(Messages).filter(
             Messages.post_ids_replying_to_msg.contains(post_id)).all()
         for each_entry in messages:
@@ -48,9 +51,38 @@ def delete_message_replies(message_id):
         new_session.commit()
 
 
+def delete_message_torrent(message_id):
+    with session_scope(config.DB_PATH) as new_session:
+        torrent = new_session.query(UploadTorrents).filter(
+            UploadTorrents.message_id == message_id).first()
+        if not torrent:
+            logger.error(f"Torrent not found for message with ID {message_id}")
+            return
+
+        # Delete torrent through qbittorrent
+        conn_info = dict(host=config.QBITTORRENT_HOST, port=8080)
+        qbt_client = qbittorrentapi.Client(**conn_info)
+        try:
+            qbt_client.auth_log_in()
+            with qbittorrentapi.Client(**conn_info) as qbt_client:
+                qbt_client.torrents_delete(delete_files=True, torrent_hashes=torrent.torrent_hash)
+        except Exception as err:
+            logger.error(f"Error deleting torrent: {err}")
+
+        # For good measure, attempt to delete where data and torrent file (if qbittorrent api failed ot delete)
+        path_data = os.path.join('/i2p_qb/Downloads/', torrent.file_hash)
+        path_data_zip = os.path.join('/i2p_qb/Downloads/', f"{torrent.file_hash}.zip")
+        path_torrent = os.path.join('/i2p_qb/torrent_autostart/', f"{torrent.file_hash}.torrent")
+        delete_file(path_data)
+        delete_file(path_data_zip)
+        delete_file(path_torrent)
+
+        new_session.delete(torrent)  # Delete DB entry
+
+
 def delete_chan(address):
     logger.info(f"Deleting chan {address} from BitChan database.")
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         chan = new_session.query(Chan).filter(
             Chan.address == address).first()
         if chan:
@@ -59,7 +91,7 @@ def delete_chan(address):
 
 
 def delete_post(message_id, only_hide=False):
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         message = new_session.query(Messages).filter(
             Messages.message_id == message_id).first()
         if message:
@@ -75,6 +107,7 @@ def delete_post(message_id, only_hide=False):
                 new_session.commit()
 
             if only_hide:
+                regenerate_ref_to_from_post(message_id)
                 message.hide = True
                 message.hide_ts = time.time()
                 message.regenerate_popup_html = True
@@ -84,6 +117,7 @@ def delete_post(message_id, only_hide=False):
 
             new_session.expunge_all()
 
+    # Not only hiding, proceed with full deletion
     if message:
         # Delete all files associated with message
         delete_message_files(message_id)
@@ -91,10 +125,13 @@ def delete_post(message_id, only_hide=False):
         # Delete reply entry and references to post ID
         delete_message_replies(message_id)
 
+        # Delete torrent associated with post
+        delete_message_torrent(message_id)
+
         # Add deleted message entry
         daemon_com.trash_message(message_id)
 
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             # Indicate which board needs to regenerate post numbers
             chan = new_session.query(Chan).filter(
                 Chan.id == chan_id).first()
@@ -102,10 +139,7 @@ def delete_post(message_id, only_hide=False):
                 chan.regenerate_numbers = True
                 new_session.commit()
 
-        if only_hide:
-            regenerate_ref_to_from_post(message_id)
-        else:
-            regenerate_ref_to_from_post(message_id, delete_message=True)
+        regenerate_ref_to_from_post(message_id, delete_message=True)
 
         # Update thread timestamp
         update_thread_timestamp(thread_hash)
@@ -116,7 +150,7 @@ def delete_post(message_id, only_hide=False):
 
 
 def delete_thread(thread_id, only_hide=False):
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         card = new_session.query(PostCards).filter(
             PostCards.thread_id == thread_id).first()
         if card:
@@ -169,7 +203,7 @@ def check_address_for_ban(board_address, string_address):
 
 def file_hash_banned(list_hashes, address=None):
     banned_hashes = []
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         for each_hash in list_hashes:
             if each_hash:
                 banned_hash = new_session.query(BanedHashes).filter(
@@ -192,7 +226,7 @@ def file_hash_banned(list_hashes, address=None):
 
 
 def restore_post(message_id):
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         message = new_session.query(Messages).filter(
             Messages.message_id == message_id).first()
         thread_hash = message.thread.thread_hash
@@ -214,7 +248,7 @@ def restore_post(message_id):
 
 
 def restore_thread(thread_id):
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         thread = new_session.query(Threads).filter(
             Threads.thread_hash == thread_id).first()
         if thread:
@@ -226,7 +260,7 @@ def restore_thread(thread_id):
 def update_board_timestamp(address):
     """ Update board timestamp """
     logger.info(f"Updating board {address} timestamps")
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         chan = new_session.query(Chan).filter(
             Chan.address == address).first()
         if chan:
@@ -250,7 +284,7 @@ def update_board_timestamp(address):
 def update_thread_timestamp(thread_hash):
     """ Update thread timestamp """
     logger.info(f"Updating thread {thread_hash} timestamps")
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         thread = new_session.query(Threads).filter(
             Threads.thread_hash == thread_hash).first()
         if thread:
@@ -274,7 +308,7 @@ def update_thread_timestamp(thread_hash):
 def process_message_replies(message_id, message, thread_hash, chan_address):
     replies = []
 
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         # Check for post replies
         if message:
             lines = message.split("<br/>")

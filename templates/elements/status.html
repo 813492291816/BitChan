@@ -6,11 +6,13 @@
 </div>
 {% endif %}
 
+{%- if 'status_title' in status_msg and status_msg['status_title'] == "Success_Silent" %}
+{% else %}
 <div class="intro bold themed
-    {%- if replace_lt_gt(status_msg['status_title']) == 'Error' %} error
-    {%- elif replace_lt_gt(status_msg['status_title']) == 'Success' %} success
+    {%- if 'status_title' in status_msg and replace_lt_gt(status_msg['status_title']) == 'Error' %} error
+    {%- elif 'status_title' in status_msg and replace_lt_gt(status_msg['status_title']) == 'Success' %} success
     {%- endif %}" style="overflow-wrap: break-word;">
-    <center><h1 class="bold" style="font-size: 20px; letter-spacing: -1px; margin-top: 0px;">{{replace_lt_gt(status_msg['status_title'])|safe}}</h1></center>
+    <center><h1 class="bold" style="font-size: 20px; letter-spacing: -1px; margin-top: 0px;">{%- if 'status_title' in status_msg %}{{replace_lt_gt(status_msg['status_title'])|safe}}{% else %}NO TITLE{% endif %}</h1></center>
     {% if status_msg['status_message'] %}
     <br/>
     <center>
@@ -24,3 +26,4 @@
     </center>
     {% endif %}
 </div>
+{% endif %}

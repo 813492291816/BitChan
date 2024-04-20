@@ -8,7 +8,7 @@ sudo apt install -y python3 python3-dev python3-pip libjpeg-dev zlib1g-dev libcu
 printf "\nDoes Python3 venv exist?"
 if [[ ! -e "$LOC"/env/bin/python3 ]]; then
     printf " No. Making.\n"
-    sudo python3 -m pip install virtualenv --upgrade
+    sudo python3 -m pip install --no-cache-dir --upgrade virtualenv
     rm -rf "$LOC"/env
     python3 -m virtualenv "$LOC/env"
 else

@@ -68,7 +68,9 @@
     {% endif %}
     </div>
 
-    <div class="themed" style="text-align: center">{{overboard_info["thread_count"]}} Threads</div>
+    {% set total_pages = (overboard_info["thread_count"] / per_page)|round(0, "ceil")|int %}
+
+    <div class="themed" style="text-align: center">{{overboard_info["thread_count"]}} Threads{% if total_pages %}, {{total_pages}} Pages{% endif %}</div>
 
     {% include '/elements/footer_overboard_pages.html' %}
 

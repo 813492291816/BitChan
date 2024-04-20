@@ -4,7 +4,7 @@ After=bitchan_backend.service
 
 [Service]
 WorkingDirectory=/usr/local/bitchan/BitChan
-ExecStart=/usr/local/bitchan/venv3/bin/python -m gunicorn \
+ExecStart=/usr/local/bitchan_venv3/bin/python -m gunicorn \
 --workers 1 \
 --worker-class gthread \
 --threads 4 \

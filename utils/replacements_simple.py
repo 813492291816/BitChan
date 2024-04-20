@@ -21,8 +21,6 @@ from utils.general import get_random_alphanumeric_string
 from utils.general import is_int
 from utils.god_song_01 import make_god_song_01
 
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
-
 logger = logging.getLogger("bitchan.replacements_simple")
 
 
@@ -848,7 +846,7 @@ def split_into_sentences(text):
 
 
 def stichomancy_pull(seed, select_book_id=None):
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         settings = new_session.query(GlobalSettings).first()
         if not settings.allow_net_book_quote:
             # Don't allow connecting to get random quote if setting is False

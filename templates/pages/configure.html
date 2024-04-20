@@ -94,7 +94,7 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2">Max total size (MB) of post attachments to automatically download from external upload sites (0 disables auto-download).</td>
+                <td colspan="2">Max total size (MB) of post attachments to automatically download from external upload sites or torrent via i2p (0 disables auto-download).</td>
             </tr>
             <tr>
                 <td>{{form_settings.max_extract_size.label(class_='heading-bold')}}</td>
@@ -228,6 +228,15 @@
                 <td colspan="2">This will determine whether 12-hour or 24-hour time is displayed in post headers. Changing this setting will cause all cached post HTML to be regenerated.</td>
             </tr>
             <tr>
+                <td>{{form_settings.title_text.label(class_='heading-bold')}}</td>
+                <td>
+                     <input type="text" name="title_text" value="{{settings.title_text}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Add custom text to the title to differentiate from other BitChan tabs in a browser.</td>
+            </tr>
+            <tr>
                 <td>{{form_settings.results_per_page_board.label(class_='heading-bold')}}</td>
                 <td>
                     <input type="number" name="results_per_page_board" value="{{settings.results_per_page_board}}"/>
@@ -305,6 +314,14 @@
             <tr>
                 <td colspan="2">This is HTML that will be inserted in the layout page BODY.</td>
             </tr>
+            <tr>
+                <td class="heading-bold" colspan="2">I2P Torrent Tracker URLs
+                    <textarea rows="7" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="i2p_trackers" name="i2p_trackers">{{i2p_trackers|safe}}</textarea>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">I2P torrent tracker list. Must be .i2p URLs separated by carriage returns (each URL on its own line).</td>
+            </tr>
             <tr></tr>
             <tr style="background-color: initial">
                 <td colspan="2" class="heading-2 head-center themed">Bitmessage Settings</td>
@@ -339,7 +356,7 @@
                 <td colspan="2" class="heading-2 head-center themed">Kiosk Settings</td>
             </tr>
             <tr>
-                <td>{{form_settings.enable_kiosk_mode.label(class_='heading-bold')}}</td>
+                <td>{{form_settings.enable_kiosk_mode.label(class_='heading-bold')}} (<a class="link" href="/kiosk_users">Kiosk User Management</a>)</td>
                 <td>
                     <input type="checkbox" id="enable_kiosk_mode" name="enable_kiosk_mode" value="y"{% if settings.enable_kiosk_mode %} checked{% endif %}/>
                 </td>
@@ -364,7 +381,7 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2">Allow users to post on boards. Turn the kiosk into read-only by enabling this setting.</td>
+                <td colspan="2">Allow users to post on boards. Turn the kiosk into read-only by disabling this setting.</td>
             </tr>
             <tr>
                 <td>{{form_settings.kiosk_allow_gpg.label(class_='heading-bold')}}</td>
@@ -382,7 +399,25 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2">Allow users to use of the Bitmessage post Upload Method.</td>
+                <td colspan="2">Disallow users to use of the Bitmessage post Upload Method.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_disable_i2p_torrent_attach.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="kiosk_disable_i2p_torrent_attach" name="kiosk_disable_i2p_torrent_attach" value="y"{% if settings.kiosk_disable_i2p_torrent_attach %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Disallow users to use of the I2P Torrent post Upload Method.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_disable_torrent_file_download.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="kiosk_disable_torrent_file_download" name="kiosk_disable_torrent_file_download" value="y"{% if settings.kiosk_disable_torrent_file_download %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Disallow users from downloading the torrent file of a post with an I2P/BitTorrent upload method. For the torrent file to be available, the post attachment option also needs to be set to unencrypted.</td>
             </tr>
             <tr>
                 <td>{{form_settings.kiosk_allow_download.label(class_='heading-bold')}}</td>
@@ -485,6 +520,15 @@
                 <td colspan="2">Enable DoS-protection. Makes the user initially wait 5 seconds then solve a captcha before being granted access. Useful when Kiosk Mode is enabled. Requires session in browser.</td>
             </tr>
             <tr>
+                <td>{{form_settings.hide_version.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="hide_version" name="hide_version" value="y"{% if settings.hide_version %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Hide the version number from the title and front page.</td>
+            </tr>
+            <tr>
                 <td>{{form_settings.enable_page_rate_limit.label(class_='heading-bold')}}</td>
                 <td>
                     <input type="checkbox" id="enable_page_rate_limit" name="enable_page_rate_limit" value="y"{% if settings.enable_page_rate_limit %} checked{% endif %}/>
@@ -512,13 +556,137 @@
                 <td colspan="2">When rate-limiting, the period (seconds) to allow the Maximum Requests. E.g. maximum of 10 requests per 60 seconds.</td>
             </tr>
             <tr>
-                <td>{{form_settings.hide_all_board_list_passphrases.label(class_='heading-bold')}}</td>
+                <td>{{form_settings.remote_delete_action.label(class_='heading-bold')}}</td>
                 <td>
-                    <input type="checkbox" id="hide_all_board_list_passphrases" name="hide_all_board_list_passphrases" value="y"{% if settings.hide_all_board_list_passphrases %} checked{% endif %}/>
+                    <select name="remote_delete_action">
+                         <option value="delete"{% if settings.remote_delete_action == "delete" %} selected{% endif %}>Delete</option>
+                         <option value="hide"{% if settings.remote_delete_action == "hide" %} selected{% endif %}>Hide</option>
+                    </select>
                 </td>
             </tr>
             <tr>
-                <td colspan="2">Prevent passphrases from being shown in the Board/List Information.</td>
+                <td colspan="2">When an admin delete of a post or thread is remotely performed by a board admin/mod, your local install can either delete or hide the post/thread.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.disable_downloading_upload_site.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="disable_downloading_upload_site" name="disable_downloading_upload_site" value="y"{% if settings.disable_downloading_upload_site %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Disable downloading post attachments from upload sites.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.disable_downloading_i2p_torrent.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="disable_downloading_i2p_torrent" name="disable_downloading_i2p_torrent" value="y"{% if settings.disable_downloading_i2p_torrent %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Disable downloading post attachments from i2p torrents.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.ttl_seed_i2p_torrent_op_days.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="ttl_seed_i2p_torrent_op_days" value="{{settings.ttl_seed_i2p_torrent_op_days}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">How long to seed i2p torrent post attachments for the original post of a thread. Value is in days.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.ttl_seed_i2p_torrent_reply_days.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="ttl_seed_i2p_torrent_reply_days" value="{{settings.ttl_seed_i2p_torrent_reply_days}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">How long to seed i2p torrent post attachments for reply posts of a thread. Value is in days.</td>
+            </tr>
+
+            <tr style="background-color: initial">
+                <td colspan="2" class="heading-2 head-center themed">RSS Settings</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.rss_enable.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="rss_enable" name="rss_enable" value="y"{% if settings.rss_enable %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Enable Tor RSS feeds of posts to be generated for boards and threads. The main URLs of the RSS feed will use the specified Tor URL.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.rss_enable_i2p.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="rss_enable_i2p" name="rss_enable_i2p" value="y"{% if settings.rss_enable_i2p %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Enable I2P RSS feeds of posts to be generated for boards and threads. The main URLs of the RSS feed will use the specified I2P URL.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.rss_url.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="text" name="rss_url" value="{{settings.rss_url}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The Tor URL to use when generating URLs in the Tor RSS feed. Note that if HTML is enabled for posts, the URLs will already be generated as relative URLs will not respect the domain listed in this setting. Disable HTML in RSS if you want the specified domain in the URLs to be used.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.rss_url_i2p.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="text" name="rss_url_i2p" value="{{settings.rss_url_i2p}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The I2P URL to use when generating URLs in the I2P RSS feed. Note that if HTML is enabled for posts, the URLs will already be generated as relative URLs will not respect the domain listed in this setting. Disable HTML in RSS if you want the specified domain in the URLs to be used.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.rss_number_posts.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="rss_number_posts" value="{{settings.rss_number_posts}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">How many posts to include in each RSS file.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.rss_char_length.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="rss_char_length" value="{{settings.rss_char_length}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">If HTML in posts is disabled, plain text posts will be truncated to this character limit.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.rss_use_html_posts.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="rss_use_html_posts" name="rss_use_html_posts" value="y"{% if settings.rss_use_html_posts %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">If available, generate RSS feed posts with popup HTML. HTML posts will already be truncated based on popup HTML settings. Otherwise, posts will be plain text truncated to the RSS character limit specified.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.rss_rate_limit_number_requests.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="rss_rate_limit_number_requests" value="{{settings.rss_rate_limit_number_requests}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">How many RSS requests are allowed per time period.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.rss_rate_limit_period_sec.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="rss_rate_limit_period_sec" value="{{settings.rss_rate_limit_period_sec}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The time period (seconds) to rate limit RSS requests with a sliding window counter.</td>
             </tr>
         </table>
 
@@ -653,7 +821,7 @@
 
     <div class="heading-2 head-center themed">Board/List Options</div>
 
-    <a class="head-center themed" href="/unlisted">Unlisted Page</a>
+    <a class="head-center themed" href="/unlisted">Unlisted Page</a> / <a class="head-center themed" href="/restricted">Restricted Page</a>
 
     <form method="post" enctype="multipart/form-data">
     <div class='outer' style="padding-bottom: 3em;">
@@ -662,7 +830,9 @@
                 <td>Address</td>
                 <td>Type</td>
                 <td>Name</td>
-                <td>Unlist</td>
+                <td style="writing-mode: sideways-lr;">Unlist</td>
+                <td style="writing-mode: sideways-lr;">Restrict</td>
+                <td style="writing-mode: sideways-lr;">Hide Passphrase</td>
             </tr>
         {% for each_type in [chans_board_info, chans_list_info] %}
             {% for each_address in each_type %}
@@ -677,6 +847,8 @@
                     {% endif %}
                 </td>
                 <td><input type="checkbox" id="option_unlisted_{{each_address}}" name="option_unlisted_{{each_address}}" value="y"{% if each_type[each_address]["db"].unlisted %} checked{% endif %}/></td>
+                <td><input type="checkbox" id="option_restricted_{{each_address}}" name="option_restricted_{{each_address}}" value="y"{% if each_type[each_address]["db"].restricted %} checked{% endif %}/></td>
+                <td><input type="checkbox" id="option_hide_passphrase_{{each_address}}" name="option_hide_passphrase_{{each_address}}" value="y"{% if each_type[each_address]["db"].hide_passphrase %} checked{% endif %}/></td>
             </tr>
             {% endfor %}
         {% endfor %}

@@ -3,8 +3,6 @@ import logging
 import config
 from bitchan_client import DaemonCom
 
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
-
 logger = logging.getLogger('bitchan.message_check')
 daemon_com = DaemonCom()
 

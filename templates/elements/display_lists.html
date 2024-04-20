@@ -1,9 +1,25 @@
+{%- set break_tracker = namespace(list_exists = False) -%}
+{%- for address in chans_list_info if (global_admin and not break_tracker.chan_exists) or
+                                      (not global_admin and
+                                       not chans_list_info[address]["db"].unlisted and
+                                       not chans_list_info[address]["db"].restricted and
+                                       not break_tracker.list_exists) -%}
+    {%- set break_tracker.list_exists = True -%}
+{%- endfor -%}
+
 <div class="chans themed">
     <center>
+    {% if break_tracker.list_exists %}
         <a class="link" href="/lists">Lists</a> [
-    {% for address in chans_list_info if not chans_list_info[address]["db"].unlisted -%}
+        {% for address in chans_list_info if global_admin or
+                                             (not global_admin and
+                                              not chans_list_info[address]["db"].unlisted and
+                                              not chans_list_info[address]["db"].restricted) -%}
         <a class="link" title="{{chans_list_info[address]['description']|safe}}" href="/list/{{address}}">{{chans_list_info[address]["label_short"]|safe}}</a>{% if not loop.last %} / {% endif %}
-    {% endfor %}
+        {% endfor %}
         ]
+    {% else %}
+        No Lists
+    {% endif %}
     </center>
 </div>

@@ -1,3 +1,45 @@
+## 1.3.0 (2024/04/20)
+
+This release has several incompatibilities with v1.2.0, therefore v1.2.0 and v1.3.0 will not be able to communicate with each other. Due to significant changes, there isn't an option to upgrade from v1.2.0 to v1.3.0, so a clean install will need to be performed.
+
+Notes on BitTorrent over I2P feature: The introduction of BitTorrent over I2P as a post attachment method removes the reliance on 3rd party upload sites for hosting attachment data and improves the privacy and security of the transmitted data. Only torrents with I2P trackers will function. Trackers with a TLD other than i2p are prohibited and will result in an error if you try to set non-I2P trackers on the configuration page or attempt to send or receive an attachment using BitTorrent over I2P using a non-I2P tracker.
+
+ - Fix b64 encoding label when adding address book entry to bitmessage
+ - Fix error when replying to or forwarding mailbox messages
+ - Fix decoding error in steg message
+ - Fix index error when attaching files to post
+ - Fix requiring manual CSS override if received Admin Command with CSS is the same as what's currently set
+ - Fix deleting boards/lists from private lists
+ - Fix OP healing bug that prevents replies from being sent if OP is too large
+ - Fix ability to use Bitmessage upload method when it's disabled
+ - Fix post preview when captchas are disabled
+ - Add I2P BitTorrent as an attachment upload method using qBittorrent
+ - Add RSS feed support for Boards and Threads
+ - Add tor Hidden Service PoW support for DoS protection
+ - Add global sliding window request rate limiter (implemented for RSS requests)
+ - Add Kiosk User Management System
+ - Add Board Rule: Restrict Thread Creation to Owners, Admins, and Thread Creation Users
+ - Add option to disable downloading attachments from upload sites or i2p torrents
+ - Add option to select what happens when a post/thread is remotely deleted (options: hide or delete)
+ - Add ability to restrict board/list. Similar to unlisted, but attempting to load the board will result in 404 Error as though it doesn't exist
+ - Add option to hide BitChan version
+ - Add option to set web page title text
+ - Add ellipses to page navigation when there are an excessive number of pages
+ - Add display of EXIF data for image attachments
+ - Add number of replies for each post on /search and /recent
+ - Add /random_post endpoint to take you to a random post
+ - Add ability to hide passphrases for individual boards/lists rather than global setting
+ - Add ability to search a specific board
+ - Add ability to download torrent file if I2P/BitTorrent post attachment is unencrypted
+ - Add AVIF and APNG image support
+ - Remove stale message expire time entries
+ - Remove Python3 virtualenv from Docker volume
+ - Switch from using Sqlite3 to MySQL
+ - Update Python packages
+ - Update tor to 0.4.8.10
+ - Update i2pd to 2.50.2
+
+
 ## 1.2.0 (2023/04/24)
 
 This release incorporates several changes that are incompatible with the previous version. Therefore, it is recommended to do a clean install.
@@ -43,6 +85,7 @@ This release also enables BitChan to be installed natively in a Debian-based Lin
  - Add ability to disable upload sites
  - Add ability to set bitmessage in/out connection settings with simple dropdown
  - Add post attachment upload progress page
+ - Add Success to access graph on Stats page
  - Remove Admin Command: Custom Spoiler
  - Improve data display on /stats page
  - Update tor to 0.4.7.9

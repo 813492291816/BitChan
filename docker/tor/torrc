@@ -6,15 +6,25 @@ HiddenServiceDir /usr/local/tor/bm
 HiddenServicePort 8444 172.28.1.3:8444
 
 # Random address (do not edit, enabled/disabled by BitChan)
-# These can be uncommented before building for the first time to start a hidden service
+# These can be manually uncommented before building for the first time to start a hidden service
 # Command to view hostname after being built: sudo docker exec -it bitchan_tor cat /usr/local/tor/rand/hostname
+# Random Hidden Service Start
 #HiddenServiceDir /usr/local/tor/rand
 #HiddenServicePort 80 unix:/run/nginx.sock
+#HiddenServicePoWDefensesEnabled 1
+#HiddenServicePoWQueueRate 3
+#HiddenServicePoWQueueBurst 10
+# Random Hidden Service End
 
 # Custom address (do not edit, enabled/disabled by BitChan)
+# Custom Hidden Service Start
 #HiddenServiceDir /usr/local/tor/cus
 #HiddenServicePort 80 unix:/run/nginx.sock
+#HiddenServicePoWDefensesEnabled 1
+#HiddenServicePoWQueueRate 3
+#HiddenServicePoWQueueBurst 10
+# Custom Hidden Service End
 
 # You can enable client authorization if using a hidden onion service
-# See BitChan/docker/tor/Dockerfile for instructions how to generate and enable the auth file
+# See BitChan/docker/tor/tor notes.txt for instructions how to generate and enable the auth file
 # ClientOnionAuthDir /usr/local/tor/authorized_clients

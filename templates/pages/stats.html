@@ -47,12 +47,15 @@
                 <tr>
                     <td>Board/List</td>
                     <td>Page Loads</td>
+                    <td>RSS</td>
                 </tr>
                 {% for board_address, count in dict_stats["boards"].items() %}
                 <tr>
                     <td>
                     {% set chan = get_chan_from_board_address(board_address) %}
-                    {% if chan and chan.type == "board" %}
+                    {% if board_address == "0" %}
+                        All Posts RSS Feed
+                    {% elif chan and chan.type == "board" %}
                         <a class="link" title="Board: {{chan.description|safe}}" href="/board/{{chan.address}}/1">/{{chan.label|safe}}/</a>
                     {% elif chan and chan.type == "list" %}
                         <a class="link" title="List: {{chan.description|safe}}" href="/list/{{chan.address}}">/{{chan.label|safe}}/</a>
@@ -60,7 +63,8 @@
                         {{board_address}}
                     {% endif %}
                     </td>
-                    <td>{{count}}</td>
+                    <td>{{count["requests"]}}</td>
+                    <td>{{count["rss"]}}</td>
                 </tr>
                 {% endfor %}
             </table>
@@ -73,6 +77,7 @@
                     <td>Thread</td>
                     <td>Page Loads</td>
                     <td>Updates</td>
+                    <td>RSS</td>
                 </tr>
                 {% for thread_hash, count in dict_stats["threads"].items() %}
                 <tr>
@@ -88,6 +93,7 @@
                     </td>
                     <td>{{count["requests"]}}</td>
                     <td>{{count["requests_update"]}}</td>
+                    <td>{{count["rss"]}}</td>
                 </tr>
                 {% endfor %}
             </table>

@@ -1,7 +1,9 @@
+{%- set global_admin, allow_msg = allowed_access("is_global_admin") -%}
+
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <title>{% if settings.maintenance_mode %}MAINTENANCE - {% endif %}{% block title %}{% endblock %}BitChan {{config.VERSION_BITCHAN}}</title>
+        <title>{% if settings.maintenance_mode %}MAINTENANCE - {% endif %}{% block title %}{% endblock %}{% if settings.title_text %}{{settings.title_text}}{% endif %}{% if not settings.hide_version %} - v{{config.VERSION_BITCHAN}}{% endif %}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" type="image/x-icon" />
         <script src="/static/js/jquery-3.5.1.min.js"></script>
@@ -90,18 +92,19 @@ $(document).ready(function() {
         <nav class="stickynav">
             <a class="link nav-item" href="#bottom">[▼]</a> <a class="link nav-item" href="#top">[▲]</a>
         </nav>
-        <div class="themed navbar">
+        <div class="themed">
             <center style="padding-left: 1.5em; padding-right: 1.5em;">
                 <a class="bold link" href="/">Home</a>
                 / <a class="bold link" href="/overboard/0/1">Overboard</a>
                 / <a class="bold link" href="/recent/0/1">Recent</a>
                 / <a class="bold link" href="/search/0/1">Search</a>
-            {% if not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) -%}
-                / <a class="bold link" href="/join">Create or Join</a>
+                / <a class="bold link" href="/random_post">⚄</a>
+            {% if not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and logged_in and global_admin) -%}
+                / <a class="bold link" href="/join">Create|Join</a>
                 / <a class="bold link" href="/identities">Identities</a>
-                / <a class="bold link" href="/mailbox/0/0/0/0">Mailboxes</a> ({{unread_mail}})
-                / <a class="bold link" href="/address_book">Address Book</a>
-                / <a class="bold link" href="/configure">Configure</a>
+                / <a class="bold link" href="/mailbox/0/0/0/0">Mail</a> ({{unread_mail}})
+                / <a class="bold link" href="/address_book">Addresses</a>
+                / <a class="bold link" href="/configure">Config</a>
                 / <a class="bold link" href="/status">Status</a>
                 / <a class="bold link" href="/stats">Stats</a>
                 / <a class="bold link" href="/gpg">GPG</a>
@@ -214,7 +217,6 @@ $(document).ready(function() {
             </div>
         </div>
 
-        <div style="padding-top: 1.5em"></div>
         {% if settings.html_body %}
             {{settings.html_body|safe}}
         {% endif %}

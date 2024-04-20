@@ -22,20 +22,19 @@ def steg_encrypt(orig_img, steg_img, sec_msg, gpg_pass):
             # PGP-encrypt steg message
             gpg = gnupg.GPG()
             enc_msg = gpg.encrypt(
-                sec_msg, symmetric="AES256", passphrase=gpg_pass, recipients=None)
+                sec_msg.encode('utf-8'), symmetric="AES256", passphrase=gpg_pass, recipients=None)
 
             # base64-encode encrypted steg message
             msg_enc_b64enc = base64.b64encode(enc_msg.data).decode()
 
-            if org_file_ext in ["jpg", "jpeg", "tiff"]:
-                exifHeader.hide(orig_img, steg_img, secret_message=msg_enc_b64enc)
-                return "success"
+            exifHeader.hide(orig_img, steg_img, secret_message=msg_enc_b64enc)
+            return "success"
             # elif org_file_ext == "png":
             #     secret = lsb.hide(orig_img, msg_enc_b64enc, auto_convert_rgb=True)
             #     secret.save(steg_img)
             #     return "success"
-            else:
-                return "Unsupported file type for Steg"
+        else:
+            return "Unsupported file type for Steg"
     except Exception as err:
         return err
 

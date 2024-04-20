@@ -1,9 +1,25 @@
+{%- set break_tracker = namespace(chan_exists = False) -%}
+{%- for address in chans_board_info if (global_admin and not break_tracker.chan_exists) or
+                                       (not global_admin and
+                                        not chans_board_info[address]["db"].unlisted and
+                                        not chans_board_info[address]["db"].restricted and
+                                        not break_tracker.chan_exists) -%}
+    {%- set break_tracker.chan_exists = True -%}
+{%- endfor -%}
+
 <div class="chans themed">
     <center>
+    {% if break_tracker.chan_exists %}
         <a class="link" href="/boards">Boards</a> [
-    {% for address in chans_board_info if not chans_board_info[address]["db"].unlisted -%}
+        {% for address in chans_board_info if global_admin or
+                                              (not global_admin and
+                                               not chans_board_info[address]["db"].unlisted and
+                                               not chans_board_info[address]["db"].restricted) -%}
         <a class="link" title="{{chans_board_info[address]['description']|safe}}" href="/board/{{address}}/1">{{chans_board_info[address]["label_short"]|safe}}</a>{% if not loop.last %} / {% endif %}
-    {% endfor %}
+        {% endfor %}
         ]
+    {% else %}
+        No Boards
+    {% endif %}
     </center>
 </div>

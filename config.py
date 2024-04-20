@@ -5,12 +5,20 @@ from datetime import timedelta
 logger = logging.getLogger('bitchan.config')
 DOCKER = os.environ.get('DOCKER', False) == 'TRUE'
 
-VERSION_BITCHAN = "1.2.0"
-VERSION_ALEMBIC = '000000000092'
-VERSION_MSG = "1.0.0"
-VERSION_MIN_MSG = "1.0.0"
+VERSION_BITCHAN = "1.3.0"
+VERSION_ALEMBIC = '000000000118'
+VERSION_MSG = "1.3.0"
+VERSION_MIN_MSG = "1.3.0"
 
 LOG_LEVEL = logging.INFO
+
+# Kiosk Recovery User
+# Only temporarily enable this to log into the kiosk.
+# Used when kiosk mode is enabled and you don't have valid credentials to log in.
+# The default password DEFAULT_PASSWORD_CHANGE_ME will not work. Change it.
+# Save this file and restart the front end for the changes to take effect.
+# Remember to disable this by commenting it out after you add an admin user on the User Management page.
+# KIOSK_RECOVERY_USER_PASSWORD = "DEFAULT_PASSWORD_CHANGE_ME"
 
 #
 # Bitmessage
@@ -64,6 +72,10 @@ TOR_HS_RAND = f"{TOR_PATH}/rand"
 TOR_HS_CUS = f"{TOR_PATH}/cus"
 TOR_CONTROL_PASS = f"{TOR_PATH}/torpass"
 
+TOR_POW_ENABLE = 1
+TOR_POW_QUEUE_RATE = 3
+TOR_POW_QUEUE_BURST = 10
+
 TOR_PASS = ""
 if os.path.exists(TOR_CONTROL_PASS):
     with open(TOR_CONTROL_PASS) as f:
@@ -89,11 +101,36 @@ else:
     I2PD_PATH = "/usr/local/bitchan/i2pd"
     I2PD_DATA_PATH = "/usr/local/bitchan/i2pd_data"
 
-I2P_SOCKS_PORT = 4444
+I2P_WEBUI_PORT = 7070
+I2P_HTTP_PORT = 4444
 I2P_PROXIES = {
-    "http": "http://{host}:{port}".format(host=I2P_HOST, port=I2P_SOCKS_PORT),
-    "https": "http://{host}:{port}".format(host=I2P_HOST, port=I2P_SOCKS_PORT)
+    "http": "http://{host}:{port}".format(host=I2P_HOST, port=I2P_HTTP_PORT),
+    "https": "http://{host}:{port}".format(host=I2P_HOST, port=I2P_HTTP_PORT)
 }
+
+#
+# qbittorrent
+#
+
+if DOCKER:
+    QBITTORRENT_HOST = "172.28.1.8"
+else:
+    QBITTORRENT_HOST = "127.0.0.1"
+
+QBITTORRENT_PORT = 8080
+
+#
+# MySQL
+#
+
+if DOCKER:
+    DB_HOST = "172.28.1.7"
+else:
+    DB_HOST = "127.0.0.1"
+
+DB_NAME = 'bitchan_db'
+DB_PW = 'Bitchandbpw'
+DB_PATH = f'mysql+pymysql://root:{DB_PW}@{DB_HOST}/{DB_NAME}'
 
 #
 # BitChan
@@ -170,7 +207,7 @@ INDEX_CARDS_OP_TRUNCATE_CHARS = 110
 INDEX_CARDS_REPLY_TRUNCATE_CHARS = 75
 FILE_ATTACHMENTS_MAX = 4
 FILE_EXTENSIONS_AUDIO = ["m4a", "opus", "wav", "mp3", "ogg"]
-FILE_EXTENSIONS_IMAGE = ["jpg", "jpeg", "png", "gif", "webp", "svg"]
+FILE_EXTENSIONS_IMAGE = ["apng", "avif", "gif", "jpg", "jpeg", "png", "svg", "webp"]
 FILE_EXTENSIONS_VIDEO = ["mp4", "webm", "ogg"]
 RESTRICTED_WORDS = ['bitchan', 'bltchan']
 PGP_PASSPHRASE_MSG = """;!_:2H wCsA@aiuIk# YsJ_k3cG!..ch:>"3'&ca2h?*g PUN)AAI7P4.O%HP!9a$I@,Gn"""
@@ -180,7 +217,6 @@ BITCHAN_DEVELOPER_ADDRESS = "BM-2cWyqGJHrwCPLtaRvs3f67xsnj8NmPvRWZ"
 BITCHAN_BUG_REPORT_ADDRESS = "BM-2cVzMZfiP9qQw5MiKHD8whxrqdCwqtvdyE"
 
 ALEMBIC_POST = os.path.join(INSTALL_DIR, 'post_alembic_versions')
-DATABASE_BITCHAN = os.path.join(INSTALL_DIR, 'bitchan.db')
 FILE_DIRECTORY = os.path.join(INSTALL_DIR, "downloaded_files")
 LOG_DIRECTORY = os.path.join(INSTALL_DIR, "log")
 LOG_BACKEND_FILE = os.path.join(LOG_DIRECTORY, "bitchan_backend.log")
@@ -189,8 +225,6 @@ BAN_THUMB_DIRECTORY = os.path.join(INSTALL_DIR, "banned_thumbs")
 
 LOCKFILE_ADMIN_CMD = "/var/lock/bc_admin_cmd.lock"
 LOCKFILE_API = "/var/lock/bm_api.lock"
-LOCKFILE_MSG_PROC = "/var/lock/bm_msg_proc.lock"
-LOCKFILE_STORE_POST = "/var/lock/store_post.lock"
 LOCKFILE_ENDPOINT_COUNTER = "/var/lock/endpoint_count.lock"
 
 ADMIN_OPTIONS = [
@@ -375,6 +409,7 @@ UPLOAD_ENCRYPTION_CIPHERS = [
 
 DICT_PERMISSIONS = {
     "require_identity_to_post": "Require Identity to Post",
+    "restrict_thread_creation": "Restrict Thread Creation to Owners, Admins, and Thread Creation Users",
     "automatic_wipe": "Automatic Wipe",
     "allow_list_pgp_metadata": "Allow Lists to Store PGP Passphrases"
 }
@@ -514,6 +549,5 @@ class ProdConfig(object):
     else:
         CAPTCHA_FONTS = ['/usr/local/bitchan/BitChan/static/fonts/carbontype.ttf']
 
-    DB_PATH = 'sqlite:///{}'.format(DATABASE_BITCHAN)
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///{}'.format(DATABASE_BITCHAN)
+    SQLALCHEMY_DATABASE_URI = DB_PATH
     SQLALCHEMY_TRACK_MODIFICATIONS = False

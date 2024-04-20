@@ -18,6 +18,7 @@ class Login(FlaskForm):
     login = SubmitField("Login")
 
 
+
 class AddressBook(FlaskForm):
     label = StringField("New Label")
     add_label = StringField("Address Label")
@@ -49,6 +50,8 @@ class UploadSite(FlaskForm):
 
 
 class Diag(FlaskForm):
+    stop_bitmessage_and_daemon = SubmitField("Stop Bitmessage and Daemon")
+    start_bitmessage_and_daemon = SubmitField("Start Bitmessage and Daemon")
     restart_bitmessage = SubmitField("Restart Bitmessage")
     del_inventory = SubmitField("Delete BM Inventory")
     del_trash = SubmitField("Delete BM Trash")
@@ -75,6 +78,7 @@ class Diag(FlaskForm):
     start_all_downloads = SubmitField("Start All Downloads")
     recheck_attachments = SubmitField("Recheck Attachments")
     delete_orphaned_attachments = SubmitField("Delete Orphaned Attachments")
+    delete_all_torrents = SubmitField("Delete All Torrent Data and DB Entries")
     regenerate_reply_post_ids = SubmitField("Regenerate Reply Post IDs")
     regenerate_all_post_numbers = SubmitField("Regenerate Post Numbers")
     regenerate_all_post_html = SubmitField("Regenerate Post HTML")
@@ -154,7 +158,7 @@ class Settings(FlaskForm):
     chan_update_display_number = IntegerField("Max Home Page Updates")
     max_download_size = DecimalField("Attachment Auto-Download Max Size (MB)")
     max_extract_size = DecimalField("Attachment Extraction Max Size (MB)")
-    allow_net_file_size_check = BooleanField("Allow connecting to verify post attachment size")
+    allow_net_file_size_check = BooleanField("Allow connecting to upload site to verify post attachment size")
     allow_net_book_quote = BooleanField("Allow connecting to get book quotes")
     allow_net_ntp = BooleanField("Allow connecting to NTP to sync time")
     never_auto_download_unencrypted = BooleanField("Never allow auto-download of unencrypted attachments")
@@ -165,9 +169,11 @@ class Settings(FlaskForm):
     post_timestamp = StringField("Post Timestamp to Use")
     post_timestamp_timezone = StringField("Post Timestamp Timezone")
     post_timestamp_hour = StringField("Post Timestamp Hour Format")
+    title_text = StringField("Title Text")
     home_page_msg = StringField("Home Page Message")
     html_head = StringField("HEAD HTML")
     html_body = StringField("BODY HTML")
+    i2p_trackers = StringField("I2P Torrent Tracker URLs")
     results_per_page_board = IntegerField("Threads Per Page on Board Page")
     results_per_page_overboard = IntegerField("Threads Per Page on Overboard Page")
     results_per_page_catalog = IntegerField("Threads Per Page on Catalog Page")
@@ -194,10 +200,26 @@ class Settings(FlaskForm):
     # Security
     enable_captcha = BooleanField("Require Captcha to Post")
     enable_verification = BooleanField("Require Verification to Access")
+    hide_version = BooleanField("Hide BitChan Version")
     enable_page_rate_limit = BooleanField("Enable Page Load Rate-Limiting")
     max_requests_per_period = IntegerField("Maximum Requests Per Period")
     rate_limit_period_seconds = IntegerField("Rate Limit Period (seconds)")
-    hide_all_board_list_passphrases = BooleanField("Hide Passphrases From Board/List Information")
+    remote_delete_action = StringField("What to do when a Post/Thread is Remotely Deleted")
+    disable_downloading_upload_site = BooleanField("Disable Downloading Attachments from Upload Sites")
+    disable_downloading_i2p_torrent = BooleanField("Disable Downloading Attachments from I2P Torrents")
+    ttl_seed_i2p_torrent_op_days = IntegerField("How Long (Days) to Allow I2P Torrents for Original Posts")
+    ttl_seed_i2p_torrent_reply_days = IntegerField("How Long (Days) to Allow I2P Torrents for Reply Posts")
+
+    # RSS
+    rss_enable = BooleanField("Enable RSS Feeds with Tor URLs")
+    rss_enable_i2p = BooleanField("Enable RSS Feeds with I2P URLs")
+    rss_url = StringField("Tor BitChan URL")
+    rss_url_i2p = StringField("I2P BitChan URL")
+    rss_number_posts = IntegerField("Maximum Posts per Feed")
+    rss_char_length = IntegerField("Maximum Character Limit per Post")
+    rss_use_html_posts = BooleanField("Use HTML Posts")
+    rss_rate_limit_number_requests = IntegerField("Rate Limit: Number of Requests")
+    rss_rate_limit_period_sec = IntegerField("Rate Limit: Time Period")
 
     # Kiosk mode
     enable_kiosk_mode = BooleanField("Enable Kiosk Mode")
@@ -205,6 +227,8 @@ class Settings(FlaskForm):
     kiosk_allow_posting = BooleanField("Allow Users to Post")
     kiosk_allow_gpg = BooleanField("Allow Users to Encrypt PGP Messages in Posts")
     kiosk_disable_bm_attach = BooleanField("Disable Bitmessage as a Post Upload Method")
+    kiosk_disable_i2p_torrent_attach = BooleanField("Disable I2P Torrent as a Post Upload Method")
+    kiosk_disable_torrent_file_download = BooleanField("Disable Downloading Torrent File from Post Header")
     kiosk_allow_download = BooleanField("Allow Users to Initiate Post Downloads")
     kiosk_ttl_option = StringField("TTL Option")
     kiosk_ttl_seconds = IntegerField("TTL Value")

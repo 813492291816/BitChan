@@ -41,7 +41,12 @@
             <td colspan="2">Board</td>
             <td>Address</td>
         </tr>
-    {% for address in chans_list_info if table_boards.query.filter(table_boards.address == address).count() and not chans_list_info[address]["db"].unlisted %}
+    {% for address in chans_list_info if table_boards.query.filter(table_boards.address == address).count() and
+                                         (global_admin or
+                                            (not global_admin and
+                                             not chans_list_info[address]["db"].unlisted and
+                                             not chans_list_info[address]["db"].restricted)
+                                         ) %}
         {% set board = {"current_chan": table_boards.query.filter(table_boards.address == address).first()} %}
         {% set passphrase_base64, passphrase_base64_with_pgp = get_chan_passphrase(address) %}
         {% set rules = json.loads(board["current_chan"].rules) %}
@@ -75,7 +80,7 @@
                         </div>
                         {% endif %}
 
-                        {% if settings.hide_all_board_list_passphrases %}
+                        {% if board['current_chan'].hide_passphrase %}
                         <div class="themed" style="padding-bottom: 0.5em">
                             The current configuration does not permit list passphrases to be shown
                         </div>

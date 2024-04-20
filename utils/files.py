@@ -2,6 +2,7 @@ import base64
 import logging
 import os
 import random
+import shutil
 import subprocess
 import time
 import zipfile
@@ -131,7 +132,11 @@ def data_file_multiple_extract(file_source, extract_starts_sizes, chunk=1000):
     return data_extracted_start_base64
 
 
-def data_file_multiple_insert(file_source, insert_starts_data, chunk=1000):
+def data_file_multiple_insert(file_source, insert_starts_data, chunk=1000, copy_file_path=None):
+    if copy_file_path:
+        shutil.copy(file_source, copy_file_path)
+        file_source = copy_file_path
+
     total_size = os.path.getsize(file_source)
     for each_start_data in insert_starts_data:
         logger.info("Inserting into file of {} bytes: {} bytes at position {}".format(
@@ -272,7 +277,7 @@ def generate_thumbnail_image(message_id, imagefile, thumb, extension, size_x=200
     try:
         if (not thumb or not os.path.exists(thumb) or overwrite_thumbs) and os.path.exists(imagefile):
 
-            if os.path.getsize(imagefile) <= sym_size and extension.lower() != 'gif':  # always generate thumbnails for GIFs
+            if os.path.getsize(imagefile) <= sym_size and extension.lower() not in ['apng', 'avif', 'gif']:  # always generate thumbnails for animated images
                 create_symlink = True
 
             if create_symlink:

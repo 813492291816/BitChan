@@ -9,6 +9,7 @@ import logging
 import os
 import pwd
 import random
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -22,12 +23,13 @@ from threading import Thread
 import bleach
 import gnupg
 import ntplib
+import qbittorrentapi
 from Pyro5.api import expose
 from Pyro5.api import serve
 from daemonize import Daemonize
 from sqlalchemy import and_
+from sqlalchemy import func
 from sqlalchemy import or_
-from sqlalchemy.sql import collate
 from stem import Signal
 from stem.control import Controller
 
@@ -48,12 +50,18 @@ from database.models import PostDeletePasswordHashes
 from database.models import SessionInfo
 from database.models import Threads
 from database.models import UploadProgress
+from database.models import UploadTorrents
 from database.utils import session_scope
 from utils.database import get_db_table_daemon
 from utils.download import allow_download
+from utils.download import check_banned_file_hashes
+from utils.download import generate_hash
+from utils.download import validate_file
 from utils.encryption_decrypt import decrypt_safe_size
 from utils.files import LF
+from utils.files import data_file_multiple_insert
 from utils.files import delete_file
+from utils.files import human_readable_size
 from utils.game import initialize_game
 from utils.gateway import api
 from utils.gateway import chan_auto_clears_and_message_too_old
@@ -65,6 +73,7 @@ from utils.general import process_passphrase
 from utils.general import set_clear_time_to_future
 from utils.general import version_checker
 from utils.message_admin_command import send_commands
+from utils.parse_message import decrypt_and_process_attachments
 from utils.parse_message import parse_message
 from utils.parse_message import process_admin
 from utils.posts import delete_post
@@ -75,10 +84,9 @@ from utils.shared import diff_list_added_removed
 from utils.shared import get_access
 from utils.shared import get_msg_expires_time
 from utils.shared import get_post_id
+from utils.shared import regenerate_card_popup_post_html
 from utils.tor import enable_custom_address
 from utils.tor import enable_random_address
-
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 
 
 class BitChan:
@@ -140,6 +148,8 @@ class BitChan:
         self.timer_update_post_numbers = now
         self.timer_new_tor_identity = now + random.randint(10800, 28800)
         self.timer_check_onion_address = now
+        self.timer_check_torrents = now
+        self.timer_remove_old_torrents = now
 
         self.timer_delete_and_vacuum = now + (60 * 60)     # 1 hour
         self.timer_check_locked_threads = now + (60 * 20)  # 20 minutes
@@ -164,7 +174,7 @@ class BitChan:
         self.allow_net_ntp = False
 
     def refresh_settings(self):
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             settings = new_session.query(GlobalSettings).first()
             try:
                 self._non_bitchan_message_ids = json.loads(settings.discard_message_ids)
@@ -175,7 +185,7 @@ class BitChan:
 
     @staticmethod
     def reset_all_auto_downloads():
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             messages = new_session.query(Messages).filter(
                 Messages.start_download.is_(True),
                 Messages.file_currently_downloading.is_(True)).all()
@@ -192,16 +202,12 @@ class BitChan:
         self.logger.debug("Initialization complete. Starting daemon.")
 
         while self.running:
-            lf = LF()
-            if (not self.is_restarting_bitmessage and
-                    lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=120)):
+            if not self.is_restarting_bitmessage:
                 try:
                     self.run_periodic()
                 except:
                     self.logger.exception("Error executing run_periodic()")
                     time.sleep(5)
-                finally:
-                    lf.lock_release(config.LOCKFILE_MSG_PROC)
             time.sleep(1)
 
         self.logger.info("Daemon shutting down")
@@ -212,7 +218,7 @@ class BitChan:
         #
         # Check settings
         #
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             settings = new_session.query(GlobalSettings).first()
             if settings.maintenance_mode:
                 self.logger.info("Maintenance mode enabled. Pausing daemon operation.")
@@ -222,7 +228,7 @@ class BitChan:
         # Maintenance Mode
         #
         while self.maintenance_mode:
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 settings = new_session.query(GlobalSettings).first()
                 if not settings.maintenance_mode:
                     self.logger.info("Maintenance mode disabled. Resuming daemon operation.")
@@ -362,7 +368,7 @@ class BitChan:
                 self.logger.debug("Run queue_new_messages()")
                 self.queue_new_messages()
                 self.logger.debug("End queue_new_messages()")
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     post_count = new_session.query(Messages).count()
                     board_count = new_session.query(Chan).filter(Chan.type == "board").count()
                     list_count = new_session.query(Chan).filter(Chan.type == "list").count()
@@ -411,7 +417,7 @@ class BitChan:
         if self.timer_clear_uploads < now:
             self.logger.debug("Run clear upload progress table")
             try:
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     if self.first_run:
                         upl = new_session.query(UploadProgress).all()
                     else:
@@ -428,7 +434,7 @@ class BitChan:
         # Clear inventory 10 minutes after last board/list join
         #
         if self.timer_clear_inventory < now:
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 settings = new_session.query(GlobalSettings).first()
                 if settings and settings.clear_inventory:
                     if not self.message_threads and self.bm_sync_complete:
@@ -478,7 +484,7 @@ class BitChan:
             self.logger.debug("Run delete entries in deleted message database")
             try:
                 self.logger.info("Checking for expired message entries")
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     expired = time.time() - (24 * 60 * 60 * 5)  # 5 days in the past (expired 5 days ago)
                     for each_msg in new_session.query(DeletedMessages).all():
                         if each_msg.expires_time and expired and each_msg.expires_time < expired:
@@ -531,7 +537,7 @@ class BitChan:
         #
         if self.timer_wipe < now:
             try:
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     for each_chan in new_session.query(Chan).all():
                         if not each_chan.rules:
                             continue
@@ -563,12 +569,13 @@ class BitChan:
                 self.logger.debug("End generate_post_numbers()")
             except:
                 self.logger.exception("Could not complete generate_post_numbers()")
-            self.timer_update_post_numbers = time.time() + (60 * 5)
+            self.timer_update_post_numbers = time.time() + (60 * 5)  # 5 minutes
 
         #
         # Delete and Vacuum
         #
         if self.timer_delete_and_vacuum < now:
+            self.timer_delete_and_vacuum = time.time() + (60 * 60 * 6)  # 6 hours
             # Check for expire times before deleting and vacuuming
             try:
                 self.logger.debug("Run get_message_expires_times()")
@@ -584,12 +591,11 @@ class BitChan:
                 self.logger.debug("End delete_and_vacuum()")
             except:
                 self.logger.exception("Could not complete delete_and_vacuum()")
-            self.timer_delete_and_vacuum = time.time() + (60 * 60 * 6)
 
             # Set any expire times still None to 0
             self.logger.debug("Setting message expire times to 0")
             try:
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     msg_inbox = new_session.query(Messages).filter(
                         Messages.expires_time.is_(None)).all()
                     for each_msg in msg_inbox:
@@ -616,13 +622,14 @@ class BitChan:
                 self.logger.debug("End clear_session_info()")
             except:
                 self.logger.exception("Could not complete clear_session_info()")
-            self.timer_clear_session_info = time.time() + (60 * 60 * 12)  # 12 hours
+            finally:
+                self.timer_clear_session_info = time.time() + (60 * 60 * 12)  # 12 hours
 
         #
         # Check that no posts exist past lock on locked threads
         #
         if self.timer_check_locked_threads < now:
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 admin_store = new_session.query(AdminMessageStore).count()
                 if self.bm_sync_complete and not admin_store:
                     try:
@@ -645,7 +652,8 @@ class BitChan:
                 self.logger.debug("End delete_old_captchas()")
             except:
                 self.logger.exception("Could not complete delete_old_captchas()")
-            self.timer_delete_captchas = time.time() + (60 * 60 * 3)
+            finally:
+                self.timer_delete_captchas = time.time() + (60 * 60 * 3)  # 3 Hours
 
         #
         # Periodically check games
@@ -657,7 +665,8 @@ class BitChan:
                 self.logger.debug("End check_games()")
             except:
                 self.logger.exception("Could not complete check_games()")
-            self.timer_game = time.time() + 20
+            finally:
+                self.timer_game = time.time() + 20  # 20 seconds
 
         #
         # Periodically check every hour (at the top of the hour)
@@ -669,8 +678,35 @@ class BitChan:
                 self.logger.debug("End hourly_run()")
             except:
                 self.logger.exception("Could not complete hourly_run()")
-            while self.timer_top_of_hour < now:
-                self.timer_top_of_hour += 3600  # 1 hour
+            finally:
+                self.timer_top_of_hour = time.time() + (60 * 60 * 3)  # 1 hour
+
+        #
+        # Check for completed torrents (and process their downloaded data)
+        #
+        if self.timer_check_torrents < now:
+            try:
+                self.logger.debug("Run check_torrents()")
+                self.check_torrents()
+                self.logger.debug("End check_torrents()")
+            except:
+                self.logger.exception("Could not complete check_torrents()")
+            finally:
+                while self.timer_check_torrents < now:
+                    self.timer_check_torrents += 10  # 10 seconds
+
+        #
+        # Remove torrents/data more than 28 days old
+        #
+        if self.timer_remove_old_torrents < now:
+            try:
+                self.logger.debug("Run remove_old_torrents()")
+                self.remove_old_torrents()
+                self.logger.debug("End remove_old_torrents()")
+            except:
+                self.logger.exception("Could not complete remove_old_torrents()")
+            finally:
+                self.timer_remove_old_torrents = time.time() + (60 * 60)  # 60 minutes
 
         self.first_run = False
 
@@ -679,10 +715,12 @@ class BitChan:
             thread_hashes = {}
             new_posts = {}
             chan_addresses = {}
-            with session_scope(DB_PATH) as new_session:
+            rss_threads = {}
+            rss_boards = {}
+            with session_scope(config.DB_PATH) as new_session:
                 for category, each_data in self.view_counter.items():
                     for endpoint in each_data:
-                        if endpoint in ["index", "verify_wait", "verify_test"]:
+                        if endpoint in ["index", "verify_wait", "verify_test", "verify_success"]:
                             count = EndpointCount()
                             count.timestamp_epoch = timestamp_hour
                             count.category = category
@@ -701,7 +739,16 @@ class BitChan:
                             if endpoint not in new_posts:
                                 new_posts[endpoint] = 0
                             new_posts[endpoint] += self.view_counter[category][endpoint]
+                        if category == "rss_thread" and endpoint:
+                            if endpoint not in rss_threads:
+                                rss_threads[endpoint] = 0
+                            rss_threads[endpoint] += self.view_counter[category][endpoint]
+                        if category == "rss_board" and endpoint:
+                            if endpoint not in rss_boards:
+                                rss_boards[endpoint] = 0
+                            rss_boards[endpoint] += self.view_counter[category][endpoint]
 
+                # Add DB entry for board loads
                 for each_address, views in chan_addresses.items():
                     count = EndpointCount()
                     count.timestamp_epoch = timestamp_hour
@@ -710,6 +757,7 @@ class BitChan:
                     count.requests = views
                     new_session.add(count)
 
+                # Add DB entry for thread loads
                 for thread_hash, views in thread_hashes.items():
                     count = EndpointCount()
                     count.timestamp_epoch = timestamp_hour
@@ -718,6 +766,43 @@ class BitChan:
                     count.requests = views
                     new_session.add(count)
 
+                new_session.commit()
+
+                # Add DB entry for rss board loads
+                for board_address, views in rss_boards.items():
+                    test_count = new_session.query(EndpointCount).filter(and_(
+                        EndpointCount.timestamp_epoch == timestamp_hour,
+                        EndpointCount.chan_address == board_address,
+                        EndpointCount.category == "rss_board")).first()
+                    if test_count:
+                        test_count.rss = views
+                    else:
+                        count = EndpointCount()
+                        count.timestamp_epoch = timestamp_hour
+                        count.chan_address = board_address
+                        count.category = "rss_board"
+                        count.rss = views
+                        new_session.add(count)
+                new_session.commit()
+
+                # Add DB entry for rss thread loads
+                for thread_hash, views in rss_threads.items():
+                    test_count = new_session.query(EndpointCount).filter(and_(
+                        EndpointCount.timestamp_epoch == timestamp_hour,
+                        EndpointCount.thread_hash == thread_hash,
+                        EndpointCount.category == "rss_thread")).first()
+                    if test_count:
+                        test_count.rss = views
+                    else:
+                        count = EndpointCount()
+                        count.timestamp_epoch = timestamp_hour
+                        count.thread_hash = thread_hash
+                        count.category = "rss_thread"
+                        count.rss = views
+                        new_session.add(count)
+                new_session.commit()
+
+                # Add DB entry for thread updates
                 for thread_hash, views in new_posts.items():
                     test_count = new_session.query(EndpointCount).filter(and_(
                         EndpointCount.timestamp_epoch == timestamp_hour,
@@ -730,13 +815,240 @@ class BitChan:
                         count.timestamp_epoch = timestamp_hour
                         count.thread_hash = thread_hash
                         count.category = "requests"
-                        count.requests = views
+                        count.new_posts = views
                         new_session.add(count)
-
                 new_session.commit()
+
             self.reset_view_counter()
         except:
             self.logger.error("Could not import view_counter")
+
+    def check_torrents(self):
+        """Check torrents that need to be paused or processed after download completes"""
+        skip_size_check = False
+
+        with session_scope(config.DB_PATH) as new_session:
+            torrents = new_session.query(UploadTorrents).filter(
+                UploadTorrents.torrent_completed.is_(False)).all()
+            for torrent in torrents:
+                if not torrent.message_id:
+                    continue  # Don't initiate if message ID absent
+
+                message = new_session.query(Messages).filter(
+                    Messages.message_id == torrent.message_id).first()
+                if not message:
+                    continue  # Don't initiate if message absent
+
+                # Check if torrent is present in torrent client
+                conn_info = dict(host=config.QBITTORRENT_HOST, port=8080)
+                qbt_client = qbittorrentapi.Client(**conn_info)
+                qbt_client.auth_log_in()
+                try:
+                    torrent_prop = qbt_client.torrents_info(
+                        torrent_hashes=torrent.torrent_hash)[0]
+                except:
+                    torrent_prop = None
+
+                if not torrent_prop:
+                    # Torrent not found in client, prevent processing this torrent again
+                    self.logger.error(
+                        f"{message.message_id[-config.ID_LENGTH:].upper()}: Torrent {torrent.file_hash} "
+                        f"with hash {torrent.torrent_hash} not found in client. Download Disabled.")
+                    message.file_do_not_download = True
+                    message.file_currently_downloading = False
+                    message.file_progress = "Torrent not found in client. Download disabled."
+                    message.regenerate_post_html = True
+                    new_session.commit()
+                    continue
+
+                # Check if torrent should be prevented from starting
+                if message.file_do_not_download and not message.start_download:
+                    continue  # Don't initiate if file prevented from being downloaded
+
+                # Pause if total size is greater than max size permitted to be auto-downloaded
+                elif not message.file_do_not_download and not message.start_download:
+                    settings = new_session.query(GlobalSettings).first()
+                    max_size_bytes = settings.max_download_size * 1024 * 1024
+                    if torrent_prop and torrent_prop.total_size > max_size_bytes:
+                        # Torrent exists and size is too large, pause torrent
+                        qbt_client.torrents_pause(torrent_hashes=torrent.torrent_hash)
+                        msg = (
+                            f"Attachments too large. "
+                            f"Max download size allowed is {human_readable_size(max_size_bytes)}. "
+                            f"Pausing torrent.")
+                        self.logger.info(msg)
+                        message.file_do_not_download = True
+                        message.file_currently_downloading = False
+                        message.file_progress = msg
+                        message.regenerate_post_html = True
+                        new_session.commit()
+                        continue
+
+                # User manually allowed download, so skip file size check
+                elif message.start_download:
+                    skip_size_check = True
+
+                #
+                # Torrent exists and size is not too large, allow processing downloaded files
+                #
+                try:
+                    # Torrent is paused
+                    if torrent_prop and torrent_prop.state in ['pausedDL', 'pausedDL']:
+                        self.logger.info(
+                            f"Torrent {torrent.file_hash} paused when it's allowed to be downloaded. Resuming.")
+                        qbt_client.torrents_resume(torrent_hashes=torrent.torrent_hash)
+                        time.sleep(1)
+
+                    # Torrent is seeding
+                    elif torrent_prop and torrent_prop.state in ['stalledUP', 'uploading']:
+                        self.logger.info(
+                            f"Torrent {torrent.file_hash} seeding when it hasn't been processed. Processing.")
+
+                        # Check only the seeding directory for torrents that are completed and are seeding
+                        path_downloaded_file = os.path.join('/i2p_qb/Downloads', torrent.file_hash)
+                        path_downloaded_file_zip = os.path.join('/i2p_qb/Downloads', f"{torrent.file_hash}.zip")
+                        if torrent.message_id and torrent.file_hash and os.path.isfile(path_downloaded_file):
+                            self.logger.info(f"Found completed torrent data {path_downloaded_file}")
+                            path_downloaded = path_downloaded_file
+                        elif torrent.message_id and torrent.file_hash and os.path.isfile(path_downloaded_file_zip):
+                            self.logger.info(f"Found completed torrent data {path_downloaded_file_zip}")
+                            path_downloaded = path_downloaded_file_zip
+                        else:
+                            continue  # Couldn't find completed torrent data, move to next torrent file
+
+                        self.logger.info("{}: Message with torrent data hash {} found, decrypting...".format(
+                            message.message_id[-config.ID_LENGTH:].upper(), torrent.file_hash))
+
+                        # Add missing parts back into encrypted file
+                        path_enc_file = f'/tmp/{torrent.file_hash}'
+                        try:
+                            file_extracts_start_base64 = json.loads(message.file_extracts_start_base64)
+                        except:
+                            file_extracts_start_base64 = None
+                        if file_extracts_start_base64:
+                            self.logger.info(f"extracts: {file_extracts_start_base64}")
+                            size_before = os.path.getsize(path_downloaded)
+                            data_file_multiple_insert(
+                                path_downloaded,
+                                file_extracts_start_base64,
+                                chunk=4096,
+                                copy_file_path=path_enc_file)
+                            self.logger.info("{}: File data insertion. Before: {}, After: {}".format(
+                                message.message_id[-config.ID_LENGTH:].upper(),
+                                size_before,
+                                os.path.getsize(path_enc_file)))
+                        else:
+                            shutil.copy(path_downloaded, path_enc_file)
+
+                        # Compare encrypted file hash to expected hash
+                        if message.file_sha256_hash:
+                            if not validate_file(path_enc_file, message.file_sha256_hash):
+                                message.file_progress = "Attachment hash ({}) doesn't match expected hash ({}).".format(
+                                    generate_hash(path_enc_file), message.file_sha256_hash)
+                                message.file_sha256_hashes_match = False
+                                message.regenerate_post_html = True
+                                new_session.commit()
+                                return
+                            else:
+                                message.file_sha256_hashes_match = True
+
+                        # Hashes match, decrypt and extract attachments
+                        status, media_info, message_steg = decrypt_and_process_attachments(
+                            message.message_id,
+                            message.file_enc_cipher,
+                            message.file_enc_key_bytes,
+                            message.file_enc_password,
+                            path_enc_file,
+                            skip_size_check=skip_size_check)
+
+                        if not status:  # Success
+                            message.file_download_successful = True
+                            message.file_currently_downloading = False
+                            message.file_progress = ""
+                            message.media_info = json.dumps(media_info)
+                            message.message_steg = json.dumps(message_steg)
+                            torrent.torrent_completed = True  # No longer include this torrent in this search function
+                        else:  # Failure
+                            message.file_currently_downloading = False
+                            message.file_download_successful = False
+                            message.file_do_not_download = True
+
+                        new_session.commit()
+
+                        regenerate_card_popup_post_html(message_id=torrent.message_id)
+
+                        check_banned_file_hashes(torrent.message_id, media_info)
+
+                    # Torrent is in some unpaused state but not completed downloading
+                    elif torrent_prop and torrent_prop.state in [
+                            'checkingUP', 'allocating', 'downloading', 'queuedDL',
+                            'stalledDL', 'checkingDL', 'checkingResumeData']:
+                        pass
+
+                    # Torrent is in some unknown state. Record to logs to diagnose the issue.
+                    else:
+                        self.logger.error(f"Torrent {torrent.file_hash} in unknown state '{torrent_prop.state}'")
+                except:
+                    self.logger.exception(f"Checking torrent {torrent.file_hash} for completion")
+
+                qbt_client.auth_log_out()
+
+    def remove_old_torrents(self):
+        """Remove torrents and data if more than 28 days old"""
+        now = time.time()
+        with session_scope(config.DB_PATH) as new_session:
+            settings = new_session.query(GlobalSettings).first()
+            torrents_old = new_session.query(UploadTorrents).all()
+            for torrent in torrents_old:
+                # Find post to determine if OP or reply
+                message = new_session.query(Messages).filter(
+                    Messages.message_id == torrent.message_id).first()
+                if not message:
+                    continue
+                if message.is_op:
+                    seed_days = settings.ttl_seed_i2p_torrent_op_days
+                else:
+                    seed_days = settings.ttl_seed_i2p_torrent_reply_days
+                epoch_start_time = now - (60 * 60 * 24 * seed_days)  # Oldest epoch to allow seeding
+
+                if torrent.timestamp_started > epoch_start_time:
+                    continue  # Torrent hasn't been seeding long enough
+
+                # Torrent seeding long enough, delete torrent and data
+                conn_info = dict(host=config.QBITTORRENT_HOST, port=8080)
+                qbt_client = qbittorrentapi.Client(**conn_info)
+
+                try:
+                    qbt_client.auth_log_in()
+
+                    # Get torrent hash
+                    torrent_hash = None
+                    if torrent.torrent_hash:
+                        torrent_hash = torrent.torrent_hash
+                    else:
+                        # find torrent hash
+                        for torrent_info in qbt_client.torrents_info():
+                            if torrent_info.name == torrent.file_hash:
+                                torrent_hash = torrent.hash
+                                break
+
+                    if not torrent_hash:
+                        self.logger.error(f"Could not find torrent hash for {torrent.file_hash}")
+                        continue
+
+                    # Add torrent
+                    with qbittorrentapi.Client(**conn_info) as qbt_client:
+                        if qbt_client.torrents_delete(delete_files=True, torrent_hashes=torrent_hash) != "Ok.":
+                            self.logger.error("Failed to add torrent.")
+                            continue
+                except:
+                    self.logger.exception(f"qBittorrent error")
+                    continue
+                finally:
+                    qbt_client.auth_log_out()
+
+                self.logger.info(f"Removed torrent {torrent.file_hash} for message {torrent.message_id}")
+                new_session.delete(torrent)
 
     def reset_view_counter(self):
         lf = LF()
@@ -754,7 +1066,7 @@ class BitChan:
                 lf.lock_release(config.LOCKFILE_ENDPOINT_COUNTER)
 
     def check_games(self):
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             games = new_session.query(Games).filter(or_(
                 Games.game_initiated == "uninitiated",
                 Games.game_initiated == "player_a_chosen",
@@ -821,29 +1133,39 @@ class BitChan:
             if not onionbindip:
                 os.system(f'crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionbindip {config.BM_HOST}')
 
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 settings = new_session.query(GlobalSettings).first()
                 self.logger.info(f"Changing keys.dat settings to: {settings.bm_connections_in_out}")
 
                 # Change settings in keys.dat to the user-selected choices
                 for line in fileinput.input(config.BM_KEYS_DAT, inplace=True):
-                    if settings.bm_connections_in_out in ["in_clear_out_clear", "in_tor+clear_out_clear", "in_tor_out_clear"]:
+                    if settings.bm_connections_in_out in ["in_clear_out_clear",
+                                                          "in_tor+clear_out_clear",
+                                                          "in_tor_out_clear"]:
                         if line.startswith("socksproxytype"):
                             line = "socksproxytype = none\n"
                             self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                    if settings.bm_connections_in_out in ["in_clear_out_tor", "in_tor+clear_out_tor", "in_tor_out_tor"]:
+                    if settings.bm_connections_in_out in ["in_clear_out_tor",
+                                                          "in_tor+clear_out_tor",
+                                                          "in_tor_out_tor"]:
                         if line.startswith("socksproxytype"):
                             line = "socksproxytype = SOCKS5\n"
                             self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                    if settings.bm_connections_in_out in ["in_clear_out_clear", "in_clear_out_tor"]:
+                    if settings.bm_connections_in_out in ["in_clear_out_clear",
+                                                          "in_clear_out_tor"]:
                         if line.startswith("onionhostname"):
                             line = "onionhostname = none\n"
                             self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                    if settings.bm_connections_in_out in ["in_clear_out_tor", "in_tor+clear_out_clear", "in_tor+clear_out_tor"]:
+                    if settings.bm_connections_in_out in ["in_clear_out_tor",
+                                                          "in_tor+clear_out_clear",
+                                                          "in_tor+clear_out_tor"]:
                         if line.startswith("sockslisten"):
                             line = "sockslisten = True\n"
                             self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                    if settings.bm_connections_in_out in ["in_tor+clear_out_clear", "in_tor_out_clear", "in_tor+clear_out_tor", "in_tor_out_tor"]:
+                    if settings.bm_connections_in_out in ["in_tor+clear_out_clear",
+                                                          "in_tor_out_clear",
+                                                          "in_tor+clear_out_tor",
+                                                          "in_tor_out_tor"]:
                         if line.startswith("onionhostname"):
                             self.get_bm_onion_address()
                             if self.bm_onion_address:
@@ -852,7 +1174,8 @@ class BitChan:
                         if line.startswith("onionport"):
                             line = "onionport = 8444\n"
                             self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                    if settings.bm_connections_in_out in ["in_tor_out_clear", "in_tor_out_tor"]:
+                    if settings.bm_connections_in_out in ["in_tor_out_clear",
+                                                          "in_tor_out_tor"]:
                         if line.startswith("onionbindip"):
                             line = f"onionbindip = {config.BM_HOST}\n"
                             self.logger.info(f"Setting in keys.dat: {line}".rstrip())
@@ -972,11 +1295,13 @@ class BitChan:
                                 check_address = ""
                             self.logger.info("keys.dat: '{}'".format(check_address))
                             self.logger.info("tor: '{}'".format(self.bm_onion_address))
-                            with session_scope(DB_PATH) as new_session:
+                            with session_scope(config.DB_PATH) as new_session:
                                 settings = new_session.query(GlobalSettings).first()
                                 if (check_address != self.bm_onion_address and
-                                        settings.bm_connections_in_out not in ["in_clear_out_clear", "in_clear_out_tor"]):  # settings require onionhostname = none
-                                    self.logger.info("Invalid keys.dat onion address. Updating and restarting Bitmessage")
+                                        settings.bm_connections_in_out not in ["in_clear_out_clear",
+                                                                               "in_clear_out_tor"]):  # settings require onionhostname = none
+                                    self.logger.info(
+                                        "Invalid keys.dat onion address. Updating and restarting Bitmessage")
                                     set_onionhostname = True
                                 else:
                                     self.logger.info("Valid onionhostname setting in keys.dat.")
@@ -1034,7 +1359,7 @@ class BitChan:
 
     @staticmethod
     def delete_old_captchas():
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             captchas = new_session.query(Captcha).filter(
                 Captcha.timestamp_utc < (time.time() - (60 * 60 * 24 * 4))).all()
             for each_captcha in captchas:
@@ -1042,7 +1367,7 @@ class BitChan:
                 new_session.commit()
 
     def scan_locked_threads(self):
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             admin_cmd = new_session.query(Command).filter(and_(
                 Command.action == "set",
                 Command.action_type == "thread_options")).all()
@@ -1117,7 +1442,7 @@ class BitChan:
                         new_session.commit()
 
     def clear_session_info(self):
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             session_infos = new_session.query(SessionInfo).all()
             for session in session_infos:
                 now = time.time()
@@ -1139,7 +1464,7 @@ class BitChan:
 
     def generate_post_numbers(self, all_boards=False):
         try:
-            with session_scope(DB_PATH) as session:
+            with session_scope(config.DB_PATH) as session:
                 # First, reset all board counts to 0
                 if all_boards:
                     boards = session.query(Chan).filter(
@@ -1307,7 +1632,7 @@ class BitChan:
 
                 if list_chan.list_send:
                     self.logger.info("{}: List instructed to send.".format(run_id))
-                    with session_scope(DB_PATH) as new_session:
+                    with session_scope(config.DB_PATH) as new_session:
                         list_mod = new_session.query(Chan).filter(
                             Chan.address == list_chan.address).first()
                         list_mod.list_send = False
@@ -1472,7 +1797,12 @@ class BitChan:
 
     def get_message_expires_times(self):
         try:
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
+                msg_inbox = new_session.query(Messages).filter(
+                    Messages.expires_time == 5).all()
+                for each_msg in msg_inbox:
+                    each_msg.expires_time = 1  # No inventory entry, mark for deletion
+
                 msg_inbox = new_session.query(Messages).filter(
                     or_(Messages.expires_time.is_(None),
                         Messages.expires_time == 0)).all()
@@ -1486,6 +1816,12 @@ class BitChan:
                     else:
                         self.logger.info("{}: Messages: No inventory entry.".format(
                             each_msg.message_id[-config.ID_LENGTH:].upper()))
+                        each_msg.expires_time = 5
+
+                msg_deleted = new_session.query(DeletedMessages).filter(
+                    DeletedMessages.expires_time == 5).all()
+                for each_msg in msg_deleted:
+                    each_msg.expires_time = 1  # No inventory entry, mark for deletion
 
                 msg_deleted = new_session.query(DeletedMessages).filter(
                     or_(DeletedMessages.expires_time.is_(None),
@@ -1531,6 +1867,7 @@ class BitChan:
                     else:
                         self.logger.info("{}: DeletedMessages. No inventory entry.".format(
                             each_msg.message_id[-config.ID_LENGTH:].upper()))
+                        each_msg.expires_time = 5
                 new_session.commit()
         except:
             self.logger.exception("get_msg_expires_time")
@@ -1557,7 +1894,7 @@ class BitChan:
         return None, None
 
     def update_unread_mail_count(self, address):
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             ident = new_session.query(Identity).filter(
                 Identity.address == address).first()
             total, unread = self.get_mail_count(address)
@@ -1568,7 +1905,7 @@ class BitChan:
 
     def check_unread_mail(self):
         """Save number of unread messages for each Identity"""
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             for identity in new_session.query(Identity).all():
                 self.update_unread_mail_count(identity.address)
 
@@ -1601,8 +1938,8 @@ class BitChan:
 
         if self._identity_dict.keys() != new_identities.keys() or self._refresh_identities:
             self._refresh_identities = False
-            self.logger.info("Adding/Updating Identities")
-            with session_scope(DB_PATH) as new_session:
+            self.logger.info("Updating Identities")
+            with session_scope(config.DB_PATH) as new_session:
                 for address, each_ident in new_identities.items():
                     identity = new_session.query(
                         Identity).filter(Identity.address == address).first()
@@ -1642,7 +1979,7 @@ class BitChan:
             }
             if (address['address'] not in self._subscription_dict or
                     self._subscription_dict[address['address']] != dict_subscription):
-                self.logger.info("Adding/Updating Identity {}".format(address['address']))
+                self.logger.info("Updating Identity {}".format(address['address']))
                 self._subscription_dict[address['address']] = dict_subscription
 
     def update_address_book(self):
@@ -1665,14 +2002,14 @@ class BitChan:
             label = base64.b64decode(address["label"]).decode()
             new_addresses[address["address"]] = {"label": label}
 
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             for address in new_session.query(AddressBook).all():
                 if address.address not in new_addresses:
                     lf = LF()
                     if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
                         try:
                             with timeout(seconds=5):
-                                api.addAddressBookEntry(address.address, address.label)
+                                api.addAddressBookEntry(address.address, base64.b64encode(address.label.encode()).decode())
                             new_addresses[address.address] = {"label": address.label}
                         except Exception as err:
                             self.logger.error("Exception adding address book entry: {}".format(err))
@@ -1690,8 +2027,8 @@ class BitChan:
         if (self._address_book_dict.keys() != new_addresses.keys() or
                 self._refresh_address_book):
             self._refresh_address_book = False
-            self.logger.info("Adding/Updating Address Book")
-            with session_scope(DB_PATH) as new_session:
+            self.logger.info("Updating Address Book")
+            with session_scope(config.DB_PATH) as new_session:
                 for address, each_add in new_addresses.items():
                     address_book = new_session.query(AddressBook).filter(
                         AddressBook.address == address).first()
@@ -1736,7 +2073,7 @@ class BitChan:
                     "enabled": address['enabled']
                 }
 
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 # Only scan chans from the bitchan database
                 # Leave other chans alone
                 chan = new_session.query(
@@ -1757,7 +2094,7 @@ class BitChan:
         if self._all_chans != all_chans:
             self._all_chans = all_chans
 
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             log_description = None
             log_address = None
 
@@ -1828,7 +2165,7 @@ class BitChan:
         self.logger.debug("process_stored_messages() start")
         found_empty_post_number = False
 
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             for message in new_session.query(Messages).all():
                 if message.post_number is None:
                     found_empty_post_number = True
@@ -1860,7 +2197,7 @@ class BitChan:
             self.update_post_numbers = True
 
     def check_downloads(self):
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             messages = new_session.query(Messages).filter(
                 and_(
                     Messages.file_amount.isnot(None),
@@ -1913,7 +2250,7 @@ class BitChan:
             else:
                 return
 
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             for message in messages:
                 if message["msgid"] in self._non_bitchan_message_ids:
                     continue
@@ -1983,7 +2320,7 @@ class BitChan:
         if self.timer_non_bitchan_message_ids < now:
             while self.timer_non_bitchan_message_ids < now:
                 self.timer_non_bitchan_message_ids += 3600  # 1 hour
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 settings = new_session.query(GlobalSettings).first()
                 settings.discard_message_ids = json.dumps(self._non_bitchan_message_ids)
                 new_session.commit()
@@ -2074,7 +2411,7 @@ class BitChan:
                 # Add message ID and TTL expiration in database (for inventory wipes)
                 expires = get_msg_expires_time(message_id)
                 address_from = get_msg_address_from(message_id)
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     test_del = new_session.query(DeletedMessages).filter(
                         DeletedMessages.message_id == message_id).first()
                     if not test_del:
@@ -2144,7 +2481,7 @@ class BitChan:
                 run_id, days))
 
     def clear_list_board_contents(self, address):
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             chan = new_session.query(Chan).filter(Chan.address == address).first()
             if chan.type == "list":
                 self.logger.info("Wiping List {}".format(chan.address))
@@ -2167,7 +2504,7 @@ class BitChan:
                 add_mod_log_entry("Wiping Board (Rule)", board_address=address)
 
     def delete_all_messages(self, address):
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             chan = new_session.query(Chan).filter(
                 Chan.address == address).first()
             threads = new_session.query(Threads).filter(
@@ -2202,7 +2539,7 @@ class BitChan:
     def generate_chans_board_info(self):
         chans_board_dict = OrderedDict()
         chans = get_db_table_daemon(Chan).filter(
-            Chan.type == "board").order_by(collate(Chan.label, 'NOCASE')).all()
+            Chan.type == "board").order_by(func.lower(Chan.label)).all()
         for each_chan in chans:
             if not each_chan.address:
                 self.logger.error("Found Board in DB without address: /{}/ - {}".format(
@@ -2228,7 +2565,7 @@ class BitChan:
     def get_chans_list_info(self):
         chans_list_dict = OrderedDict()
         chans = get_db_table_daemon(Chan).filter(
-            Chan.type == "list").order_by(collate(Chan.label, 'NOCASE')).all()
+            Chan.type == "list").order_by(func.lower(Chan.label)).all()
         for each_chan in chans:
             if not each_chan.address:
                 self.logger.error("Found List in DB without address: /{}/ - {}".format(
@@ -2304,7 +2641,7 @@ class BitChan:
                              (each_address in primary_addresses or
                               each_address in secondary_addresses or
                               each_address in tertiary_addresses)
-                            ) or
+                             ) or
                             (chan.access == "public" and
                              each_address not in restricted_addresses)
                         )
@@ -2325,6 +2662,13 @@ class BitChan:
                     each_address[:9], each_address[-6:])
 
         for each_address in all_chans:
+            chan_test = get_db_table_daemon(Chan).filter(Chan.address == each_address).first()
+            if not chan_test:
+                continue
+
+            if chan_test.unlisted or chan_test.restricted:
+                continue  # Do not list unlisted or restricted addresses in the From List
+
             if each_address in from_addresses:
                 continue
 
@@ -2339,7 +2683,7 @@ class BitChan:
                              (each_address in primary_addresses or
                               each_address in secondary_addresses or
                               each_address in tertiary_addresses)
-                            ) or
+                             ) or
                             (chan.access == "public" and
                              each_address != address and
                              each_address not in restricted_addresses)
@@ -2354,17 +2698,10 @@ class BitChan:
                 else:
                     from_addresses[each_address] = "[Other] "
 
-                if get_db_table_daemon(Chan).filter(
-                        Chan.address == each_address).first():
-                    if get_db_table_daemon(Chan).filter(
-                            Chan.address == each_address).first().unlisted:
-                        continue  # Do not list unlisted addresses in the From List
-                    elif get_db_table_daemon(Chan).filter(
-                            Chan.address == each_address).first().type == "board":
-                        from_addresses[each_address] += "Board: "
-                    elif get_db_table_daemon(Chan).filter(
-                            Chan.address == each_address).first().type == "list":
-                        from_addresses[each_address] += "List: "
+                if chan_test.type == "board":
+                    from_addresses[each_address] += "Board: "
+                elif chan_test.type == "list":
+                    from_addresses[each_address] += "List: "
 
                 if each_address in address_labels:
                     from_addresses[each_address] += "{} ".format(address_labels[each_address])
@@ -2475,7 +2812,7 @@ class BitChan:
                 return
 
             pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 chan = new_session.query(Chan).filter(
                     Chan.address == msg_dict['toAddress']).first()
                 if chan and chan.pgp_passphrase_msg:
@@ -2507,26 +2844,38 @@ class BitChan:
                 self.logger.error("{}: 'version' not found in message. Deleting.")
                 self.trash_message(msg_dict["msgid"])
                 return
-            elif version_checker(config.VERSION_MSG, msg_decrypted_dict["version"])[1] == "less":
-                self.logger.info("{}: Message version greater than BitChan version. Deleting.".format(
-                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+
+            ver_diff_msg_ver = version_checker(config.VERSION_MSG, msg_decrypted_dict["version"])
+            ver_diff_min_ver = version_checker(msg_decrypted_dict["version"], config.VERSION_MIN_MSG)
+            if ver_diff_msg_ver[0] == "Error":
+                self.logger.error(
+                    f"Error comparing message version ({msg_decrypted_dict['version']}): {ver_diff_msg_ver[1]}")
+            elif ver_diff_msg_ver[1] == "less":
+                self.logger.info("{}: Message version greater than BitChan version ({} > {}). Deleting.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper(),
+                    msg_decrypted_dict["version"],
+                    config.VERSION_MSG))
                 self.trash_message(msg_dict["msgid"])
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     settings = new_session.query(GlobalSettings).first()
                     settings.messages_newer += 1
                     new_session.commit()
                 return
-            elif version_checker(msg_decrypted_dict["version"], config.VERSION_MIN_MSG)[1] == "less":
-                self.logger.info("{}: Message version too old. Deleting.".format(
-                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            elif ver_diff_min_ver[0] == "Error":
+                self.logger.error(f"Error comparing min message version: {ver_diff_min_ver[1]}")
+            elif ver_diff_min_ver[1] == "less":
+                self.logger.info("{}: Message version too old ({} < {}). Deleting.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper(),
+                    msg_decrypted_dict["version"],
+                    config.VERSION_MSG))
                 self.trash_message(msg_dict["msgid"])
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     settings = new_session.query(GlobalSettings).first()
                     settings.messages_older += 1
                     new_session.commit()
                 return
             else:
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     settings = new_session.query(GlobalSettings).first()
                     settings.messages_current += 1
                     new_session.commit()
@@ -2559,7 +2908,7 @@ class BitChan:
                         msg_dict["msgid"][-config.ID_LENGTH:].upper()))
                 self.trash_message(msg_dict["msgid"])
             elif msg_decrypted_dict["message_type"] == "admin":
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     admin_store = new_session.query(AdminMessageStore).filter(
                         AdminMessageStore.message_id == msg_dict["msgid"]).first()
                     if not self.bm_sync_complete:
@@ -2643,22 +2992,26 @@ class BitChan:
         try:
             hashed_password = hashlib.sha512(msg_decrypted_dict["delete_password"].encode('utf-8')).hexdigest()
 
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 create_hash_entry = True
                 message = new_session.query(Messages).filter(
                     Messages.message_id == msg_decrypted_dict["message_id"]).first()
                 if message:
                     if hashed_password == message.delete_password_hash:
+                        settings = new_session.query(GlobalSettings).first()
+                        if settings.remote_delete_action == "hide":
+                            hide = True
+                        else:
+                            hide = False
                         self.logger.info(
-                            "{}: Hashes match. Deleting post.".format(
-                                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                            f"{msg_dict['msgid'][-config.ID_LENGTH:].upper()}: Hashes match to delete post (hide={hide}).")
                         add_mod_log_entry(
-                            "Post deleted with password",
+                            f"Delete post with password (hide={hide})",
                             message_id=msg_decrypted_dict["message_id"],
                             user_from=msg_dict["fromAddress"],
                             board_address=msg_dict["toAddress"],
                             thread_hash=msg_decrypted_dict["thread_hash"])
-                        delete_post(msg_decrypted_dict["message_id"])
+                        delete_post(msg_decrypted_dict["message_id"], only_hide=hide)
                     else:
                         create_hash_entry = False
                         self.logger.error(
@@ -2744,7 +3097,7 @@ class BitChan:
         # Determine if there is a current block in place for an address
         # If so, delete message and don't process it
         # Note: only affects your local system, not other users
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             blocks = new_session.query(Command).filter(and_(
                 Command.action == "block",
                 Command.do_not_send.is_(True),
@@ -2772,7 +3125,7 @@ class BitChan:
 
     def is_sender_restricted(self, msg_id, to_address, from_address):
         # Determine if board is public and the sender is restricted from posting
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             chan = new_session.query(Chan).filter(and_(
                 Chan.access == "public",
                 Chan.type == "board",
@@ -2794,7 +3147,7 @@ class BitChan:
 
     def is_sender_not_allowed_to_send(self, msg_id, to_address, from_address):
         # Determine if board is private and the sender is allowed to send to the board
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             chan = new_session.query(Chan).filter(and_(
                 Chan.access == "private",
                 Chan.type == "board",
@@ -2869,7 +3222,7 @@ class BitChan:
                 return
 
         # Pre-processing checks passed. Continue processing message.
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             if msg_decrypted_dict["message"]:
                 # Remove any potentially malicious HTML in received message text
                 # before saving it to the database or presenting it to the user
@@ -2920,11 +3273,12 @@ class BitChan:
                         parse_message(return_obj["orig_op_bm_json_obj"]["msgid"],
                                       return_obj["orig_op_bm_json_obj"])
 
-            # Check if message was created by parse_message()
+        # Check if message was created by parse_message()
+        with session_scope(config.DB_PATH) as new_session:
             message = new_session.query(Messages).filter(
                 Messages.message_id == msg_dict["msgid"]).first()
             if not message:
-                self.logger.error("{}: Message not created. Don't create post object.".format(
+                self.logger.error("{}: 1: Message not created. Don't create post object.".format(
                     msg_dict["msgid"][-config.ID_LENGTH:].upper()))
                 self.trash_message(msg_dict["msgid"])
                 return
@@ -2993,7 +3347,7 @@ class BitChan:
             return
 
         # Pre-processing checks passed. Continue processing message.
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             if msg_decrypted_dict["message"]:
                 # Remove any potentially malicious HTML in received message text
                 # before saving it to the database or presenting it to the user
@@ -3014,138 +3368,136 @@ class BitChan:
             message = new_session.query(Messages).filter(
                 Messages.message_id == msg_dict["msgid"]).first()
             if not message:
-                lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_STORE_POST, to=20):
-                    try:
-                        # Create game entry if it doesn't exist
-                        test_game = new_session.query(Games).filter(
-                            Games.game_hash == msg_decrypted_dict["game_hash"]).first()
-                        if (not test_game and
-                                ("thread_hash" in msg_decrypted_dict and msg_decrypted_dict["thread_hash"]) and
-                                ("game_hash" in msg_decrypted_dict and msg_decrypted_dict["game_hash"])):
-                            self.logger.info("Game not found. I'm not hosting. Creating game.")
-                            new_game = Games()
-                            new_game.game_hash = msg_decrypted_dict["game_hash"]
-                            new_game.thread_hash = msg_decrypted_dict["thread_hash"]
-                            if "game_over" in msg_decrypted_dict:
-                                new_game.game_over = msg_decrypted_dict["game_over"]
-                            new_game.is_host = False
-                            new_game.game_type = msg_decrypted_dict["game"]
-                            if msg_decrypted_dict["game_termination_pw_hash"]:
-                                new_game.game_termination_pw_hash = msg_decrypted_dict["game_termination_pw_hash"]
-                            new_session.add(new_game)
-                        if (test_game and
-                                ("thread_hash" in msg_decrypted_dict and msg_decrypted_dict["thread_hash"]) and
-                                ("game_hash" in msg_decrypted_dict and msg_decrypted_dict["game_hash"]) and
-                                ("game_over" in msg_decrypted_dict)):
-                            self.logger.info("Game found. Updating game_over status to {}.".format(
-                                msg_decrypted_dict["game_over"]))
-                            test_game.game_over = msg_decrypted_dict["game_over"]
-                            new_session.commit()
-
-                        test_game = new_session.query(Games).filter(
-                            Games.game_hash == msg_decrypted_dict["game_hash"]).first()
-                        if test_game:
-                            self.logger.info("Game found. Make game post.")
-                        else:
-                            self.logger.info("Game not found. Not making game post.")
-                            self.trash_message(msg_dict["msgid"])
-                            return
-
-                        if "thread_hash" in msg_decrypted_dict and msg_decrypted_dict["thread_hash"]:
-                            thread = new_session.query(Threads).filter(
-                                Threads.thread_hash == msg_decrypted_dict["thread_hash"]).first()
-                            if not thread:
-                                self.logger.info("Thread not found. Not making game post.")
-                                self.trash_message(msg_dict["msgid"])
-                                return
-                        else:
-                            self.logger.info("thread_hash not found. Not making game post.")
-                            self.trash_message(msg_dict["msgid"])
-                            return
-
-                        if not thread.chan:
-                            self.logger.info("Chan not found. Not making game post.")
-                            self.trash_message(msg_dict["msgid"])
-                            return
-
-                        if ("timestamp_utc" in msg_decrypted_dict and msg_decrypted_dict["timestamp_utc"] and
-                                (isinstance(msg_decrypted_dict["timestamp_utc"], int) or
-                                 isinstance(msg_decrypted_dict["timestamp_utc"], float))):
-                            timestamp_sent = int(msg_decrypted_dict["timestamp_utc"])
-                        else:
-                            timestamp_sent = int(msg_dict['receivedTime'])
-
-                        # Create message
-                        new_msg = Messages()
-                        new_msg.version = msg_decrypted_dict["version"]
-                        new_msg.message_id = msg_dict["msgid"]
-                        new_msg.post_id = get_post_id(msg_dict["msgid"])
-                        new_msg.post_number = thread.chan.last_post_number
-                        new_msg.message_sha256_hash = hashlib.sha256(json.dumps(msg_dict['message']).encode('utf-8')).hexdigest()
-                        new_msg.thread_id = thread.id
-                        new_msg.address_from = bleach.clean(msg_dict['fromAddress'])
-                        new_msg.is_op = False
-                        new_msg.message = msg_decrypted_dict["message"]
-                        new_msg.timestamp_sent = timestamp_sent
-                        new_msg.timestamp_received = int(msg_dict['receivedTime'])
-                        new_msg.message_original = msg_dict["message"]
-                        new_msg.game_message_extra = msg_decrypted_dict["message_extra"]
-
-                        if ("game_moves" in msg_decrypted_dict and
-                                msg_decrypted_dict["game_moves"] is not None and
-                                msg_decrypted_dict["game"] == "chess"):
-                            # Generate SVG board
-                            import chess
-                            import chess.svg
-                            board = chess.Board()
-                            for move in msg_decrypted_dict["game_moves"]:
-                                board.push_san(move)
-                            new_msg.game_image_file = chess.svg.board(board, size=500)
-                            new_msg.game_image_name = "chess_board.svg"
-                            new_msg.game_image_extension = "svg"
-
-                        new_session.add(new_msg)
-
-                        if int(msg_dict['receivedTime']) > thread.chan.timestamp_received:
-                            thread.chan.timestamp_received = int(msg_dict['receivedTime'])
-
-                        # regenerate card
-                        card_test = new_session.query(PostCards).filter(
-                            PostCards.thread_id == thread.id).first()
-                        if card_test and not card_test.regenerate:
-                            card_test.regenerate = True
-
+                try:
+                    # Create game entry if it doesn't exist
+                    test_game = new_session.query(Games).filter(
+                        Games.game_hash == msg_decrypted_dict["game_hash"]).first()
+                    if (not test_game and
+                            ("thread_hash" in msg_decrypted_dict and msg_decrypted_dict["thread_hash"]) and
+                            ("game_hash" in msg_decrypted_dict and msg_decrypted_dict["game_hash"])):
+                        self.logger.info("Game not found. I'm not hosting. Creating game.")
+                        new_game = Games()
+                        new_game.game_hash = msg_decrypted_dict["game_hash"]
+                        new_game.thread_hash = msg_decrypted_dict["thread_hash"]
+                        if "game_over" in msg_decrypted_dict:
+                            new_game.game_over = msg_decrypted_dict["game_over"]
+                        new_game.is_host = False
+                        new_game.game_type = msg_decrypted_dict["game"]
+                        if msg_decrypted_dict["game_termination_pw_hash"]:
+                            new_game.game_termination_pw_hash = msg_decrypted_dict["game_termination_pw_hash"]
+                        new_session.add(new_game)
+                    if (test_game and
+                            ("thread_hash" in msg_decrypted_dict and msg_decrypted_dict["thread_hash"]) and
+                            ("game_hash" in msg_decrypted_dict and msg_decrypted_dict["game_hash"]) and
+                            ("game_over" in msg_decrypted_dict)):
+                        self.logger.info("Game found. Updating game_over status to {}.".format(
+                            msg_decrypted_dict["game_over"]))
+                        test_game.game_over = msg_decrypted_dict["game_over"]
                         new_session.commit()
 
-                        # Delete message from Bitmessage after parsing and adding to BitChan database
-                        lf = LF()
-                        if lf.lock_acquire(config.LOCKFILE_API, to=120):
-                            try:
-                                with timeout(seconds=5):
-                                    return_val = api.trashMessage(msg_dict["msgid"])
-                            except Exception as err:
-                                self.logger.error("{}: Exception during message delete: {}".format(
-                                    msg_dict["msgid"][-config.ID_LENGTH:].upper(), err))
-                            finally:
-                                time.sleep(config.API_PAUSE)
-                                lf.lock_release(config.LOCKFILE_API)
-
-                    except Exception as err:
-                        self.logger.error(
-                            "{}: Could not write to database. Deleting. Error: {}".format(
-                                msg_dict["msgid"][-config.ID_LENGTH:].upper(), err))
-                        self.logger.exception("Saving message to DB")
+                    test_game = new_session.query(Games).filter(
+                        Games.game_hash == msg_decrypted_dict["game_hash"]).first()
+                    if test_game:
+                        self.logger.info("Game found. Make game post.")
+                    else:
+                        self.logger.info("Game not found. Not making game post.")
                         self.trash_message(msg_dict["msgid"])
-                    finally:
-                        time.sleep(config.API_PAUSE)
-                        lf.lock_release(config.LOCKFILE_STORE_POST)
+                        return
+
+                    if "thread_hash" in msg_decrypted_dict and msg_decrypted_dict["thread_hash"]:
+                        thread = new_session.query(Threads).filter(
+                            Threads.thread_hash == msg_decrypted_dict["thread_hash"]).first()
+                        if not thread:
+                            self.logger.info("Thread not found. Not making game post.")
+                            self.trash_message(msg_dict["msgid"])
+                            return
+                    else:
+                        self.logger.info("thread_hash not found. Not making game post.")
+                        self.trash_message(msg_dict["msgid"])
+                        return
+
+                    if not thread.chan:
+                        self.logger.info("Chan not found. Not making game post.")
+                        self.trash_message(msg_dict["msgid"])
+                        return
+
+                    if ("timestamp_utc" in msg_decrypted_dict and msg_decrypted_dict["timestamp_utc"] and
+                            (isinstance(msg_decrypted_dict["timestamp_utc"], int) or
+                             isinstance(msg_decrypted_dict["timestamp_utc"], float))):
+                        timestamp_sent = int(msg_decrypted_dict["timestamp_utc"])
+                    else:
+                        timestamp_sent = int(msg_dict['receivedTime'])
+
+                    # Create message
+                    new_msg = Messages()
+                    new_msg.version = msg_decrypted_dict["version"]
+                    new_msg.message_id = msg_dict["msgid"]
+                    new_msg.post_id = get_post_id(msg_dict["msgid"])
+                    new_msg.post_number = thread.chan.last_post_number
+                    new_msg.message_sha256_hash = hashlib.sha256(
+                        json.dumps(msg_dict['message']).encode('utf-8')).hexdigest()
+                    new_msg.thread_id = thread.id
+                    new_msg.address_from = bleach.clean(msg_dict['fromAddress'])
+                    new_msg.is_op = False
+                    new_msg.message = msg_decrypted_dict["message"]
+                    new_msg.timestamp_sent = timestamp_sent
+                    new_msg.timestamp_received = int(msg_dict['receivedTime'])
+                    new_msg.message_original = msg_dict["message"]
+                    new_msg.game_message_extra = msg_decrypted_dict["message_extra"]
+
+                    if ("game_moves" in msg_decrypted_dict and
+                            msg_decrypted_dict["game_moves"] is not None and
+                            msg_decrypted_dict["game"] == "chess"):
+                        # Generate SVG board
+                        import chess
+                        import chess.svg
+                        board = chess.Board()
+                        for move in msg_decrypted_dict["game_moves"]:
+                            board.push_san(move)
+                        new_msg.game_image_file = chess.svg.board(board, size=500)
+                        new_msg.game_image_name = "chess_board.svg"
+                        new_msg.game_image_extension = "svg"
+
+                    new_session.add(new_msg)
+
+                    if int(msg_dict['receivedTime']) > thread.chan.timestamp_received:
+                        thread.chan.timestamp_received = int(msg_dict['receivedTime'])
+
+                    # regenerate card
+                    card_test = new_session.query(PostCards).filter(
+                        PostCards.thread_id == thread.id).first()
+                    if card_test and not card_test.regenerate:
+                        card_test.regenerate = True
+
+                    new_session.commit()
+
+                    # Delete message from Bitmessage after parsing and adding to BitChan database
+                    lf = LF()
+                    if lf.lock_acquire(config.LOCKFILE_API, to=120):
+                        try:
+                            with timeout(seconds=5):
+                                return_val = api.trashMessage(msg_dict["msgid"])
+                        except Exception as err:
+                            self.logger.error("{}: Exception during message delete: {}".format(
+                                msg_dict["msgid"][-config.ID_LENGTH:].upper(), err))
+                        finally:
+                            time.sleep(config.API_PAUSE)
+                            lf.lock_release(config.LOCKFILE_API)
+
+                except Exception as err:
+                    self.logger.error(
+                        "{}: Could not write to database. Deleting. Error: {}".format(
+                            msg_dict["msgid"][-config.ID_LENGTH:].upper(), err))
+                    self.logger.exception("Saving message to DB")
+                    self.trash_message(msg_dict["msgid"])
+                finally:
+                    time.sleep(config.API_PAUSE)
 
             # Check if message was created by parse_message()
             message = new_session.query(Messages).filter(
                 Messages.message_id == msg_dict["msgid"]).first()
             if not message:
-                self.logger.error("{}: Message not created. Don't create post object.".format(
+                self.logger.error("{}: 2: Message not created. Don't create post object.".format(
                     msg_dict["msgid"][-config.ID_LENGTH:].upper()))
                 self.trash_message(msg_dict["msgid"])
                 return
@@ -3176,7 +3528,7 @@ class BitChan:
         integrity_pass = True
         mod_log_description = ""
 
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             list_chan = new_session.query(Chan).filter(and_(
                 Chan.type == "list",
                 Chan.address == msg_dict['toAddress'])).first()
@@ -3316,13 +3668,15 @@ class BitChan:
                     if (list_chan.list_message_timestamp_utc_owner and
                             msg_decrypted_dict["timestamp_utc"] < list_chan.list_message_timestamp_utc_owner):
                         # message timestamp is older than what's in the database
-                        self.logger.info("{}: Owner/Admin of public list message older than DB timestamp. Deleting.".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                        self.logger.info(
+                            "{}: Owner/Admin of public list message older than DB timestamp. Deleting.".format(
+                                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
                         self.trash_message(msg_dict["msgid"])
                         return
                     else:
-                        self.logger.info("{}: Owner/Admin of public list message newer than DB timestamp. Updating.".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                        self.logger.info(
+                            "{}: Owner/Admin of public list message newer than DB timestamp. Updating.".format(
+                                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
                         list_chan.list_message_id_owner = msg_dict["msgid"]
                         list_chan.list_message_expires_time_owner = get_msg_expires_time(msg_dict["msgid"])
                         list_chan.list_message_timestamp_utc_owner = msg_decrypted_dict["timestamp_utc"]
@@ -3417,7 +3771,7 @@ class BitChan:
                 # Check if private list by checking if any identities match From address
                 if not sender_is_primary and not sender_is_secondary and not sender_is_tertiary:
                     self.logger.error(
-                        "{}: List {} is private but From address {} not in primary, secondary, or tertiary access list".format(
+                        "{}: List {} is private but {} not in primary, secondary, or tertiary access list".format(
                             msg_dict["msgid"][-config.ID_LENGTH:].upper(), msg_dict['toAddress'],
                             msg_dict['fromAddress']))
 
@@ -3426,13 +3780,15 @@ class BitChan:
                     if (list_chan.list_message_timestamp_utc_owner and
                             msg_decrypted_dict["timestamp_utc"] < list_chan.list_message_timestamp_utc_owner):
                         # message timestamp is older than what's in the database
-                        self.logger.info("{}: Owner/Admin of private list message older than DB timestamp. Deleting.".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                        self.logger.info(
+                            "{}: Owner/Admin of private list message older than DB timestamp. Deleting.".format(
+                                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
                         self.trash_message(msg_dict["msgid"])
                         return
                     else:
-                        self.logger.info("{}: Owner/Admin of private list message newer than DB timestamp. Updating.".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                        self.logger.info(
+                            "{}: Owner/Admin of private list message newer than DB timestamp. Updating.".format(
+                                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
                         list_chan.list_message_id_owner = msg_dict["msgid"]
                         list_chan.list_message_expires_time_owner = get_msg_expires_time(msg_dict["msgid"])
                         list_chan.list_message_timestamp_utc_owner = msg_decrypted_dict["timestamp_utc"]
@@ -3582,7 +3938,7 @@ class BitChan:
                 pgp_passphrase_attach = dict_list_addresses[each_join_address]['pgp_passphrase_attach']
 
             try:
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     if dict_chan_info["rules"]:
                         dict_chan_info["rules"] = set_clear_time_to_future(dict_chan_info["rules"])
 
@@ -3801,7 +4157,7 @@ class BitChan:
         self.logger.info("Signaling deletion of Bitmessage inventory in {} minutes".format(
             config.CLEAR_INVENTORY_WAIT / 60))
         self.timer_clear_inventory = time.time() + config.CLEAR_INVENTORY_WAIT
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             settings = new_session.query(GlobalSettings).first()
             if settings:
                 settings.clear_inventory = True
@@ -3904,7 +4260,7 @@ class BitChan:
         list_pow = []
         list_sent = []
 
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             settings = new_session.query(GlobalSettings).first()
             list_addresses_ident = list(self._identity_dict.keys())
 
@@ -3976,7 +4332,7 @@ class BitChan:
     @staticmethod
     def get_start_download():
         list_message_ids = []
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             messages = new_session.query(Messages).filter(
                 Messages.start_download.is_(True)).all()
             for each_message in messages:
@@ -3999,7 +4355,7 @@ class BitChan:
 
     @staticmethod
     def remove_start_download(message_id):
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             message = new_session.query(Messages).filter(
                 Messages.message_id == message_id).first()
             if message:
@@ -4016,7 +4372,7 @@ class BitChan:
     def set_start_download(self, message_id):
         self.logger.info("{}: Allowing file to be downloaded".format(
             message_id[-config.ID_LENGTH:].upper()))
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             message = new_session.query(Messages).filter(
                 Messages.message_id == message_id).first()
             if message:
@@ -4047,7 +4403,8 @@ class BitChan:
         enable_custom_address(True)
         self.logger.info("Restarting tor")
         if config.DOCKER:
-            subprocess.Popen('docker stop -t 15 bitchan_tor 2>&1 && sleep 10 && docker start bitchan_tor 2>&1', shell=True)
+            subprocess.Popen(
+                'docker stop -t 15 bitchan_tor 2>&1 && sleep 10 && docker start bitchan_tor 2>&1', shell=True)
         else:
             subprocess.Popen('service bitchan_tor restart', shell=True)
 
@@ -4075,7 +4432,8 @@ class BitChan:
         self.logger.info("Restarting tor")
         time.sleep(20)
         if config.DOCKER:
-            subprocess.Popen('docker stop -t 15 bitchan_tor 2>&1 && sleep 10 && docker start bitchan_tor 2>&1', shell=True)
+            subprocess.Popen(
+                'docker stop -t 15 bitchan_tor 2>&1 && sleep 10 && docker start bitchan_tor 2>&1', shell=True)
         else:
             subprocess.Popen('service bitchan_tor restart', shell=True)
 
@@ -4288,8 +4646,8 @@ if __name__ == '__main__':
             format="[%(asctime)s] %(levelname)s/%(name)s: %(message)s",
             handlers=[
                 handlers.RotatingFileHandler(
-                    config.LOG_BACKEND_FILE, mode='a', maxBytes=5 * 1024 * 1024,
-                    backupCount=1, encoding=None, delay=False
+                    config.LOG_BACKEND_FILE, mode='a', maxBytes=1024 * 1024 * 30,
+                    backupCount=3, encoding=None, delay=False
                 ),
                 logging.StreamHandler()
             ]

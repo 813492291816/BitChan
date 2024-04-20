@@ -22,7 +22,6 @@ from utils.tic_tac_toe import TicTacToe
 
 logger = logging.getLogger('bitchan.game')
 
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 daemon_com = DaemonCom()
 
 
@@ -34,7 +33,7 @@ def update_game(message_id, dict_msg, game_termination_password=None, game_playe
     moves_updated = False
     game_termination_pw_hash = None
 
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         msg = new_session.query(Messages).filter(
             Messages.message_id == message_id).first()
         if not msg:
@@ -480,7 +479,7 @@ def update_game(message_id, dict_msg, game_termination_password=None, game_playe
 def initialize_game(game_id):
     moves = None
 
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         game = new_session.query(Games).filter(and_(
             Games.id == game_id),
             Games.game_over.is_(False)).first()

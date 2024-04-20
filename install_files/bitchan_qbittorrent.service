@@ -1,0 +1,31 @@
+[Unit]
+Description=qBittorrent
+After=network.target
+
+[Service]
+User=qb
+Group=qb
+RuntimeDirectory=qbittorrent
+RuntimeDirectoryMode=0700
+LogsDirectory=qbittorrent
+LogsDirectoryMode=0700
+Type=forking
+Environment="LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib"
+Environment="QB_HOME=/i2p_qb"
+ExecStart=/usr/local/bin/qbittorrent-nox --daemon
+ExecReload=/bin/sh -c "kill -HUP $MAINPID"
+Restart=on-failure
+
+# Use SIGTERM to stop qbittorrent immediately.
+# Some cleanup processes can delay stopping, so we set 30 seconds timeout and then SIGKILL qbittorrent.
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+SendSIGKILL=yes
+
+# If you have problems with hanging qbittorrent, you can try increase this
+LimitNOFILE=8192
+# To enable write of coredump uncomment this
+#LimitCORE=infinity
+
+[Install]
+WantedBy=multi-user.target

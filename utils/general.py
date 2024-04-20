@@ -210,6 +210,20 @@ def process_passphrase(passphrase):
                     else:
                         value = each_value
 
+                # Sanity-check restrict_thread_creation
+                elif each_key == "restrict_thread_creation":
+                    if not isinstance(each_value, dict):
+                        errors.append("restrict_thread_creation not dict")
+                        continue
+                    elif "enabled" not in each_value:
+                        errors.append("key 'enabled' not in restrict_thread_creation dict")
+                        continue
+                    elif "addresses" not in each_value:
+                        errors.append("key 'addresses' not in restrict_thread_creation dict")
+                        continue
+                    else:
+                        value = each_value
+
                 # Sanity-check allow_list_pgp_metadata
                 elif each_key == "allow_list_pgp_metadata":
                     if not isinstance(each_value, bool):
@@ -358,16 +372,25 @@ def display_time(seconds, granularity=2):
     return ', '.join(result[:granularity])
 
 
-def timestamp_to_date(timestamp):
+def timestamp_to_date(timestamp, use_local_tz=False):
+    try:
+        timestamp = int(timestamp)
+    except:
+        return timestamp
     settings = GlobalSettings.query.first()
+
+    if use_local_tz:
+        tz = "UTC"
+    else:
+        tz = settings.post_timestamp_timezone
 
     if settings and settings.post_timestamp_timezone:
         if settings and settings.post_timestamp_hour and settings.post_timestamp_hour == '12':
             return datetime.datetime.fromtimestamp(
-                timestamp, tz=pytz.timezone(settings.post_timestamp_timezone)).strftime('%d %b %Y (%a) %-I:%M:%S %p %Z')
+                timestamp, tz=pytz.timezone(tz)).strftime('%d %b %Y (%a) %-I:%M:%S %p %Z')
         else:
             return datetime.datetime.fromtimestamp(
-                timestamp, tz=pytz.timezone(settings.post_timestamp_timezone)).strftime('%d %b %Y (%a) %H:%M:%S %Z')
+                timestamp, tz=pytz.timezone(tz)).strftime('%d %b %Y (%a) %H:%M:%S %Z')
 
     if settings and settings.post_timestamp_hour and settings.post_timestamp_hour == '12':
         return datetime.datetime.fromtimestamp(

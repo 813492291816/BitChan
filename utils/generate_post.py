@@ -2,12 +2,9 @@ import logging
 
 from flask import render_template
 
-import config
 from bitchan_client import DaemonCom
 from database.models import Messages
 from database.models import UploadSites
-
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 
 daemon_com = DaemonCom()
 logger = logging.getLogger("bitchan.generate_post")

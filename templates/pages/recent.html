@@ -1,7 +1,6 @@
 {% extends "layout.html" %}
 
 {% set total_pages = (msg_count / settings.results_per_page_recent)|round(0, "ceil")|int %}
-{% set global_admin, allow_msg = allowed_access("is_global_admin") %}
 
 {% block title %}Recent Posts{% if recent_info["single_board"] %} - /{{recent_info["board_label"]}}/{% endif %} - {% endblock %}
 
@@ -66,6 +65,7 @@
             {% endif %}
             <td class="pad">Age</td>
             <td class="pad">OP</td>
+            <td class="pad">Replies</td>
             <td class="pad">Sticky</td>
             <td class="pad">Lock</td>
             <td class="pad">Anchor</td>
@@ -80,6 +80,15 @@
             {% if global_admin %}<td></td>{% endif %}
             <td class="pad">{{display_time(now - each_msg.timestamp_sent)}}</td>
             <td  class="pad" style="text-align: center">{% if each_msg.is_op %}OP{% endif %}</td>
+            <td  class="pad" style="text-align: center">
+                {%- if each_msg.post_ids_replying_to_msg == "[]" -%}
+                0
+                {%- elif each_msg.post_ids_replying_to_msg|length == 13 -%}
+                1
+                {%- else -%}
+                {{(each_msg.post_ids_replying_to_msg | length) - (each_msg.post_ids_replying_to_msg | replace(",","") | length) + 1}}
+                {%- endif -%}
+            </td>
             <td  class="pad" style="text-align: center">
             {% if thread_options["sticky"] %}
                 <img style="position: relative; top: 3px; height: 15px" title="Sticky{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
@@ -133,7 +142,7 @@
             {% if global_admin %}
             <td class="pad"><input type="checkbox" id="selectbulk_{{each_msg.message_id}}" name="selectbulk_{{each_msg.message_id}}" value="y"></td>
             {% endif %}
-            <td class="pad" colspan="{% if not recent_info['single_board'] %}7{% else %}6{% endif %}">{{generate_post_html(each_msg.message_id, board_view=True)|safe}}</td>
+            <td class="pad" colspan="{% if not recent_info['single_board'] %}8{% else %}7{% endif %}">{{generate_post_html(each_msg.message_id, board_view=True)|safe}}</td>
         </tr>
             {% endif %}
         {% endfor %}
@@ -147,7 +156,7 @@
 
     </form>
     {% else %}
-        No Posts Found
+        <div class="themed bold">No Posts Found</div>
     {% endif %}
 </div>
 

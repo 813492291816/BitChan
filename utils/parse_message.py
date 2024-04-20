@@ -6,14 +6,17 @@ import logging
 import os
 import random
 import re
+import shutil
 import time
 import zipfile
 from io import BytesIO
 from urllib.parse import urlparse
-
+from sqlalchemy.exc import IntegrityError
 import bleach
+import qbittorrentapi
 from PIL import Image
 from sqlalchemy import and_
+from torf import Torrent
 
 import config
 from bitchan_client import DaemonCom
@@ -26,6 +29,7 @@ from database.models import GlobalSettings
 from database.models import Messages
 from database.models import PostCards
 from database.models import Threads
+from database.models import UploadTorrents
 from database.utils import session_scope
 from utils.download import download_and_extract
 from utils.download import process_attachments
@@ -36,6 +40,7 @@ from utils.files import delete_file
 from utils.files import delete_files_recursive
 from utils.files import extract_zip
 from utils.files import generate_thumbnail_image
+from utils.files import human_readable_size
 from utils.files import return_file_hashes
 from utils.game import update_game
 from utils.gateway import api
@@ -59,12 +64,12 @@ from utils.posts import process_message_replies
 from utils.replacements import process_replacements
 from utils.replacements import replace_strings
 from utils.shared import add_mod_log_entry
+from utils.shared import can_address_create_thread
+from utils.shared import check_tld_i2p
 from utils.shared import get_access
 from utils.shared import get_msg_expires_time
 from utils.shared import get_post_id
 from utils.shared import regenerate_card_popup_post_html
-
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 
 logger = logging.getLogger('bitchan.parse')
 daemon_com = DaemonCom()
@@ -75,6 +80,9 @@ def parse_message(message_id, json_obj):
     file_filename = None
     file_url_type = None
     file_url = None
+    file_torrent_file_hash = None
+    file_torrent_decoded = None
+    file_torrent_magnet = None
     file_upload_settings = None
     file_extracts_start_base64 = None
     file_size = None
@@ -96,7 +104,7 @@ def parse_message(message_id, json_obj):
     image3_spoiler = None
     image4_spoiler = None
     op_sha256_hash = None
-    sage = None
+    sage = False
     game = None
     game_hash = None
     original_message = None
@@ -156,9 +164,16 @@ def parse_message(message_id, json_obj):
 
     # logger.info("dict_msg: {}".format(dict_msg))
 
-    # Determine if message indicates if it's OP or not
+    # Determine if message indicates it's OP or not
     if "is_op" in dict_msg and dict_msg["is_op"]:
         is_op = dict_msg["is_op"]
+
+        # Check if new threads can be created by this address
+        if not can_address_create_thread(json_obj['fromAddress'], json_obj['toAddress']):
+            logger.error("{}: {} not permitted to create new thread on {}. Deleting.".format(
+                message_id[-config.ID_LENGTH:].upper(), json_obj['fromAddress'], json_obj['toAddress']))
+            daemon_com.trash_message(message_id)
+            return
     else:
         is_op = False
         if "sage" in dict_msg and dict_msg["sage"]:
@@ -181,7 +196,7 @@ def parse_message(message_id, json_obj):
         daemon_com.trash_message(message_id)
         return
 
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         deleted_thread = new_session.query(DeletedThreads).filter(
             DeletedThreads.thread_hash == thread_id).first()
         if deleted_thread:
@@ -200,7 +215,7 @@ def parse_message(message_id, json_obj):
 
     # Now that the thread_is id determined, check if there exists an Admin command
     # instructing the deletion of the thread/message
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         admin_post_delete = new_session.query(Command).filter(and_(
             Command.action == "delete",
             Command.action_type == "post",
@@ -242,7 +257,7 @@ def parse_message(message_id, json_obj):
         message = dict_msg["message"]
 
     # Check for banned words in message/subject
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         banned_word_table = new_session.query(BanedWords).all()
         banned_words = []
         for word_entry in banned_word_table:
@@ -294,6 +309,18 @@ def parse_message(message_id, json_obj):
         file_size = dict_msg["file_size"]
     if "file_amount" in dict_msg and dict_msg["file_amount"]:
         file_amount = dict_msg["file_amount"]
+    if "file_torrent_file_hash" in dict_msg and dict_msg["file_torrent_file_hash"]:
+        file_torrent_file_hash = dict_msg["file_torrent_file_hash"]
+    if "file_torrent_magnet" in dict_msg and dict_msg["file_torrent_magnet"]:
+        file_torrent_magnet = dict_msg["file_torrent_magnet"]
+    if "file_torrent_base64" in dict_msg and dict_msg["file_torrent_base64"]:
+        try:
+            file_torrent_decoded = base64.b64decode(dict_msg["file_torrent_base64"])
+            file_torrent_size = len(file_torrent_decoded)
+        except Exception as err:
+            logger.exception(
+                "{}: Exception decoding base64 torrent attachment: {}".format(
+                    message_id[-config.ID_LENGTH:].upper(), err))
     if "file_url" in dict_msg and dict_msg["file_url"]:
         file_url = dict_msg["file_url"]
     if "file_url_type" in dict_msg and dict_msg["file_url_type"]:
@@ -419,7 +446,7 @@ def parse_message(message_id, json_obj):
     thread_locked = False
     thread_anchored = False
     owner_posting = False
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         try:
             thread = new_session.query(Threads).filter(
                 Threads.thread_hash == thread_id).first()
@@ -486,12 +513,17 @@ def parse_message(message_id, json_obj):
             logger.exception("{}: Error processing gpg: {}".format(
                 message_id[-config.ID_LENGTH:].upper(), err))
 
-    lf = LF()
-    if lf.lock_acquire(config.LOCKFILE_STORE_POST, to=20):
-        try:
-            hide_message = False
+    try:
+        hide_message = False
+        thread_error = False
+        thread_created = False
 
-            with session_scope(DB_PATH) as new_session:
+        # First, check if a thread exists for this post.
+        # During this check, a thread may not be found, but may be created before this process creates a thread.
+        # If this occurs, there will be a duplicate entry database error.
+        # If this error occurs, the next section will check for the thread again.
+        try:
+            with session_scope(config.DB_PATH) as new_session:
                 chan = new_session.query(Chan).filter(
                     Chan.address == json_obj['toAddress']).first()
                 chan.last_post_number = chan.last_post_number + 1
@@ -500,7 +532,7 @@ def parse_message(message_id, json_obj):
                     Threads.thread_hash == thread_id).first()
 
                 if not thread and is_op:  # OP received, create new thread
-                    logger.info("Thread doesn't exist and post is OP")
+                    logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: Thread doesn't exist and post is OP")
 
                     new_thread = Threads()
                     new_thread.thread_hash = thread_id
@@ -521,10 +553,13 @@ def parse_message(message_id, json_obj):
                         chan.timestamp_received = int(json_obj['receivedTime'])
 
                     new_session.commit()
+                    thread_created = True
+
                     id_thread = new_thread.id
 
                 elif not thread and not is_op:  # Reply received before OP, create thread with OP placeholder
-                    logger.info("Thread doesn't exist and post is a reply, not OP")
+                    logger.info(
+                        f"{message_id[-config.ID_LENGTH:].upper()}: Thread doesn't exist and post is a reply")
 
                     new_thread = Threads()
                     new_thread.thread_hash = thread_id
@@ -546,36 +581,79 @@ def parse_message(message_id, json_obj):
                         chan.timestamp_received = int(json_obj['receivedTime'])
 
                     new_session.commit()
+                    thread_created = True
+
                     id_thread = new_thread.id
 
-                    if orig_op_bm_json_obj:
-                        # process OP json_obj after post added
-                        logger.info("Found OP data in reply post. Instructing to process OP data found in reply post to heal OP.")
-                        process_op_json_obj = True
+                    if orig_op_bm_json_obj and 'message' in orig_op_bm_json_obj:
+                        logger.info("Found OP data in reply post, checking authenticity.")
+                        test_message_sha256_hash = hashlib.sha256(
+                            json.dumps(orig_op_bm_json_obj['message']).encode('utf-8')).hexdigest()
 
-                elif thread and not is_op:  # Reply received after OP, add to current thread
-                    logger.info("Thread exists and post is not OP")
+                        if op_sha256_hash != test_message_sha256_hash:
+                            logger.error(
+                                f"OP data hash ({test_message_sha256_hash}) does not match thread hash ({op_sha256_hash}).")
+                        else:
+                            logger.info("OP data hash matches thread hash.")
+                            # process OP json_obj after post added
+                            logger.info("Instructing to process OP data found in reply post to heal OP")
+                            process_op_json_obj = True
 
-                    if timestamp_sent > thread.timestamp_sent and not sage and not thread_anchored:
-                        thread.timestamp_sent = timestamp_sent
-                    if int(json_obj['receivedTime']) > thread.timestamp_received and not sage and not thread_anchored:
-                        thread.timestamp_received = int(json_obj['receivedTime'])
+        except IntegrityError:
+            thread_error = True
+            logger.error(
+                f"{message_id[-config.ID_LENGTH:].upper()}: Potential duplicate thread_hash "
+                f"(thread created while processing this message?)")
+        except Exception as err:
+            logger.error(f"{message_id[-config.ID_LENGTH:].upper()}: Thread check exception: {err}")
 
-                    if timestamp_sent > chan.timestamp_sent and not sage and not thread_anchored:
-                        chan.timestamp_sent = timestamp_sent
-                    if int(json_obj['receivedTime']) > chan.timestamp_received and not sage and not thread_anchored:
-                        chan.timestamp_received = int(json_obj['receivedTime'])
+        # If thread_error is True and the thread is found, then continue processing the post normally.
+        # If thread_error is False and a thread is not found, then log an error and return (don't create post).
+        with session_scope(config.DB_PATH) as new_session:
+            chan = new_session.query(Chan).filter(
+                Chan.address == json_obj['toAddress']).first()
+            chan.last_post_number = chan.last_post_number + 1
 
-                    new_session.commit()
-                    id_thread = thread.id
-                    hide_message = thread.hide
+            thread = new_session.query(Threads).filter(
+                Threads.thread_hash == thread_id).first()
 
-                    if orig_op_bm_json_obj:
-                        logger.info("Found OP data in reply post, updating last_op_json_obj_ts with current time")
+            if thread_error and not thread:
+                # Unexpected scenario, discard post
+                return
+
+            if (thread_error or not thread_created) and thread and not is_op:  # Reply received after OP, add to current thread
+                logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: Thread exists and post is not OP")
+
+                if timestamp_sent > thread.timestamp_sent and not sage and not thread_anchored:
+                    thread.timestamp_sent = timestamp_sent
+                if int(json_obj['receivedTime']) > thread.timestamp_received and not sage and not thread_anchored:
+                    thread.timestamp_received = int(json_obj['receivedTime'])
+
+                if timestamp_sent > chan.timestamp_sent and not sage and not thread_anchored:
+                    chan.timestamp_sent = timestamp_sent
+                if int(json_obj['receivedTime']) > chan.timestamp_received and not sage and not thread_anchored:
+                    chan.timestamp_received = int(json_obj['receivedTime'])
+
+                new_session.commit()
+
+                id_thread = thread.id
+                hide_message = thread.hide
+
+                if orig_op_bm_json_obj and 'message' in orig_op_bm_json_obj:
+                    logger.info("Found OP data in reply post, checking authenticity.")
+                    test_message_sha256_hash = hashlib.sha256(json.dumps(orig_op_bm_json_obj['message']).encode('utf-8')).hexdigest()
+
+                    if thread.op_sha256_hash != test_message_sha256_hash:
+                        logger.error(
+                            f"OP data hash ({test_message_sha256_hash}) does not match thread hash ({thread.op_sha256_hash}).")
+                    else:
+                        logger.info("OP data hash matches thread hash.")
+                        logger.info("Updating last_op_json_obj_ts with current time")
                         thread.last_op_json_obj_ts = time.time()
                         new_session.commit()
 
-                        # Check if existing thread doesn't have OP json_obj or OP doesn't exist. If not, process OP json_obj after post added
+                        # Check if existing thread doesn't have OP json_obj or OP doesn't exist.
+                        # If not, process OP json_obj after post added
                         thread_op = new_session.query(Messages).filter(and_(
                             Messages.is_op.is_(True),
                             Messages.thread_id == thread.id)).first()
@@ -585,7 +663,7 @@ def parse_message(message_id, json_obj):
                             logger.info("OP for thread exists, not processing OP data found in reply")
 
                         if thread_op and not thread.orig_op_bm_json_obj:
-                            logger.info("Thread is missing orig_op_bm_json_obj. Populating with OP data from reply post.")
+                            logger.info("Thread is missing orig_op_bm_json_obj. Populating from reply post.")
                             thread.orig_op_bm_json_obj = json.dumps(json_obj)
                             new_session.commit()
 
@@ -593,338 +671,329 @@ def parse_message(message_id, json_obj):
                             logger.info("Instructing to process OP data found in reply post to heal OP")
                             process_op_json_obj = True
 
-                elif thread and is_op:
-                    logger.info("Thread exists and post is OP")
+            elif (thread_error or not thread_created) and thread and is_op:
+                logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: Thread exists and post is OP")
 
-                    # Post indicating it is OP but thread already exists
-                    # Could have received reply before OP
-                    # Add OP to current thread
-                    id_thread = thread.id
-                    hide_message = thread.hide
+                # Post indicating it is OP but thread already exists
+                # Could have received reply before OP
+                # Add OP to current thread
+                id_thread = thread.id
+                hide_message = thread.hide
 
-                    # Check if existing thread has OP json_obj
-                    if not thread.orig_op_bm_json_obj and json_obj:
-                        logger.info("Thread found with empty orig_op_bm_json_obj while processing OP. Populating with OP data.")
-                        thread.orig_op_bm_json_obj = json.dumps(json_obj)
+                # Check if existing thread has OP json_obj
+                if not thread.orig_op_bm_json_obj and json_obj:
+                    logger.info(
+                        f"{message_id[-config.ID_LENGTH:].upper()}: Thread found with empty orig_op_bm_json_obj "
+                        f"while processing OP. Populating with OP data.")
+                    thread.orig_op_bm_json_obj = json.dumps(json_obj)
 
-                    thread.last_op_json_obj_ts = time.time()
-                    new_session.commit()
-
-                    thread_op = new_session.query(Messages).filter(and_(
-                        Messages.is_op.is_(True),
-                        Messages.thread_id == thread.id)).first()
-                    if thread_op:
-                        logger.info("OP for thread already present. Skipping creation new message entry and updating last_op_json_obj_ts.")
-                        return
-                    else:
-                        logger.info("OP not found for thread, continuing to process message as OP")
-
-                # Create message
-                new_msg = Messages()
-                new_msg.version = version
-                new_msg.message_id = message_id
-                new_msg.post_id = get_post_id(message_id)
-                new_msg.post_number = chan.last_post_number
-                new_msg.expires_time = get_msg_expires_time(message_id)
-                logger.info(f"New post expires time: {new_msg.expires_time}")
-                new_msg.thread_id = id_thread
-                new_msg.address_from = bleach.clean(json_obj['fromAddress'])
-                new_msg.message_sha256_hash = message_sha256_hash
-                new_msg.is_op = is_op
-                if sage:
-                    new_msg.sage = sage
-                new_msg.original_message = original_message
-                new_msg.message = message
-                new_msg.subject = subject
-                new_msg.nation = nation
-                new_msg.nation_base64 = nation_base64
-                new_msg.nation_name = nation_name
-                if file_decoded == b"":  # Empty file
-                    new_msg.file_decoded = b" "
-                else:
-                    new_msg.file_decoded = file_decoded
-                new_msg.file_filename = file_filename
-                new_msg.file_url = file_url
-                new_msg.file_upload_settings = json.dumps(file_upload_settings)
-                new_msg.file_extracts_start_base64 = json.dumps(file_extracts_start_base64)
-                new_msg.file_size = file_size
-                new_msg.file_amount = file_amount
-                new_msg.file_do_not_download = file_do_not_download
-                new_msg.file_progress = file_progress
-                new_msg.file_sha256_hash = file_sha256_hash
-                new_msg.file_enc_cipher = file_enc_cipher
-                new_msg.file_enc_key_bytes = file_enc_key_bytes
-                new_msg.file_enc_password = file_enc_password
-                new_msg.file_sha256_hashes_match = file_sha256_hashes_match
-                new_msg.file_order = json.dumps(file_order)
-                new_msg.file_download_successful = file_download_successful
-                new_msg.upload_filename = upload_filename
-                new_msg.saved_file_filename = saved_file_filename
-                new_msg.saved_image_thumb_filename = saved_image_thumb_filename
-                new_msg.image1_spoiler = image1_spoiler
-                new_msg.image2_spoiler = image2_spoiler
-                new_msg.image3_spoiler = image3_spoiler
-                new_msg.image4_spoiler = image4_spoiler
-                new_msg.timestamp_received = int(json_obj['receivedTime'])
-                new_msg.timestamp_sent = timestamp_sent
-                new_msg.media_info = json.dumps(media_info)
-                new_msg.delete_password_hash = delete_password_hash
-                new_msg.message_steg = json.dumps(message_steg)
-                new_msg.message_original = json_obj["message"]
-                new_msg.text_replacements = text_replacements
-                new_msg.gpg_texts = json.dumps(gpg_texts)
-                new_msg.hide = hide_message
-
-                # Games
-                new_msg.game_password_a = game_password_a
-                new_msg.game_password_b_hash = game_password_b_hash
-                new_msg.game_player_move = game_player_move
-
-                # Initialize game
-                try:
-                    test_game = new_session.query(Games).filter(and_(
-                        Games.thread_hash == thread_id,
-                        Games.game_over.is_(False))).first()
-
-                    if game_hash and test_game and test_game.is_host and test_game.game_initiated is None:
-                        logger.info("Game found that I'm hosting. Starting initiation.")
-                        test_game.game_initiated = "uninitiated"
-                    elif not test_game and bleach.clean(json_obj['fromAddress']) and game:
-                        logger.info("Game not found. I must not be hosting.")
-                        new_game = Games()
-                        new_game.game_hash = game_hash
-                        new_game.thread_hash = thread_id
-                        new_game.is_host = False
-                        new_game.host_from_address = bleach.clean(json_obj['fromAddress'])
-                        new_game.game_type = game
-                        new_game.game_termination_pw_hash = game_termination_pw_hash
-                        new_session.add(new_game)
-
-                    # Generate post
-                    if game or game_player_move:
-                        if new_msg.message is None:
-                            new_msg.message = '<span class="god-text">== Game =='
-                        else:
-                            new_msg.message += '<br/><br/><span class="god-text">== Game =='
-                        if game and game in config.GAMES:
-                            new_msg.message += '<br/>New Game: {}'.format(config.GAMES[game])
-                        if game_termination_password or game_termination_pw_hash:
-                            new_msg.message += '<br/>Password (termination): *'
-                        if game_password_a:
-                            new_msg.message += '<br/>Password (previous): *'
-                        if game_password_b_hash:
-                            new_msg.message += '<br/>Password (new): *'
-                        if game_player_move:
-                            new_msg.message += '<br/>Command: {}'.format(game_player_move)
-                        new_msg.message += '<br/>==========</span>'
-                except:
-                    logger.exception("parsing message to game post")
-
-                new_msg.post_ids_replied_to = json.dumps(
-                    process_message_replies(message_id, message, thread_id, json_obj['toAddress']))
-
-                new_session.add(new_msg)
-
-                # Determine if an admin command to delete with comment is present
-                # Replace comment and delete file information
-                commands = new_session.query(Command).filter(and_(
-                    Command.action == "delete_comment",
-                    Command.action_type == "post",
-                    Command.chan_address == json_obj['toAddress'])).all()
-                for each_cmd in commands:
-                    try:
-                        options = json.loads(each_cmd.options)
-                    except:
-                        options = {}
-                    if ("delete_comment" in options and
-                            "message_id" in options["delete_comment"] and
-                            options["delete_comment"]["message_id"] == message_id and
-                            "comment" in options["delete_comment"]):
-
-                        if "from_address" in options["delete_comment"]:
-                            from_address = options["delete_comment"]["from_address"]
-                        else:
-                            from_address = json_obj['fromAddress']
-
-                        # replace comment
-                        delete_and_replace_comment(
-                            options["delete_comment"]["message_id"],
-                            options["delete_comment"]["comment"],
-                            from_address=from_address,
-                            local_delete=False)
-
-                # regenerate card
-                card_test = new_session.query(PostCards).filter(
-                    PostCards.thread_id == thread_id).first()
-                if card_test and not card_test.regenerate:
-                    card_test.regenerate = True
-
+                thread.last_op_json_obj_ts = time.time()
                 new_session.commit()
 
-                # check ongoing games
-                if not is_op:
-                    try:
-                        update_game(message_id, dict_msg,
-                                    game_termination_password=game_termination_password,
-                                    game_player_move=game_player_move)
-                    except:
-                        logger.exception("update_game()")
-
-                # Delete message from Bitmessage after parsing and adding to BitChan database
-                lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_API, to=120):
-                    try:
-                        return_val = api.trashMessage(message_id)
-                    except Exception as err:
-                        logger.error("{}: Exception during message delete: {}".format(
-                            message_id[-config.ID_LENGTH:].upper(), err))
-                    finally:
-                        time.sleep(config.API_PAUSE)
-                        lf.lock_release(config.LOCKFILE_API)
-
-        except Exception as err:
-            logger.error(
-                "{}: Could not write to database. Deleting. Error: {}".format(
-                    message_id[-config.ID_LENGTH:].upper(), err))
-            logger.exception("Saving message to DB")
-            delete_files_recursive(save_dir)
-            daemon_com.trash_message(message_id)
-        finally:
-            time.sleep(config.API_PAUSE)
-            lf.lock_release(config.LOCKFILE_STORE_POST)
-
-    # Bitmessage attachment
-    if file_decoded:
-        decrypted_zip = None
-
-        encrypted_zip = "/tmp/{}.zip".format(
-            get_random_alphanumeric_string(12, with_punctuation=False, with_spaces=False))
-        # encrypted_zip_object = BytesIO(file_decoded)
-        output_file = open(encrypted_zip, 'wb')
-        output_file.write(file_decoded)
-        output_file.close()
-
-        if file_enc_cipher == "NONE":
-            logger.info("{}: File not encrypted".format(message_id[-config.ID_LENGTH:].upper()))
-            decrypted_zip = encrypted_zip
-        elif file_enc_password:
-            # decrypt file
-            decrypted_zip = "/tmp/{}.zip".format(
-                get_random_alphanumeric_string(12, with_punctuation=False, with_spaces=False))
-            delete_file(decrypted_zip)  # make sure no file already exists
-            logger.info("{}: Decrypting file".format(message_id[-config.ID_LENGTH:].upper()))
-
-            try:
-                with session_scope(DB_PATH) as new_session:
-                    settings = new_session.query(GlobalSettings).first()
-                    ret_crypto = crypto_multi_decrypt(
-                        file_enc_cipher,
-                        file_enc_password + config.PGP_PASSPHRASE_ATTACH,
-                        encrypted_zip,
-                        decrypted_zip,
-                        key_bytes=file_enc_key_bytes,
-                        max_size_bytes=settings.max_extract_size * 1024 * 1024)
-                    if not ret_crypto:
-                        logger.error("{}: Issue decrypting file")
-                        return
-                    else:
-                        logger.info("{}: Finished decrypting file".format(message_id[-config.ID_LENGTH:].upper()))
-
-                    delete_file(encrypted_zip)
-                    # z = zipfile.ZipFile(download_path)
-                    # z.setpassword(config.PGP_PASSPHRASE_ATTACH.encode())
-                    # z.extract(extract_filename, path=extract_path)
-            except Exception:
-                logger.exception("Error decrypting file")
-
-        if decrypted_zip:
-            # Get the number of files in the zip archive
-            try:
-                file_amount_test = count_files_in_zip(message_id, decrypted_zip)
-            except Exception as err:
-                file_amount_test = None
-                logger.error("{}: Error checking zip: {}".format(
-                    message_id[-config.ID_LENGTH:].upper(), err))
-
-            if file_amount_test:
-                file_amount = file_amount_test
-
-            if file_amount > config.FILE_ATTACHMENTS_MAX:
-                logger.info("{}: Number of attachments ({}) exceed the maximum ({}).".format(
-                    message_id[-config.ID_LENGTH:].upper(), file_amount, config.FILE_ATTACHMENTS_MAX))
-                daemon_com.trash_message(message_id)
-                return
-
-            # Check size of zip contents before extraction
-            can_extract = True
-            with zipfile.ZipFile(decrypted_zip, 'r') as zipObj:
-                total_size = 0
-                for each_file in zipObj.infolist():
-                    total_size += each_file.file_size
-                logger.info("ZIP contents size: {}".format(total_size))
-                with session_scope(DB_PATH) as new_session:
-                    settings = new_session.query(GlobalSettings).first()
-                    if (settings.max_extract_size and
-                            total_size > settings.max_extract_size * 1024 * 1024):
-                        can_extract = False
-                        logger.error(
-                            "ZIP content size greater than max allowed ({} bytes). "
-                            "Not extracting.".format(settings.max_extract_size * 1024 * 1024))
-
-            if can_extract:
-                # Extract zip archive
-                extract_path = "{}/{}".format(config.FILE_DIRECTORY, message_id)
-                extract_zip(message_id, decrypted_zip, extract_path)
-                delete_file(decrypted_zip)  # Secure delete
-
-                errors_files, media_info, message_steg = process_attachments(message_id, extract_path)
-
-                if errors_files:
-                    logger.error(
-                        "{}: Encountered errors processing attachments (will delete)...".format(
-                            message_id[-config.ID_LENGTH:].upper(), config.MAX_FILE_EXT_LENGTH))
-                    for err in errors_files:
-                        logger.error("{}: Error: {}".format(message_id[-config.ID_LENGTH:].upper(), err))
-                    delete_files_recursive(extract_path)
-                    daemon_com.trash_message(message_id)
+                thread_op = new_session.query(Messages).filter(and_(
+                    Messages.is_op.is_(True),
+                    Messages.thread_id == thread.id)).first()
+                if thread_op:
+                    logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: OP for thread already present. "
+                                "Skipping creation new message entry and updating last_op_json_obj_ts.")
                     return
                 else:
-                    lf = LF()
-                    if lf.lock_acquire(config.LOCKFILE_STORE_POST, to=20):
-                        try:
-                            with session_scope(DB_PATH) as new_session:
-                                msg = new_session.query(Messages).filter(
-                                    Messages.message_id == message_id).first()
-                                if not msg:
-                                    return
-                                msg.file_progress = None
-                                new_session.commit()
+                    logger.info("OP not found for thread, continuing to process message as OP")
 
-                            time.sleep(5)
-                            regenerate_card_popup_post_html(message_id=message_id)
-                        except Exception as err:
-                            logger.error(
-                                "{}: Could not write to database. Deleting. Error: {}".format(
-                                    message_id[-config.ID_LENGTH:].upper(), err))
-                            logger.exception("Editing message in DB")
-                        finally:
-                            time.sleep(config.API_PAUSE)
-                            lf.lock_release(config.LOCKFILE_STORE_POST)
+            elif thread_error or not thread_created:
+                # Duplicate thread hash wasn't the previous exception and required rechecking thread
+                # Some other error occurred and this post likely needs to be trashed
+                # In any case, it's advised to check the log
+                logger.error(f"{message_id[-config.ID_LENGTH:].upper()}: Some other error prevented this message "
+                             f"from being processed. Review the log.")
+                return
 
-    # Download attachments after post is created in order to get post to appear on thread
-    if file_url:
-        # Create dir to extract files into
-        logger.info("{}: Filename on disk: {}".format(
-            message_id[-config.ID_LENGTH:].upper(), saved_file_filename))
+            # Create message
+            new_msg = Messages()
+            new_msg.version = version
+            new_msg.message_id = message_id
+            new_msg.post_id = get_post_id(message_id)
+            new_msg.post_number = chan.last_post_number
+            new_msg.expires_time = get_msg_expires_time(message_id)
+            new_msg.thread_id = id_thread
+            new_msg.address_from = bleach.clean(json_obj['fromAddress'])
+            new_msg.message_sha256_hash = message_sha256_hash
+            new_msg.is_op = is_op
+            new_msg.sage = sage
+            new_msg.original_message = original_message
+            new_msg.message = message
+            new_msg.subject = subject
+            new_msg.nation = nation
+            new_msg.nation_base64 = nation_base64
+            new_msg.nation_name = nation_name
+            new_msg.file_decoded = file_decoded
+            new_msg.file_filename = file_filename
+            new_msg.file_url = file_url
+            new_msg.file_torrent_file_hash = file_torrent_file_hash
+            new_msg.file_torrent_magnet = file_torrent_magnet
+            new_msg.file_torrent_decoded = file_torrent_decoded
+            new_msg.file_upload_settings = json.dumps(file_upload_settings)
+            new_msg.file_extracts_start_base64 = json.dumps(file_extracts_start_base64)
+            new_msg.file_size = file_size
+            new_msg.file_amount = file_amount
+            new_msg.file_do_not_download = file_do_not_download
+            new_msg.file_progress = file_progress
+            new_msg.file_sha256_hash = file_sha256_hash
+            new_msg.file_enc_cipher = file_enc_cipher
+            new_msg.file_enc_key_bytes = file_enc_key_bytes
+            new_msg.file_enc_password = file_enc_password
+            new_msg.file_sha256_hashes_match = file_sha256_hashes_match
+            new_msg.file_order = json.dumps(file_order)
+            new_msg.file_download_successful = file_download_successful
+            new_msg.upload_filename = upload_filename
+            new_msg.saved_file_filename = saved_file_filename
+            new_msg.saved_image_thumb_filename = saved_image_thumb_filename
+            new_msg.image1_spoiler = image1_spoiler
+            new_msg.image2_spoiler = image2_spoiler
+            new_msg.image3_spoiler = image3_spoiler
+            new_msg.image4_spoiler = image4_spoiler
+            new_msg.timestamp_received = int(json_obj['receivedTime'])
+            new_msg.timestamp_sent = timestamp_sent
+            new_msg.media_info = json.dumps(media_info)
+            new_msg.delete_password_hash = delete_password_hash
+            new_msg.message_steg = json.dumps(message_steg)
+            new_msg.message_original = json_obj["message"]
+            new_msg.text_replacements = text_replacements
+            new_msg.gpg_texts = json.dumps(gpg_texts)
+            new_msg.hide = hide_message
 
-        if os.path.exists(file_path) and os.path.getsize(file_path) != 0 and save_dir:
-            logger.info("{}: Downloaded zip file found. Not attempting to download.".format(
-                message_id[-config.ID_LENGTH:].upper()))
-            file_size_test = os.path.getsize(file_path)
-            file_download_successful = True
-            extract_zip(message_id, file_path, save_dir)
-        else:
-            with session_scope(DB_PATH) as new_session:
+            # Games
+            new_msg.game_password_a = game_password_a
+            new_msg.game_password_b_hash = game_password_b_hash
+            new_msg.game_player_move = game_player_move
+
+            # Initialize game
+            try:
+                test_game = new_session.query(Games).filter(and_(
+                    Games.thread_hash == thread_id,
+                    Games.game_over.is_(False))).first()
+
+                if game_hash and test_game and test_game.is_host and test_game.game_initiated is None:
+                    logger.info("Game found that I'm hosting. Starting initiation.")
+                    test_game.game_initiated = "uninitiated"
+                elif not test_game and bleach.clean(json_obj['fromAddress']) and game:
+                    logger.info("Game not found. I must not be hosting.")
+                    new_game = Games()
+                    new_game.game_hash = game_hash
+                    new_game.thread_hash = thread_id
+                    new_game.is_host = False
+                    new_game.host_from_address = bleach.clean(json_obj['fromAddress'])
+                    new_game.game_type = game
+                    new_game.game_termination_pw_hash = game_termination_pw_hash
+                    new_session.add(new_game)
+
+                # Generate post
+                if game or game_player_move:
+                    if new_msg.message is None:
+                        new_msg.message = '<span class="god-text">== Game =='
+                    else:
+                        new_msg.message += '<br/><br/><span class="god-text">== Game =='
+                    if game and game in config.GAMES:
+                        new_msg.message += '<br/>New Game: {}'.format(config.GAMES[game])
+                    if game_termination_password or game_termination_pw_hash:
+                        new_msg.message += '<br/>Password (termination): *'
+                    if game_password_a:
+                        new_msg.message += '<br/>Password (previous): *'
+                    if game_password_b_hash:
+                        new_msg.message += '<br/>Password (new): *'
+                    if game_player_move:
+                        new_msg.message += '<br/>Command: {}'.format(game_player_move)
+                    new_msg.message += '<br/>==========</span>'
+            except:
+                logger.exception("parsing message to game post")
+
+            new_msg.post_ids_replied_to = json.dumps(
+                process_message_replies(message_id, message, thread_id, json_obj['toAddress']))
+
+            new_session.add(new_msg)
+
+            # Determine if an admin command to delete with comment is present
+            # Replace comment and delete file information
+            commands = new_session.query(Command).filter(and_(
+                Command.action == "delete_comment",
+                Command.action_type == "post",
+                Command.chan_address == json_obj['toAddress'])).all()
+            for each_cmd in commands:
+                try:
+                    options = json.loads(each_cmd.options)
+                except:
+                    options = {}
+                if ("delete_comment" in options and
+                        "message_id" in options["delete_comment"] and
+                        options["delete_comment"]["message_id"] == message_id and
+                        "comment" in options["delete_comment"]):
+
+                    if "from_address" in options["delete_comment"]:
+                        from_address = options["delete_comment"]["from_address"]
+                    else:
+                        from_address = json_obj['fromAddress']
+
+                    # replace comment
+                    delete_and_replace_comment(
+                        options["delete_comment"]["message_id"],
+                        options["delete_comment"]["comment"],
+                        from_address=from_address,
+                        local_delete=False)
+
+            # regenerate card
+            card_test = new_session.query(PostCards).filter(
+                PostCards.thread_id == thread_id).first()
+            if card_test and not card_test.regenerate:
+                card_test.regenerate = True
+
+            new_session.commit()
+
+            # check ongoing games
+            if not is_op:
+                try:
+                    update_game(message_id, dict_msg,
+                                game_termination_password=game_termination_password,
+                                game_player_move=game_player_move)
+                except:
+                    logger.exception("update_game()")
+
+            # Delete message from Bitmessage after parsing and adding to BitChan database
+            lf = LF()
+            if lf.lock_acquire(config.LOCKFILE_API, to=120):
+                try:
+                    return_val = api.trashMessage(message_id)
+                except Exception as err:
+                    logger.error("{}: Exception during message delete: {}".format(
+                        message_id[-config.ID_LENGTH:].upper(), err))
+                finally:
+                    time.sleep(config.API_PAUSE)
+                    lf.lock_release(config.LOCKFILE_API)
+
+    except Exception as err:
+        logger.exception(f"{message_id[-config.ID_LENGTH:].upper()}: Saving message to DB")
+        delete_files_recursive(save_dir)
+        daemon_com.trash_message(message_id)
+    finally:
+        time.sleep(config.API_PAUSE)
+
+    #
+    # Get Attachments (after post creation to not delay showing post)
+    #
+
+    with session_scope(config.DB_PATH) as new_session:
+        settings = new_session.query(GlobalSettings).first()
+
+        #
+        # Bitmessage attachment
+        #
+        if file_decoded:
+            encrypted_zip = "/tmp/{}.zip".format(
+                get_random_alphanumeric_string(12, with_punctuation=False, with_spaces=False))
+            # encrypted_zip_object = BytesIO(file_decoded)
+            output_file = open(encrypted_zip, 'wb')
+            output_file.write(file_decoded)
+            output_file.close()
+
+            status, media_info, message_steg = decrypt_and_process_attachments(
+                message_id, file_enc_cipher, file_enc_key_bytes, file_enc_password, encrypted_zip)
+
+            if not status:
+                msg = new_session.query(Messages).filter(
+                    Messages.message_id == message_id).first()
+                if not msg:
+                    return
+                msg.media_info = json.dumps(media_info)
+                msg.message_steg = json.dumps(message_steg)
+                new_session.commit()
+
+        #
+        # i2p torrent attachment
+        #
+        elif file_torrent_decoded and file_torrent_file_hash and not settings.disable_downloading_i2p_torrent:
+            torrent_filename = f"{file_torrent_file_hash}.torrent"
+            path_torrent_tmp = os.path.join("/tmp", torrent_filename)
+
+            with open(path_torrent_tmp, mode='wb') as f:  # Save torrent file to temporary directory
+                f.write(file_torrent_decoded)
+
+            # Ensure all trackers have i2p as the TLD (Don't allow non-i2p trackers)
+            t = Torrent.read(path_torrent_tmp)
+            list_trackers = []
+            for tracker in t.trackers:
+                list_trackers += tracker
+            non_i2p_urls = check_tld_i2p(list_trackers)
+            if non_i2p_urls:
+                update_msg = new_session.query(Messages).filter(
+                    Messages.message_id == message_id).first()
+                if update_msg:
+                    update_msg.file_currently_downloading = False
+                    update_msg.file_progress = "Non-i2p trackers found in torrent. Torrent discarded."
+                    new_session.commit()
+                logger.error(f"Found non-i2p tracker in attachment torrent! Not downloading. Found: {non_i2p_urls}")
+                return
+
+            # Set proper UID and GID and move to autodownload directory to begin downloading
+            uid = 1001
+            gid = 1001
+            os.chown(path_torrent_tmp, uid, gid)
+            os.chmod(path_torrent_tmp, 0o666)
+
+            # Check if torrent exists already
+            conn_info = dict(host=config.QBITTORRENT_HOST, port=8080)
+            qbt_client = qbittorrentapi.Client(**conn_info)
+            qbt_client.auth_log_in()
+            try:
+                torrent_prop = qbt_client.torrents_info(torrent_hashes=file_torrent_file_hash)[0]
+            except:
+                torrent_prop = None
+
+            if torrent_prop:
+                # Torrent is already in client
+                logger.info("Torrent already exists in client")
+            else:
+                # Torrent not already in client. Add paused.
+                try:
+                    ret = qbt_client.torrents_add(torrent_files=path_torrent_tmp, is_paused=True)
+                    logger.info(f"Adding paused torrent: {ret}")
+                    if ret != "Ok.":
+                        logger.error("{}: Error adding paused torrent {}".format(
+                            message_id[-config.ID_LENGTH:].upper(), path_torrent_tmp))
+                except:
+                    logger.exception("Adding torrent file")
+
+            qbt_client.auth_log_out()
+
+            delete_file(path_torrent_tmp)
+
+            update_msg = new_session.query(Messages).filter(
+                Messages.message_id == message_id).first()
+            if update_msg:
+                update_msg.file_currently_downloading = True
+                update_msg.file_progress = "I2P BitTorrent Download Started"
+                new_session.commit()
+
+            new_torrent = UploadTorrents()
+            new_torrent.file_hash = file_torrent_file_hash
+            new_torrent.torrent_hash = t.infohash
+            new_torrent.message_id = message_id
+            new_torrent.timestamp_started = time.time()
+            new_session.add(new_torrent)
+
+        #
+        # upload site attachment
+        #
+        elif file_url and not settings.disable_downloading_upload_site:
+            # Create dir to extract files into
+            logger.info("{}: Filename on disk: {}".format(
+                message_id[-config.ID_LENGTH:].upper(), saved_file_filename))
+
+            if os.path.exists(file_path) and os.path.getsize(file_path) != 0 and save_dir:
+                logger.info("{}: Downloaded zip file found. Not attempting to download.".format(
+                    message_id[-config.ID_LENGTH:].upper()))
+                file_size_test = os.path.getsize(file_path)
+                file_download_successful = True
+                extract_zip(message_id, file_path, save_dir)
+            else:
                 settings = new_session.query(GlobalSettings).first()
                 if settings.maintenance_mode:
                     # If under maintenance, don't download now but set to download when maintenance ends
@@ -938,25 +1007,22 @@ def parse_message(message_id, json_obj):
                         new_session.commit()
                     return
 
-            logger.info(
-                "{}: File not found. Attempting to download.".format(
-                    message_id[-config.ID_LENGTH:].upper()))
-            logger.info("{}: Downloading file url: {}".format(
-                message_id[-config.ID_LENGTH:].upper(), file_url))
+                logger.info(
+                    "{}: File not found. Attempting to download.".format(
+                        message_id[-config.ID_LENGTH:].upper()))
+                logger.info("{}: Downloading file url: {}".format(
+                    message_id[-config.ID_LENGTH:].upper(), file_url))
 
-            if upload_filename and file_url_type and file_upload_settings:
-                # Set post status to downloading and attempt to start the download
-                lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_STORE_POST, to=20):
+                if upload_filename and file_url_type and file_upload_settings:
+                    # Set post status to downloading and attempt to start the download
                     try:
-                        with session_scope(DB_PATH) as new_session:
-                            msg = new_session.query(Messages).filter(
-                                Messages.message_id == message_id).first()
-                            if not msg:
-                                return
-                            msg.file_currently_downloading = True
-                            msg.file_progress = "Starting download"
-                            new_session.commit()
+                        msg = new_session.query(Messages).filter(
+                            Messages.message_id == message_id).first()
+                        if not msg:
+                            return
+                        msg.file_currently_downloading = True
+                        msg.file_progress = "Starting download"
+                        new_session.commit()
                     except Exception as err:
                         logger.error(
                             "{}: Could not write to database. Deleting. Error: {}".format(
@@ -964,48 +1030,46 @@ def parse_message(message_id, json_obj):
                         logger.exception("Editing message in DB")
                     finally:
                         time.sleep(config.API_PAUSE)
-                        lf.lock_release(config.LOCKFILE_STORE_POST)
 
-                # Pick a download slot to fill (2 slots per domain)
-                domain = urlparse(file_url).netloc
-                lockfile1 = "/var/lock/download_{}_1.lock".format(domain)
-                lockfile2 = "/var/lock/download_{}_2.lock".format(domain)
+                    # Pick a download slot to fill (2 slots per domain)
+                    domain = urlparse(file_url).netloc
+                    lockfile1 = "/var/lock/download_{}_1.lock".format(domain)
+                    lockfile2 = "/var/lock/download_{}_2.lock".format(domain)
 
-                lf = LF()
-                lockfile = random.choice([lockfile1, lockfile2])
-                if lf.lock_acquire(lockfile, to=600):
-                    try:
-                        (file_download_successful,
-                         file_size_test,
-                         file_amount_test,
-                         file_do_not_download,
-                         file_sha256_hashes_match,
-                         file_progress,
-                         media_info,
-                         message_steg) = download_and_extract(
-                            message_id,
-                            file_url,
-                            file_upload_settings,
-                            file_extracts_start_base64,
-                            upload_filename,
-                            file_path,
-                            file_sha256_hash,
-                            file_enc_cipher,
-                            file_enc_key_bytes,
-                            file_enc_password)
+                    lf = LF()
+                    lockfile = random.choice([lockfile1, lockfile2])
+                    if lf.lock_acquire(lockfile, to=600):
+                        try:
+                            (file_download_successful,
+                             file_size_test,
+                             file_amount_test,
+                             file_do_not_download,
+                             file_sha256_hashes_match,
+                             file_progress,
+                             media_info,
+                             message_steg) = download_and_extract(
+                                message_id,
+                                file_url,
+                                file_upload_settings,
+                                file_extracts_start_base64,
+                                upload_filename,
+                                file_path,
+                                file_sha256_hash,
+                                file_enc_cipher,
+                                file_enc_key_bytes,
+                                file_enc_password)
 
-                        if file_size_test:
-                            file_size = file_size_test
+                            if file_size_test:
+                                file_size = file_size_test
 
-                        if file_amount_test:
-                            file_amount = file_amount_test
-                    finally:
-                        lf.lock_release(lockfile)
+                            if file_amount_test:
+                                file_amount = file_amount_test
+                        finally:
+                            lf.lock_release(lockfile)
 
-        # check for banned file hashes
-        banned_hashes = file_hash_banned(return_file_hashes(media_info), address=json_obj['toAddress'])
-        if media_info and banned_hashes:
-            with session_scope(DB_PATH) as new_session:
+            # check for banned file hashes
+            banned_hashes = file_hash_banned(return_file_hashes(media_info), address=json_obj['toAddress'])
+            if media_info and banned_hashes:
                 message = new_session.query(Messages).filter(
                     Messages.message_id == message_id).first()
                 if message:
@@ -1025,48 +1089,45 @@ def parse_message(message_id, json_obj):
                         thread_hash=message.thread.thread_hash)
                     return
 
-        if file_download_successful:
-            for dirpath, dirnames, filenames in os.walk(save_dir):
-                for f in filenames:
-                    fp = os.path.join(dirpath, f)
-                    if os.path.islink(fp):  # skip symbolic links
-                        continue
+            if file_download_successful:
+                for dirpath, dirnames, filenames in os.walk(save_dir):
+                    for f in filenames:
+                        fp = os.path.join(dirpath, f)
+                        if os.path.islink(fp):  # skip symbolic links
+                            continue
 
-                    file_extension = html.escape(os.path.splitext(f)[1].split(".")[-1].lower())
-                    if not file_extension:
-                        logger.error("{}: File extension not found. Deleting.".format(
-                            message_id[-config.ID_LENGTH:].upper()))
-                        delete_post(message_id)
-                        return
-                    elif len(file_extension) >= config.MAX_FILE_EXT_LENGTH:
-                        logger.error(
-                            "{}: File extension greater than {} characters. Deleting.".format(
-                                message_id[-config.ID_LENGTH:].upper(), config.MAX_FILE_EXT_LENGTH))
-                        delete_post(message_id)
-                        return
-                    if file_extension in config.FILE_EXTENSIONS_IMAGE:
-                        saved_image_thumb_filename = "{}_thumb.{}".format(message_id, file_extension)
-                        img_thumb_filename = "{}/{}".format(save_dir, saved_image_thumb_filename)
-                        generate_thumbnail_image(message_id, fp, img_thumb_filename, file_extension)
+                        file_extension = html.escape(os.path.splitext(f)[1].split(".")[-1].lower())
+                        if not file_extension:
+                            logger.error("{}: File extension not found. Deleting.".format(
+                                message_id[-config.ID_LENGTH:].upper()))
+                            delete_post(message_id)
+                            return
+                        elif len(file_extension) >= config.MAX_FILE_EXT_LENGTH:
+                            logger.error(
+                                "{}: File extension greater than {} characters. Deleting.".format(
+                                    message_id[-config.ID_LENGTH:].upper(), config.MAX_FILE_EXT_LENGTH))
+                            delete_post(message_id)
+                            return
+                        if file_extension in config.FILE_EXTENSIONS_IMAGE:
+                            saved_image_thumb_filename = "{}_thumb.{}".format(message_id, file_extension)
+                            img_thumb_filename = "{}/{}".format(save_dir, saved_image_thumb_filename)
+                            generate_thumbnail_image(message_id, fp, img_thumb_filename, file_extension)
 
-        lf = LF()
-        if lf.lock_acquire(config.LOCKFILE_STORE_POST, to=20):
             try:
-                with session_scope(DB_PATH) as new_session:
-                    msg = new_session.query(Messages).filter(
-                        Messages.message_id == message_id).first()
-                    if not msg:
-                        return
-                    msg.file_amount = file_amount
-                    msg.file_size = file_size
-                    msg.file_download_successful = file_download_successful
-                    msg.file_do_not_download = file_do_not_download
-                    msg.file_sha256_hashes_match = file_sha256_hashes_match
-                    msg.file_progress = file_progress
-                    msg.media_info = json.dumps(media_info)
-                    msg.message_steg = json.dumps(message_steg)
-                    msg.file_currently_downloading = False
-                    new_session.commit()
+                msg = new_session.query(Messages).filter(
+                    Messages.message_id == message_id).first()
+                if not msg:
+                    return
+                msg.file_amount = file_amount
+                msg.file_size = file_size
+                msg.file_download_successful = file_download_successful
+                msg.file_do_not_download = file_do_not_download
+                msg.file_sha256_hashes_match = file_sha256_hashes_match
+                msg.file_progress = file_progress
+                msg.media_info = json.dumps(media_info)
+                msg.message_steg = json.dumps(message_steg)
+                msg.file_currently_downloading = False
+                new_session.commit()
 
                 time.sleep(20)
                 regenerate_card_popup_post_html(message_id=message_id)
@@ -1077,25 +1138,23 @@ def parse_message(message_id, json_obj):
                 logger.exception("Editing message in DB")
             finally:
                 time.sleep(config.API_PAUSE)
-                lf.lock_release(config.LOCKFILE_STORE_POST)
 
     # Return OP message ID, bool to process OP, and OP json_obj
     if (process_op_json_obj and
-            orig_op_bm_json_obj and
-            "msgid" in orig_op_bm_json_obj and
-            orig_op_bm_json_obj["msgid"]):
+            orig_op_bm_json_obj and "msgid" in orig_op_bm_json_obj and orig_op_bm_json_obj["msgid"]):
         return_dict = {
             "process_op_json_obj": process_op_json_obj,
             "orig_op_bm_json_obj": orig_op_bm_json_obj
         }
         return return_dict
 
+
 def process_admin(msg_dict, msg_decrypted_dict):
     """Process message as an admin command"""
     logger.info("{}: Message is an admin command".format(msg_dict["msgid"][-config.ID_LENGTH:].upper()))
 
     # Authenticate sender
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         chan = new_session.query(Chan).filter(
             Chan.address == msg_dict['toAddress']).first()
         if chan:
@@ -1203,3 +1262,121 @@ def process_admin(msg_dict, msg_decrypted_dict):
         finally:
             time.sleep(config.API_PAUSE)
             lf.lock_release(config.LOCKFILE_API)
+
+
+def decrypt_and_process_attachments(
+        message_id, file_enc_cipher, file_enc_key_bytes, file_enc_password, encrypted_zip, skip_size_check=False):
+    decrypted_zip = None
+    file_amount = None
+    media_info = {}
+    message_steg = {}
+
+    if file_enc_cipher == "NONE":
+        logger.info("{}: File not encrypted".format(message_id[-config.ID_LENGTH:].upper()))
+        decrypted_zip = encrypted_zip
+    elif file_enc_password:
+        # decrypt file
+        decrypted_zip = "/tmp/{}.zip".format(
+            get_random_alphanumeric_string(12, with_punctuation=False, with_spaces=False))
+        delete_file(decrypted_zip)  # make sure no file already exists
+        logger.info("{}: Decrypting file {}".format(message_id[-config.ID_LENGTH:].upper(), encrypted_zip))
+
+        try:
+            with session_scope(config.DB_PATH) as new_session:
+                settings = new_session.query(GlobalSettings).first()
+                ret_crypto, error_msg = crypto_multi_decrypt(
+                    file_enc_cipher,
+                    file_enc_password + config.PGP_PASSPHRASE_ATTACH,
+                    encrypted_zip,
+                    decrypted_zip,
+                    key_bytes=file_enc_key_bytes,
+                    max_size_bytes=settings.max_extract_size * 1024 * 1024,
+                    skip_size_check=skip_size_check)
+                if not ret_crypto:
+                    logger.error(f"Issue decrypting file: {error_msg}")
+                    message = new_session.query(Messages).filter(
+                        Messages.message_id == message_id).first()
+                    if message:
+                        message.file_progress = error_msg
+                        message.regenerate_post_html = True
+                        new_session.commit()
+                    return 1, media_info, message_steg
+                else:
+                    logger.info("{}: Finished decrypting file".format(message_id[-config.ID_LENGTH:].upper()))
+
+                delete_file(encrypted_zip)
+        except Exception:
+            logger.exception("Error decrypting file")
+            return 1, media_info, message_steg
+
+    if decrypted_zip:
+        # Get the number of files in the zip archive
+        try:
+            file_amount_test = count_files_in_zip(message_id, decrypted_zip)
+        except Exception as err:
+            file_amount_test = None
+            logger.error("{}: Error checking zip: {}".format(
+                message_id[-config.ID_LENGTH:].upper(), err))
+
+        if file_amount_test:
+            file_amount = file_amount_test
+
+        if file_amount > config.FILE_ATTACHMENTS_MAX:
+            logger.info("{}: Number of attachments ({}) exceed the maximum ({}).".format(
+                message_id[-config.ID_LENGTH:].upper(), file_amount, config.FILE_ATTACHMENTS_MAX))
+            daemon_com.trash_message(message_id)
+            return 1, media_info, message_steg
+
+        # Check size of zip contents before extraction
+        can_extract = True
+        with zipfile.ZipFile(decrypted_zip, 'r') as zipObj:
+            total_size = 0
+            for each_file in zipObj.infolist():
+                total_size += each_file.file_size
+            logger.info("ZIP contents size: {}".format(total_size))
+            with session_scope(config.DB_PATH) as new_session:
+                settings = new_session.query(GlobalSettings).first()
+                max_extract_size = settings.max_extract_size * 1024 * 1024
+
+                if not skip_size_check and settings.max_extract_size and total_size > max_extract_size:
+                    can_extract = False
+                    msg = "During extraction, max attachment size exceeded ({} > {}).".format(
+                        human_readable_size(total_size), human_readable_size(max_extract_size))
+                    logger.error(msg)
+                    message = new_session.query(Messages).filter(
+                        Messages.message_id == message_id).first()
+                    if message:
+                        message.file_progress = msg
+                        message.regenerate_post_html = True
+                        message.file_download_successful = False
+                        new_session.commit()
+
+        if can_extract:
+            # Extract zip archive
+            extract_path = "{}/{}".format(config.FILE_DIRECTORY, message_id)
+            extract_zip(message_id, decrypted_zip, extract_path)
+            delete_file(decrypted_zip)  # Secure delete
+
+            errors_files, media_info, message_steg = process_attachments(message_id, extract_path)
+
+            if errors_files:
+                logger.error(
+                    "{}: Encountered errors processing attachments. Deleting".format(
+                        message_id[-config.ID_LENGTH:].upper(), config.MAX_FILE_EXT_LENGTH))
+                for err in errors_files:
+                    logger.error("{}: Error: {}".format(message_id[-config.ID_LENGTH:].upper(), err))
+                delete_files_recursive(extract_path)
+                daemon_com.trash_message(message_id)
+                return 1, media_info, message_steg
+            else:
+                # Decryption and extraction successful
+                with session_scope(config.DB_PATH) as new_session:
+                    msg = new_session.query(Messages).filter(
+                        Messages.message_id == message_id).first()
+                    if msg:
+                        msg.file_progress = None
+                        new_session.commit()
+                regenerate_card_popup_post_html(message_id=message_id)
+                return 0, media_info, message_steg
+
+    return 1, media_info, message_steg

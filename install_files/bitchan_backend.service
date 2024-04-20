@@ -8,8 +8,8 @@ RestartSec=15s
 Type=forking
 TimeoutSec=0
 ExecStartPre=/usr/local/bitchan/BitChan/database/upgrade_database.sh && /bin/sleep 5
-ExecStart=/usr/local/bitchan/venv3/bin/python /usr/local/bitchan/BitChan/bitchan_daemon.py
-ExecStop=/usr/local/bitchan/venv3/bin/python /usr/local/bitchan/BitChan/scripts_dev/shutdown_daemon.py
+ExecStart=/usr/local/bitchan_venv3/bin/python /usr/local/bitchan/BitChan/bitchan_daemon.py
+ExecStop=/usr/local/bitchan_venv3/bin/python /usr/local/bitchan/BitChan/scripts_dev/shutdown_daemon.py
 
 [Install]
 WantedBy=multi-user.target

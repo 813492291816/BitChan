@@ -5,14 +5,17 @@ import json
 import logging
 import os
 import random
+import shutil
 import time
 import zipfile
 from threading import Thread
 
 import PIL
 import gnupg
+import qbittorrentapi
 from PIL import Image
 from sqlalchemy import and_
+from torf import Torrent
 
 import config
 from bitchan_client import DaemonCom
@@ -26,6 +29,7 @@ from database.models import PGP
 from database.models import Threads
 from database.models import UploadProgress
 from database.models import UploadSites
+from database.models import UploadTorrents
 from database.utils import session_scope
 from utils.anonfile import AnonFile
 from utils.download import generate_hash
@@ -46,12 +50,11 @@ from utils.replacements import format_body
 from utils.replacements import process_replacements
 from utils.routes import has_permission
 from utils.routes import is_logged_in
+from utils.shared import check_tld_i2p
 from utils.shared import get_access
 from utils.shared import get_post_ttl
 from utils.steg import steg_encrypt
 from utils.upload import UploadCurl
-
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
 
 logger = logging.getLogger('bitchan.message_post')
 daemon_com = DaemonCom()
@@ -86,6 +89,13 @@ def post_message(form_post, status_msg):
                 status_msg['status_message'].append(
                     "Encrypting or signing PGP messages in posts is not allowed in kiosk mode")
 
+        if settings.kiosk_disable_bm_attach and form_post.upload.data == "bitmessage":
+            status_msg['status_message'].append(
+                "The Bitmessage upload method is not permitted while in Kiosk Mode")
+        if settings.kiosk_disable_i2p_torrent_attach and form_post.upload.data == "i2p_torrent":
+            status_msg['status_message'].append(
+                "The I2P Torrent upload method is not permitted while in Kiosk Mode")
+
     if not form_post.from_address.data:
         status_msg['status_message'].append("A From Address is required.")
 
@@ -98,7 +108,8 @@ def post_message(form_post, status_msg):
             status_msg['status_message'].append("Cannot post to nonexistent thread.")
         else:
             if thread.hide:
-                status_msg['status_message'].append("Cannot post to a hidden thread. Restore the thread before posting.")
+                status_msg['status_message'].append(
+                    "Cannot post to a hidden thread. Restore the thread before posting.")
 
             if thread.chan:
                 admin_cmd = Command.query.filter(and_(
@@ -157,7 +168,8 @@ def post_message(form_post, status_msg):
         status_msg['status_message'].append("If entering Previous Password, you must provide New Password")
 
     if form_post.game_password_a.data and form_post.game_password_b.data and not form_post.game_player_move.data:
-        status_msg['status_message'].append("If entering Previous Password and New Password, you must provide a Game Command")
+        status_msg['status_message'].append(
+            "If entering Previous Password and New Password, you must provide a Game Command")
 
     if form_post.game.data and form_post.game.data not in config.GAMES:
         status_msg['status_message'].append("Unknown game: {}".format(form_post.game.data))
@@ -169,7 +181,12 @@ def post_message(form_post, status_msg):
         status_msg['status_message'].append("A message is required to GPG encrypt a message")
 
     def append_file(form, list_append):
-        if bool(form.data[0]):
+        test = False
+        try:
+            test = bool(form.data[0])
+        except:
+            pass
+        if test:
             list_append.append(form.data[0])
         else:
             list_append.append(None)
@@ -231,10 +248,12 @@ def post_message(form_post, status_msg):
 
         if thread:
             form_populate["preview"] = format_body(
-                "preview", form_populate["preview"], False, True, preview=True, this_thread_hash=thread.thread_hash, gpg_texts=gpg_texts)
+                "preview", form_populate["preview"], False, True,
+                preview=True, this_thread_hash=thread.thread_hash, gpg_texts=gpg_texts)
         else:
             form_populate["preview"] = format_body(
-                "preview", form_populate["preview"], False, True, preview=True, gpg_texts=gpg_texts)
+                "preview", form_populate["preview"], False, True,
+                preview=True, gpg_texts=gpg_texts)
     elif "status_message" not in status_msg or not status_msg["status_message"]:
         if settings.enable_kiosk_mode:
             if settings.kiosk_allow_posting or has_permission("can_post"):
@@ -298,7 +317,6 @@ def generate_post_form_populate(form_post):
 def submit_post(form_post):
     """Process the form for making a post"""
     errors = []
-
     file_list = []
     file_upload = False
 
@@ -311,6 +329,8 @@ def submit_post(form_post):
         "file_extension": None,
         "file_url_type": None,
         "file_url": None,
+        "file_torrent_file_hash": None,
+        "file_torrent_base64": None,
         "file_upload_settings": {},
         "file_extracts_start_base64": None,
         "file_sha256_hash": None,
@@ -372,7 +392,7 @@ def submit_post(form_post):
         dict_send["game_termination_password"] = form_post.game_termination_password.data
 
     if form_post.is_op.data != "yes":
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             thread = new_session.query(Threads).filter(
                 Threads.thread_hash == form_post.thread_id.data).first()
             if thread:
@@ -403,7 +423,7 @@ def submit_post(form_post):
         if (form_post.nation.data.startswith("customflag") and
                 len(form_post.nation.data.split("_")) == 2):
             flag_id = int(form_post.nation.data.split("_")[1])
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 flag = new_session.query(Flags).filter(Flags.id == flag_id).first()
                 if flag:
                     dict_send["nation_name"] = flag.name
@@ -441,7 +461,7 @@ def submit_post(form_post):
                 gpg_enc = gnupg.GPG(gnupghome=GPG_DIR, keyring=list_keyrings, options=['--throw-keyids'])
             else:
                 gpg_enc = gnupg.GPG(gnupghome=GPG_DIR, keyring=list_keyrings)
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 gpg_entry = new_session.query(PGP).filter(
                     PGP.fingerprint == form_post.gpg_select_from.data).first()
                 if gpg_entry:
@@ -461,7 +481,7 @@ def submit_post(form_post):
     elif form_post.gpg_sign_post.data and form_post.gpg_select_from.data and form_post.gpg_body.data:
         list_keyring_names = get_keyring_name(form_post.gpg_select_from.data)
         if list_keyring_names:
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 gpg_entry = new_session.query(PGP).filter(
                     PGP.fingerprint == form_post.gpg_select_from.data).first()
                 if gpg_entry:
@@ -568,12 +588,24 @@ def submit_post(form_post):
         save_file_size = get_size(dict_send["save_dir"])
         logger.info("{}: Upload size is {}".format(
             dict_send["post_id"], human_readable_size(save_file_size)))
-        if save_file_size > config.UPLOAD_SIZE_TO_THREAD:
-            spawn_send_thread = True
+
+        with session_scope(config.DB_PATH) as new_session:
+            settings = new_session.query(GlobalSettings).first()
+            max_size_bytes = settings.max_extract_size * 1024 * 1024
+            if save_file_size > max_size_bytes:
+                err = "Attachments size is larger than max allowed ({} > {}).".format(
+                    human_readable_size(save_file_size), human_readable_size(max_size_bytes))
+                logger.error("{}: {}".format(dict_send["post_id"], err))
+                errors.append(err)
+                return "Error", errors
 
     # Check upload site
-    if any(dict_send["file_order"]) and form_post.upload.data != "bitmessage":
-        with session_scope(DB_PATH) as new_session:
+    if any(dict_send["file_order"]) and form_post.upload.data not in ["bitmessage", "i2p_torrent"]:
+        if save_file_size > config.UPLOAD_SIZE_TO_THREAD:
+            # If using 3rd party upload site to upload large attachment, spawn background thread to upload
+            spawn_send_thread = True
+
+        with session_scope(config.DB_PATH) as new_session:
             settings = new_session.query(GlobalSettings).first()
             upload_info = new_session.query(UploadSites).filter(
                 UploadSites.id == form_post.upload.data).first()
@@ -615,6 +647,8 @@ def submit_post(form_post):
         "file_amount": dict_send["file_amount"],
         "file_url_type": dict_send["file_url_type"],
         "file_url": dict_send["file_url"],
+        "file_torrent_file_hash": dict_send["file_torrent_file_hash"],
+        "file_torrent_base64": dict_send["file_torrent_base64"],
         "file_upload_settings": dict_send["file_upload_settings"],
         "file_extracts_start_base64": dict_send["file_extracts_start_base64"],
         "file_base64": dict_send["file_base64"],
@@ -648,7 +682,7 @@ def submit_post(form_post):
     }
 
     if form_post.is_op.data != "yes":
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             thread = new_session.query(Threads).filter(
                 Threads.thread_hash == form_post.thread_id.data).first()
             now = time.time()
@@ -659,7 +693,8 @@ def submit_post(form_post):
                     now - thread.last_op_json_obj_ts > config.OP_RESEND_JSON_OBJ_SEC):
                 # Send OP original BM json_obj to heal potentially missing OP
                 logger.info(f"Post is not OP and original OP found and time since last OP send is greater "
-                            f"than {config.OP_RESEND_JSON_OBJ_SEC} sec. Sending original OP with post.")
+                            f"than {config.OP_RESEND_JSON_OBJ_SEC / 60 / 60:.1f} hours "
+                            f"({(now - thread.last_op_json_obj_ts) / 60 / 60:.1f}). Sending original OP with post.")
                 dict_message["orig_op_bm_json_obj"] = json.loads(thread.orig_op_bm_json_obj)
 
     # Check generated message dict for validity
@@ -694,8 +729,7 @@ def submit_post(form_post):
                 upload_id)
         return msg, []
     else:
-        logger.info("{}: No files or total file size below {}. Sending in foreground.".format(
-            dict_send["post_id"], human_readable_size(config.UPLOAD_SIZE_TO_THREAD)))
+        logger.info("{}: Sending in foreground.".format(dict_send["post_id"]))
         return send_message(errors, form_post, dict_send, dict_message)
 
 
@@ -707,7 +741,7 @@ def send_message(errors, form_post, dict_send, dict_message, upload_id=None):
         upload_id = get_random_alphanumeric_string(
             16, with_spaces=False, with_punctuation=False)
 
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         try:
             upl = UploadProgress()
             upl.upload_id = upload_id
@@ -761,7 +795,7 @@ def send_message(errors, form_post, dict_send, dict_message, upload_id=None):
                 logger.info("{}: Adding steg message to image {}".format(dict_send["post_id"], fp))
 
                 pgp_passphrase_steg = config.PGP_PASSPHRASE_STEG
-                with session_scope(DB_PATH) as new_session:
+                with session_scope(config.DB_PATH) as new_session:
                     chan = new_session.query(Chan).filter(
                         Chan.address == form_post.board_id.data).first()
                     if chan and chan.pgp_passphrase_steg:
@@ -809,8 +843,190 @@ def send_message(errors, form_post, dict_send, dict_message, upload_id=None):
 
     logger.info("Upload info: {}, {}".format(dict_send["file_order"], form_post.upload.data))
 
-    if any(dict_send["file_order"]) and form_post.upload.data != "bitmessage":
-        with session_scope(DB_PATH) as new_session:
+    #
+    # Upload Method
+    #
+
+    if any(dict_send["file_order"]) and form_post.upload.data == "bitmessage":
+        with session_scope(config.DB_PATH) as new_session:
+            settings = new_session.query(GlobalSettings).first()
+            if settings.enable_kiosk_mode and settings.kiosk_disable_bm_attach:
+                msg = "Attaching files using the Bitmessage Upload Method is currently prohibited. " \
+                      "Use one of the alternate upload methods."
+                errors.append(msg)
+                logger.error("{}: {}".format(dict_send["post_id"], msg))
+                return "Error", errors
+
+        # encrypt file
+        try:
+            dict_message["file_enc_cipher"] = form_post.upload_cipher_and_key.data.split(",")[0]
+            dict_message["file_enc_key_bytes"] = int(form_post.upload_cipher_and_key.data.split(",")[1])
+        except:
+            msg = "Unknown cannot parse cipher and key length: {}".format(form_post.upload_cipher_and_key.data)
+            errors.append(msg)
+            logger.error("{}: {}".format(dict_send["post_id"], msg))
+            return "Error", errors
+
+        if dict_message["file_enc_cipher"] == "NONE":
+            with session_scope(config.DB_PATH) as new_session:
+                settings = new_session.query(GlobalSettings).first()
+                if settings and not settings.allow_unencrypted_encryption_option:
+                    msg = "Encryption is required. Not sending."
+                    errors.append(msg)
+                    logger.error("{}: {}".format(dict_send["post_id"], msg))
+                    return "Error", errors
+
+            logger.info("{}: Not encrypting attachment(s)".format(dict_send["post_id"]))
+            os.rename(zip_file, save_encrypted_path)
+        else:
+            upl = new_session.query(UploadProgress).filter(
+                UploadProgress.upload_id == upload_id).first()
+            if upl:
+                upl.uploading = False
+                upl.progress_ts = int(time.time())
+                upl.progress = "Encrypting attachment(s)"
+                new_session.commit()
+            dict_message["file_enc_password"] = get_random_alphanumeric_string(300)
+            logger.info("{}: Encrypting attachment(s) with {} and {}-bit key".format(
+                dict_send["post_id"],
+                dict_message["file_enc_cipher"],
+                dict_message["file_enc_key_bytes"] * 8))
+            ret_crypto = crypto_multi_enc(
+                dict_message["file_enc_cipher"],
+                dict_message["file_enc_password"] + config.PGP_PASSPHRASE_ATTACH,
+                zip_file,
+                save_encrypted_path,
+                key_bytes=dict_message["file_enc_key_bytes"])
+            if not ret_crypto:
+                msg = "Unknown encryption cipher: {}".format(dict_message["file_enc_cipher"])
+                errors.append(msg)
+                logger.error("{}: {}".format(dict_send["post_id"], msg))
+                return "Error", errors
+
+            delete_file(zip_file)
+
+        dict_message["file_base64"] = base64.b64encode(
+            open(save_encrypted_path, "rb").read()).decode()
+
+        delete_file(save_encrypted_path)
+
+    elif any(dict_send["file_order"]) and form_post.upload.data == "i2p_torrent":
+        with session_scope(config.DB_PATH) as new_session:
+            try:
+                uid = 1001
+                gid = 1001
+
+                # Create encrypted file
+                if dict_message["file_enc_cipher"] == "NONE":
+                    # Don't extract parts if not encrypted
+                    errors, dict_message, dict_send = create_encrypted_upload_zip(
+                        errors, dict_message, dict_send, save_encrypted_path, zip_file, make_extracts=False)
+                else:
+                    errors, dict_message, dict_send = create_encrypted_upload_zip(
+                        errors, dict_message, dict_send, save_encrypted_path, zip_file)
+
+                # Generate SHA 256 hash from encrypted file
+                hash_encrypted_file = generate_hash(save_encrypted_path)
+
+                # Determine paths
+                encrypted_file_filename = f"{hash_encrypted_file}"
+                if dict_message["file_enc_cipher"] == "NONE":  # Add zip extension if not encrypted
+                    encrypted_file_filename += ".zip"
+                path_data = os.path.join('/i2p_qb/Downloads', encrypted_file_filename)
+                torrent_filename = f"{hash_encrypted_file}.torrent"
+                path_torrent_tmp = os.path.join("/tmp", torrent_filename)
+
+                # Move data to where it will be seeded from
+                shutil.move(save_encrypted_path, path_data)  # Move files into tmp directory
+                os.chown(path_data, uid, gid)  # Set to proper UID and GID
+                os.chmod(path_data, 0o666)
+
+                # Check if torrent already exists
+                test_entry_exists = new_session.query(UploadTorrents).filter(
+                    UploadTorrents.file_hash == hash_encrypted_file).first()
+                if test_entry_exists and os.path.exists(path_data):
+                    # Only reset timestamp to wait 28 days to delete
+                    logger.error("Torrent already exists. Skipping creation and updating timestamp.")
+                    test_entry_exists.timestamp_started = time.time()
+                    test_entry_exists.save()
+                else:
+                    settings = new_session.query(GlobalSettings).first()
+                    list_trackers = json.loads(settings.i2p_trackers)
+
+                    # Ensure all trackers have i2p TLD
+                    non_i2p_urls = check_tld_i2p(list_trackers)
+                    if non_i2p_urls:
+                        msg = f"Found non-i2p trackers: {non_i2p_urls}"
+                        errors.append(msg)
+                        logger.error("{}: {}".format(dict_send["post_id"], msg))
+                        return "Error", errors
+
+                    # Create torrent
+                    t = Torrent(path=path_data, trackers=list_trackers)
+                    t.generate()
+                    t.write(path_torrent_tmp)
+
+                    dict_message["file_torrent_magnet"] = str(t.magnet())
+
+                    # Add torrent to client and start seeding
+                    conn_info = dict(host=config.QBITTORRENT_HOST, port=8080)
+                    qbt_client = qbittorrentapi.Client(**conn_info)
+                    qbt_client.auth_log_in()
+                    try:
+                        ret = qbt_client.torrents_add(torrent_files=path_torrent_tmp, is_paused=True)
+                        logger.info(f"Adding paused torrent: {ret}")
+                        if ret != "Ok.":
+                            logger.error(
+                                "{}: Error adding torrent {}".format(dict_send["post_id"], path_torrent_tmp))
+                    except:
+                        logger.exception("Adding torrent file")
+
+                    qbt_client.auth_log_out()
+
+                    # Save data to database for reference and removal form seeding after 28 days
+                    new_torrent = UploadTorrents()
+                    new_torrent.file_hash = hash_encrypted_file
+                    new_torrent.timestamp_started = time.time()
+                    new_session.add(new_torrent)
+                    new_session.commit()
+
+                # Convert torrent file to b64
+                dict_message["file_torrent_file_hash"] = hash_encrypted_file
+                dict_message["file_torrent_base64"] = base64.b64encode(
+                    open(path_torrent_tmp, "rb").read()).decode()
+
+                upl = new_session.query(UploadProgress).filter(
+                    UploadProgress.upload_id == upload_id).first()
+                if upl:
+                    upl.progress = "Torrent created and seeding"
+                    new_session.commit()
+            except:
+                logger.exception("Torrent creation failed")
+                msg = "Torrent creation failed"
+                upl = new_session.query(UploadProgress).filter(
+                    UploadProgress.upload_id == upload_id).first()
+                if upl:
+                    upl.progress = msg
+                    new_session.commit()
+                errors.append(msg)
+                logger.error("{}: {}".format(dict_send["post_id"], msg))
+
+                # Delete files if not successful
+                delete_file(path_data)
+                delete_file(path_torrent_tmp)
+
+                return "Error", errors
+            finally:
+                delete_file(save_encrypted_path)
+
+            upl = new_session.query(UploadProgress).filter(
+                UploadProgress.upload_id == upload_id).first()
+            if upl:
+                upl.uploading = False
+                new_session.commit()
+
+    elif any(dict_send["file_order"]) and form_post.upload.data not in ["bitmessage", "i2p_torrent"]:
+        with session_scope(config.DB_PATH) as new_session:
             upl = new_session.query(UploadProgress).filter(
                 UploadProgress.upload_id == upload_id).first()
             if upl:
@@ -819,83 +1035,9 @@ def send_message(errors, form_post, dict_send, dict_message, upload_id=None):
                 upl.progress = "Encrypting attachment(s)"
                 new_session.commit()
 
-            # encrypt file
-            if dict_message["file_enc_cipher"] == "NONE":
-                settings = new_session.query(GlobalSettings).first()
-                if settings and not settings.allow_unencrypted_encryption_option:
-                    msg = "Encryption is required. Not sending."
-                    errors.append(msg)
-                    logger.error("{}: {}".format(dict_send["post_id"], msg))
-                    return "Error", errors
-
-                logger.info("{}: Not encrypting attachment(s)".format(dict_send["post_id"]))
-                os.rename(zip_file, save_encrypted_path)
-            else:
-                dict_message["file_enc_password"] = get_random_alphanumeric_string(300)
-                logger.info("{}: Encrypting attachment(s) with {} and {}-bit key".format(
-                    dict_send["post_id"],
-                    dict_message["file_enc_cipher"],
-                    dict_message["file_enc_key_bytes"] * 8))
-                ret_crypto = crypto_multi_enc(
-                    dict_message["file_enc_cipher"],
-                    dict_message["file_enc_password"] + config.PGP_PASSPHRASE_ATTACH,
-                    zip_file,
-                    save_encrypted_path,
-                    key_bytes=dict_message["file_enc_key_bytes"])
-                if not ret_crypto:
-                    msg = "Unknown encryption cipher: {}".format(dict_message["file_enc_cipher"])
-                    errors.append(msg)
-                    logger.error("{}: {}".format(dict_send["post_id"], msg))
-                    return "Error", errors
-
-                delete_file(zip_file)
-
-            # Generate hash before parts removed
-            dict_message["file_sha256_hash"] = generate_hash(save_encrypted_path)
-            if dict_message["file_sha256_hash"]:
-                logger.info("{}: Attachment hash generated: {}".format(
-                    dict_send["post_id"], dict_message["file_sha256_hash"]))
-
-            file_size = os.path.getsize(save_encrypted_path)
-            number_of_extracts = config.UPLOAD_FRAG_AMT
-            if file_size < 2000:
-                extract_starts_sizes = [{
-                    "start": 0,
-                    "size": int(file_size * 0.5)
-                }]
-            else:
-                extract_starts_sizes = [{
-                    "start": 0,
-                    "size": config.UPLOAD_FRAG_START_BYTES
-                }]
-                sequences = return_non_overlapping_sequences(
-                    number_of_extracts,
-                    config.UPLOAD_FRAG_START_BYTES,
-                    file_size - config.UPLOAD_FRAG_END_BYTES,
-                    config.UPLOAD_FRAG_MIN_BYTES,
-                    config.UPLOAD_FRAG_MAX_BYTES)
-                for pos, size in sequences:
-                    extract_starts_sizes.append({
-                        "start": pos,
-                        "size": size
-                    })
-                extract_starts_sizes.append({
-                    "start": file_size - config.UPLOAD_FRAG_END_BYTES,
-                    "size": config.UPLOAD_FRAG_END_BYTES
-                })
-            logger.info("{}: File extraction positions and sizes: {}".format(
-                dict_send["post_id"], extract_starts_sizes))
-            logger.info("{}: File size before: {}".format(
-                dict_send["post_id"], os.path.getsize(save_encrypted_path)))
-
-            data_extracted_start_base64 = data_file_multiple_extract(
-                save_encrypted_path, extract_starts_sizes, chunk=4096)
-
-            dict_message["file_size"] = os.path.getsize(save_encrypted_path)
-            logger.info("{}: File size after: {}".format(
-                dict_send["post_id"], dict_message["file_size"]))
-
-            dict_message["file_extracts_start_base64"] = json.dumps(data_extracted_start_base64)
+            # Create encrypted ZIP file
+            errors, dict_message, dict_send = create_encrypted_upload_zip(
+                errors, dict_message, dict_send, save_encrypted_path, zip_file)
 
             # Upload file
             if not upload_id:
@@ -990,72 +1132,21 @@ def send_message(errors, form_post, dict_send, dict_message, upload_id=None):
                 logger.error("{}: {}".format(dict_send["post_id"], msg))
                 return "Error", errors
 
-    elif any(dict_send["file_order"]) and form_post.upload.data == "bitmessage":
-        with session_scope(DB_PATH) as new_session:
-            settings = new_session.query(GlobalSettings).first()
-            if settings.enable_kiosk_mode and settings.kiosk_disable_bm_attach:
-                msg = "Attaching files using the Bitmessage Upload Method is currently prohibited. " \
-                      "Use one of the alternate upload methods."
-                errors.append(msg)
-                logger.error("{}: {}".format(dict_send["post_id"], msg))
-                return "Error", errors
-
-        # encrypt file
-        try:
-            dict_message["file_enc_cipher"] = form_post.upload_cipher_and_key.data.split(",")[0]
-            dict_message["file_enc_key_bytes"] = int(form_post.upload_cipher_and_key.data.split(",")[1])
-        except:
-            msg = "Unknown cannot parse cipher and key length: {}".format(form_post.upload_cipher_and_key.data)
-            errors.append(msg)
-            logger.error("{}: {}".format(dict_send["post_id"], msg))
-            return "Error", errors
-
-        if dict_message["file_enc_cipher"] == "NONE":
-            with session_scope(DB_PATH) as new_session:
-                settings = new_session.query(GlobalSettings).first()
-                if settings and not settings.allow_unencrypted_encryption_option:
-                    msg = "Encryption is required. Not sending."
-                    errors.append(msg)
-                    logger.error("{}: {}".format(dict_send["post_id"], msg))
-                    return "Error", errors
-
-            logger.info("{}: Not encrypting attachment(s)".format(dict_send["post_id"]))
-            os.rename(zip_file, save_encrypted_path)
-        else:
-            dict_message["file_enc_password"] = get_random_alphanumeric_string(300)
-            logger.info("{}: Encrypting attachment(s) with {} and {}-bit key".format(
-                dict_send["post_id"],
-                dict_message["file_enc_cipher"],
-                dict_message["file_enc_key_bytes"] * 8))
-            ret_crypto = crypto_multi_enc(
-                dict_message["file_enc_cipher"],
-                dict_message["file_enc_password"] + config.PGP_PASSPHRASE_ATTACH,
-                zip_file,
-                save_encrypted_path,
-                key_bytes=dict_message["file_enc_key_bytes"])
-            if not ret_crypto:
-                msg = "Unknown encryption cipher: {}".format(dict_message["file_enc_cipher"])
-                errors.append(msg)
-                logger.error("{}: {}".format(dict_send["post_id"], msg))
-                return "Error", errors
-
-            delete_file(zip_file)
-
-        dict_message["file_base64"] = base64.b64encode(
-            open(save_encrypted_path, "rb").read()).decode()
-
-        delete_file(save_encrypted_path)
-
     if zip_file:
         delete_file(zip_file)
 
     pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         chan = new_session.query(Chan).filter(
             Chan.address == form_post.board_id.data).first()
         if chan and chan.pgp_passphrase_msg:
             pgp_passphrase_msg = chan.pgp_passphrase_msg
 
+    logger.info("{}: Raw Message: {}".format(dict_send["post_id"], dict_message))
+
+    logger.info("{}: Raw Message Size: {}".format(dict_send["post_id"], len(json.dumps(dict_message))))
+
+    # Generate message to send
     gpg = gnupg.GPG()
     message_encrypted = gpg.encrypt(
         json.dumps(dict_message),
@@ -1063,27 +1154,55 @@ def send_message(errors, form_post, dict_send, dict_message, upload_id=None):
         passphrase=pgp_passphrase_msg,
         recipients=None)
 
+    logger.info("{}: Encrypted Message Size: {}".format(dict_send["post_id"], len(message_encrypted.data)))
+
     message_send = base64.b64encode(message_encrypted.data).decode()
 
-    with session_scope(DB_PATH) as new_session:
+    logger.info("{}: Encrypted/B64-encoded Message size: {}".format(dict_send["post_id"], len(message_send)))
+
+    # If OP included in reply, generate new message to send without OP
+    message_send_wo_op = None
+    orig_op_bm_json_obj = False
+    if dict_message["orig_op_bm_json_obj"]:
+        orig_op_bm_json_obj = True
+        dict_message["orig_op_bm_json_obj"] = None
+        gpg = gnupg.GPG()
+        message_encrypted_wo_op = gpg.encrypt(
+            json.dumps(dict_message),
+            symmetric="AES256",
+            passphrase=pgp_passphrase_msg,
+            recipients=None)
+        message_send_wo_op = base64.b64encode(message_encrypted_wo_op.data).decode()
+
+    # Check if the size of the message is too large to be sent
+    with session_scope(config.DB_PATH) as new_session:
         settings = new_session.query(GlobalSettings).first()
         if len(message_send) > config.BM_PAYLOAD_MAX_SIZE:
-            msg = "Message payload too large: {}. Must be less than {}.".format(
-                human_readable_size(len(message_send)),
-                human_readable_size(config.BM_PAYLOAD_MAX_SIZE))
-            logger.error(msg)
-            errors.append(msg)
-            return "Error", errors
+            # Message too large, but check if removing OP from reply (if exists) makes it an acceptable size
+            if orig_op_bm_json_obj and message_send_wo_op and len(message_send_wo_op) < config.BM_PAYLOAD_MAX_SIZE:
+                logger.info("Message too large with orig_op_bm_json_obj, but not too large without it. "
+                            "Sending without it.")
+                message_send = message_send_wo_op
+            else:
+                msg = "Message payload too large: {}. Must be less than {}.".format(
+                    human_readable_size(len(message_send)),
+                    human_readable_size(config.BM_PAYLOAD_MAX_SIZE))
+                logger.error(msg)
+                errors.append(msg)
+                return "Error", errors
         elif settings.kiosk_max_post_size_bytes != 0 and len(message_send) > settings.kiosk_max_post_size_bytes:
-            msg = "Message payload too large: {}. Must be less than {}.".format(
-                human_readable_size(len(message_send)),
-                human_readable_size(settings.kiosk_max_post_size_bytes))
-            logger.error(msg)
-            errors.append(msg)
-            return "Error", errors
-        else:
-            logger.info("{}: Message size: {}".format(
-                dict_send["post_id"], len(message_send)))
+            # Message too large, but check if removing OP from reply (if exists) makes it an acceptable size
+            if orig_op_bm_json_obj and len(message_send_wo_op) < settings.kiosk_max_post_size_bytes:
+                logger.info("Message too large with orig_op_bm_json_obj, but not too large without it. "
+                            "Sending without it.")
+                message_send = message_send_wo_op
+            else:
+                msg = "Message payload too large: {}. Must be less than {}.".format(
+                    human_readable_size(len(message_send)),
+                    human_readable_size(settings.kiosk_max_post_size_bytes))
+                logger.error(msg)
+                errors.append(msg)
+                return "Error", errors
 
     # Create new game
     if dict_message["game"]:
@@ -1165,7 +1284,7 @@ def send_message(errors, form_post, dict_send, dict_message, upload_id=None):
                 "{}: Unable to send message: "
                 "Could not detect Bitmessage running.".format(dict_send["post_id"]))
             msg = "Unable to send message."
-            errors = ["Could not detect Bitmessage running."]
+            errors.append("Unable to send message: Could not detect Bitmessage running.")
             return msg, errors
         time.sleep(1)
 
@@ -1204,6 +1323,7 @@ def send_message(errors, form_post, dict_send, dict_message, upload_id=None):
                             human_readable_size(len(message_send)), ttl, return_str)
             return return_msg, errors
 
+
 def send_post_delete_request(from_address, to_address, message_id, thread_hash, delete_password):
     errors = []
     run_id = get_random_alphanumeric_string(
@@ -1219,7 +1339,7 @@ def send_post_delete_request(from_address, to_address, message_id, thread_hash, 
     }
 
     pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         chan = new_session.query(Chan).filter(
             Chan.address == to_address).first()
         if chan and chan.pgp_passphrase_msg:
@@ -1234,10 +1354,10 @@ def send_post_delete_request(from_address, to_address, message_id, thread_hash, 
 
     message_send = base64.b64encode(message_encrypted.data).decode()
 
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         settings = new_session.query(GlobalSettings).first()
         if len(message_send) > config.BM_PAYLOAD_MAX_SIZE:
-            msg = "Message payload too large: {}. Must be less than {}".format(
+            msg = "Message payload too large: {}. Must be less than {}.".format(
                 human_readable_size(len(message_send)),
                 human_readable_size(config.BM_PAYLOAD_MAX_SIZE))
             logger.error(msg)
@@ -1307,3 +1427,87 @@ def send_post_delete_request(from_address, to_address, message_id, thread_hash, 
                          "send. BM returned: {}".format(
                 human_readable_size(len(message_send)), ttl, return_str)
             return return_msg, errors
+
+
+def create_encrypted_upload_zip(errors, dict_message, dict_send, save_encrypted_path, zip_file, make_extracts=True):
+    with session_scope(config.DB_PATH) as new_session:
+        # encrypt file
+        if dict_message["file_enc_cipher"] == "NONE":
+            settings = new_session.query(GlobalSettings).first()
+            if settings and not settings.allow_unencrypted_encryption_option:
+                msg = "Encryption is required. Not sending."
+                errors.append(msg)
+                logger.error("{}: {}".format(dict_send["post_id"], msg))
+                return "Error", errors
+
+            logger.info("{}: Not encrypting attachment(s)".format(dict_send["post_id"]))
+            os.rename(zip_file, save_encrypted_path)
+        else:
+            dict_message["file_enc_password"] = get_random_alphanumeric_string(300)
+            logger.info("{}: Encrypting attachment(s) with {} and {}-bit key".format(
+                dict_send["post_id"],
+                dict_message["file_enc_cipher"],
+                dict_message["file_enc_key_bytes"] * 8))
+            ret_crypto = crypto_multi_enc(
+                dict_message["file_enc_cipher"],
+                dict_message["file_enc_password"] + config.PGP_PASSPHRASE_ATTACH,
+                zip_file,
+                save_encrypted_path,
+                key_bytes=dict_message["file_enc_key_bytes"])
+            if not ret_crypto:
+                msg = "Unknown encryption cipher: {}".format(dict_message["file_enc_cipher"])
+                errors.append(msg)
+                logger.error("{}: {}".format(dict_send["post_id"], msg))
+                return "Error", errors
+
+            delete_file(zip_file)
+
+    # Generate hash before parts removed
+    dict_message["file_sha256_hash"] = generate_hash(save_encrypted_path)
+    if dict_message["file_sha256_hash"]:
+        logger.info("{}: Attachment hash generated: {}".format(
+            dict_send["post_id"], dict_message["file_sha256_hash"]))
+
+    if make_extracts:
+        file_size = os.path.getsize(save_encrypted_path)
+        number_of_extracts = config.UPLOAD_FRAG_AMT
+        if file_size < 2000:
+            extract_starts_sizes = [{
+                "start": 0,
+                "size": int(file_size * 0.5)
+            }]
+        else:
+            extract_starts_sizes = [{
+                "start": 0,
+                "size": config.UPLOAD_FRAG_START_BYTES
+            }]
+            sequences = return_non_overlapping_sequences(
+                number_of_extracts,
+                config.UPLOAD_FRAG_START_BYTES,
+                file_size - config.UPLOAD_FRAG_END_BYTES,
+                config.UPLOAD_FRAG_MIN_BYTES,
+                config.UPLOAD_FRAG_MAX_BYTES)
+            for pos, size in sequences:
+                extract_starts_sizes.append({
+                    "start": pos,
+                    "size": size
+                })
+            extract_starts_sizes.append({
+                "start": file_size - config.UPLOAD_FRAG_END_BYTES,
+                "size": config.UPLOAD_FRAG_END_BYTES
+            })
+        logger.info("{}: File extraction positions and sizes: {}".format(
+            dict_send["post_id"], extract_starts_sizes))
+        logger.info("{}: File size before: {}".format(
+            dict_send["post_id"], os.path.getsize(save_encrypted_path)))
+
+        data_extracted_start_base64 = data_file_multiple_extract(
+            save_encrypted_path, extract_starts_sizes, chunk=4096)
+
+        dict_message["file_extracts_start_base64"] = json.dumps(data_extracted_start_base64)
+
+    dict_message["file_size"] = os.path.getsize(save_encrypted_path)
+    logger.info("{}: Final file size: {}".format(
+        dict_send["post_id"], dict_message["file_size"]))
+
+    return errors, dict_message, dict_send

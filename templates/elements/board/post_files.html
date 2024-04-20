@@ -42,7 +42,9 @@
                     (<a class="link" title="Add attachment upload site settings" href="/upload_site/add_msg_id/{{post.message_id}}">a</a>)
                 {%- endif -%}
             {%- endif -%}
-        {%- else -%}
+        {%- elif post.file_torrent_file_hash -%}
+            I2P/BitTorrent{% if post.file_torrent_decoded and post.file_enc_cipher == "NONE" %} (<a class="link" href="/torrent/{{post.post_id}}.torrent">dl</a>{% if post.file_torrent_magnet %}, <a class="link" href="/torrent/{{post.post_id}}.magnet">mag</a>{% endif %}){% endif %}
+        {%- elif post.file_decoded -%}
             Bitmessage
         {%- endif -%}
     {%- endif -%}

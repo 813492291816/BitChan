@@ -22,6 +22,7 @@ from flask_routes.utils import is_verified
 from forms import forms_mailbox
 from utils.files import LF
 from utils.gateway import api
+from utils.general import timestamp_to_date
 from utils.routes import allowed_access
 from utils.routes import page_dict
 from utils.shared import get_msg_expires_time
@@ -233,13 +234,16 @@ def mailbox(ident_address, mailbox, page, msg_id):
                         msg_selected = msg_selected["inboxMessage"][0]
                         form_populate = {
                             "to_address": msg_selected["fromAddress"],
-                            "body": "\n\n\n------------------------------------------------------\n{}".format(
-                                base64_decode(msg_selected["message"]))
+                            "body": f"\n\n\n------------------------------------------------------"
+                                    f"\nFrom: {msg_selected['fromAddress']}"
+                                    f"\nTo: {ident_address}"
+                                    f"\nReceived: {timestamp_to_date(msg_selected['receivedTime'], use_local_tz=True)}"
+                                    f"\n\n{base64_decode(msg_selected['message'])}"
                         }
-                        if base64_decode(msg_selected["subject"]).startswith("Re:"):
+                        if base64_decode(msg_selected["subject"]).startswith("RE:"):
                             form_populate["subject"] = base64_decode(msg_selected["subject"])
                         else:
-                            form_populate["subject"] = "Re: {}".format(base64_decode(msg_selected["subject"]))
+                            form_populate["subject"] = f"RE: {base64_decode(msg_selected['subject'])}"
                         session['form_populate'] = form_populate
                         session['status_msg'] = status_msg
                 except Exception as err:
@@ -249,6 +253,7 @@ def mailbox(ident_address, mailbox, page, msg_id):
                     lf.lock_release(config.LOCKFILE_API)
 
             return redirect(url_for("routes_mail.compose",
+                                    address_from=ident_address,
                                     address_to="0"))
 
         elif form_mail.forward.data and form_mail.message_id.data:
@@ -259,13 +264,16 @@ def mailbox(ident_address, mailbox, page, msg_id):
                     if "inboxMessage" in msg_selected:
                         msg_selected = msg_selected["inboxMessage"][0]
                         form_populate = {
-                            "body": "\n\n\n------------------------------------------------------\n{}".format(
-                                base64_decode(msg_selected["message"]))
+                            "body": f"\n\n\n------------------------------------------------------"
+                                    f"\nFrom: {msg_selected['fromAddress']}"
+                                    f"\nTo: {ident_address}"
+                                    f"\nReceived: {timestamp_to_date(msg_selected['receivedTime'], use_local_tz=True)}"
+                                    f"\n\n{base64_decode(msg_selected['message'])}"
                         }
-                        if base64_decode(msg_selected["subject"]).startswith("Fwd:"):
+                        if base64_decode(msg_selected["subject"]).startswith("FWD:"):
                             form_populate["subject"] = base64_decode(msg_selected["subject"])
                         else:
-                            form_populate["subject"] = "Fwd: {}".format(base64_decode(msg_selected["subject"]))
+                            form_populate["subject"] = f"FWD: {base64_decode(msg_selected['subject'])}"
                         session['form_populate'] = form_populate
                         session['status_msg'] = status_msg
                 except Exception as err:
@@ -275,6 +283,7 @@ def mailbox(ident_address, mailbox, page, msg_id):
                     lf.lock_release(config.LOCKFILE_API)
 
             return redirect(url_for("routes_mail.compose",
+                                    address_from=ident_address,
                                     address_to="0"))
 
         elif form_mail.delete.data and form_mail.message_id.data:

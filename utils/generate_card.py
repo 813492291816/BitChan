@@ -8,8 +8,6 @@ from utils.generate_popup import generate_popup_post_html
 from utils.generate_popup import generate_popup_post_body_file_info
 from utils.generate_popup import generate_popup_post_header
 
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
-
 daemon_com = DaemonCom()
 logger = logging.getLogger("bitchan.generate_card")
 
@@ -45,7 +43,7 @@ def get_card_link_html(message, card_text=None, external_thread=False):
         if message.popup_html and not message.regenerate_popup_html:
             ret_str += message.popup_html
         else:
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 message_edit = new_session.query(Messages).filter(
                     Messages.message_id == message.message_id).first()
                 message_edit.popup_html = generate_popup_post_html(message)

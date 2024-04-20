@@ -21,13 +21,29 @@
             {%- if search_type -%}&st={{search_type}}{%- endif -%}
         ">&lt;</a>&nbsp;&nbsp;
     {% endif %}
+
+    {%- set break_tracker = namespace(pre_elipse = False) -%}
+    {%- set break_tracker = namespace(post_elipse = False) -%}
     {% for page in pages %}
-        {% if page == current_page %}<span class="page-nav" style="font-weight: bold">[{{page}}]</span>{% else %}<a class="link page-nav" href="/search/{{search_string_b64}}/{{page}}?
-            {%- if filter_hidden -%}&fh=1{%- endif -%}
-            {%- if filter_op -%}&fo=1{%- endif -%}
-            {%- if search_type -%}&st={{search_type}}{%- endif -%}
-        ">[{{page}}]</a>{% endif %}{% if not loop.last or current_page < pages|length %}&nbsp;&nbsp;{% endif %}
+        {% if current_page < page and page - current_page > 25 %}
+            {% if not break_tracker.pre_elipse %}...&nbsp;&nbsp;{% endif %}
+            {%- set break_tracker.pre_elipse = True -%}
+        {% elif current_page > page and current_page - page > 25 %}
+            {% if not break_tracker.post_elipse %}...&nbsp;&nbsp;{% endif %}
+            {%- set break_tracker.post_elipse = True -%}
+        {% else %}
+            {% if page == current_page %}
+                <span class="page-nav" style="font-weight: bold">[{{page}}]</span>
+            {% else %}
+                <a class="link page-nav" href="/search/{{search_string_b64}}/{{page}}?
+                {%- if filter_hidden -%}&fh=1{%- endif -%}
+                {%- if filter_op -%}&fo=1{%- endif -%}
+                {%- if search_type -%}&st={{search_type}}{%- endif -%}">[{{page}}]</a>
+            {% endif %}
+            {% if not loop.last or current_page < pages|length %}&nbsp;&nbsp;{% endif %}
+        {% endif %}
     {% endfor %}
+
     {% if current_page < pages|length %}
         <a class="link page-nav" href="/search/{{search_string_b64}}/{{current_page + 1}}?
             {%- if filter_hidden -%}&fh=1{%- endif -%}

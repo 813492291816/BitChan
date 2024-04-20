@@ -20,8 +20,6 @@ from utils.shared import add_mod_log_entry
 from utils.shared import regenerate_card_popup_post_html
 from utils.shared import regenerate_ref_to_from_post
 
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
-
 logger = logging.getLogger('bitchan.gateway')
 
 bm_endpoint = "http://{user}:{pw}@{host}:{port}/".format(
@@ -83,7 +81,7 @@ def get_msg_address_from(msg_id: str):
 
 
 def chan_auto_clears_and_message_too_old(address, timestamp_sent):
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         chan = new_session.query(Chan).filter(Chan.address == address).first()
         if chan and chan.rules:
             try:
@@ -106,7 +104,7 @@ def chan_auto_clears_and_message_too_old(address, timestamp_sent):
 
 
 def delete_and_replace_comment(message_id, new_comment, from_address=None, local_delete=False, only_hide=False):
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         message = new_session.query(Messages).filter(
             Messages.message_id == message_id).first()
         if message:

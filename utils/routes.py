@@ -1,5 +1,6 @@
 import base64
 import datetime
+import hashlib
 import html
 import json
 import logging
@@ -20,8 +21,10 @@ from sqlalchemy import or_
 import config
 from bitchan_client import DaemonCom
 from database.models import AddressBook
+from database.models import Auth
 from database.models import BanedHashes
 from database.models import BanedWords
+from database.models import RateLimit
 from database.models import Chan
 from database.models import Command
 from database.models import Flags
@@ -342,6 +345,35 @@ def ban_and_delete_word(
                 message_id=msg_id,
                 board_address=data['address'],
                 thread_hash=data['thread_hash'])
+
+
+def check_kiosk_user_changes(
+        user, password, retype_password, status_msg_,
+        skip_pw_check=False, skip_name_check=False, new_name_check=False, old_user_id=None):
+    try:
+        if new_name_check and old_user_id is not None:
+            old_user = Auth.query.filter(Auth.id == old_user_id).first()
+            check_new_user = Auth.query.filter(Auth.name == user).first()
+            if user != old_user.name and check_new_user:
+                status_msg_.append("New name cannot be already in use. Choose another name.")
+        if not skip_name_check and Auth.query.filter(Auth.name == user).first():
+            status_msg_.append("Name cannot be the same as another user")
+
+        # Password checks
+        if not skip_pw_check:
+            sha256 = hashlib.sha256()
+            sha256.update(password.encode())
+            password_hash = sha256.hexdigest()
+            if Auth.query.filter(Auth.password_hash == password_hash).first():
+                status_msg_.append("Password cannot be the same as another user")
+            if password != retype_password:
+                status_msg_.append("Passwords must match")
+            if len(password) < 8:
+                status_msg_.append("Password must be at least 8 characters")
+    except Exception as msg:
+        status_msg_.append(f"Exception: {msg}")
+
+    return status_msg_
 
 
 def get_threads_from_page(address, page):
@@ -693,7 +725,7 @@ def has_permission(permission):
         if permission == "is_global_admin":
             if flask_session_login[session['uuid']]["credentials"]["global_admin"]:
                 return True
-        elif permission == "is_board_admin":
+        elif permission == "is_board_list_admin":
             return flask_session_login[session['uuid']]["credentials"]["admin_boards"]
         elif permission == "is_janitor":
             return flask_session_login[session['uuid']]["credentials"]["janitor"]
@@ -706,7 +738,7 @@ def has_permission(permission):
 def get_logged_in_user_name():
     if ('uuid' in session and session['uuid'] in flask_session_login and
             flask_session_login[session['uuid']]['logged_in']):
-        return flask_session_login[session['uuid']]["credentials"]["id"]
+        return flask_session_login[session['uuid']]["credentials"]["name"]
 
 
 def allowed_access(check, board_address=None):
@@ -752,25 +784,27 @@ def allowed_access(check, board_address=None):
                 return True, ""
 
         elif check == "is_board_list_admin":
-            admin_boards = has_permission("is_board_admin")
+            admin_boards = has_permission("is_board_list_admin")
             if ((is_logged_in() and has_permission("is_global_admin")) or
                     is_logged_in() and
                     admin_boards and
-                    type(admin_boards) == list and
+                    type(admin_boards) is list and
                     board_address and
                     board_address in admin_boards):
                 return True, ""
 
         if settings.kiosk_login_to_view and not is_logged_in():
-            msg = 'Insufficient permissions to perform this action. ' \
-                  '<a href="/login">Log in</a> with the proper credentials.'
+            msg = '<div style="text-align:center;padding-top:1em">Insufficient permissions to perform this action. ' \
+                  '<a href="/login">Log in</a> with proper credentials.</div>'
             return False, msg
 
     except Exception as err:
         msg = "Login error: {}".format(err)
         return False, msg
-    msg = 'Insufficient permissions to perform this action. ' \
-          '<a href="/login">Log in</a> with the proper credentials.'
+
+    msg = '<div style="text-align:center;padding-top:1em">Insufficient permissions to perform this action. ' \
+          '<a href="/login">Log in</a> with proper credentials.</div>'
+
     return False, msg
 
 
@@ -934,7 +968,11 @@ def page_dict():
         Command.action_type == "options")).all()
     for each_cmd in admin_cmd:
         if each_cmd.chan_address and each_cmd.options:
-            command_options[each_cmd.chan_address] = json.loads(each_cmd.options)
+            try:
+                command_options[each_cmd.chan_address] = json.loads(each_cmd.options)
+            except:
+                logger.error(f"Error parsing admin command option JSON string with ID {each_cmd.id}")
+                command_options[each_cmd.chan_address] = {}
 
     admin_cmd = Command.query.filter(and_(
         Command.action == "set",
@@ -1035,3 +1073,39 @@ def page_dict():
                 urlparse=urlparse,
                 user_options=user_options,
                 wipe_time_left=wipe_time_left)
+
+
+def rate_limit_check(number_requests, time_period_seconds, rate_id):
+    """
+    Rolling window rate limiter.
+    Calling this adds to the rolling window counter and returns if the rate limit has been exceeded.
+    Returns True if rate limited, False if not.
+    """
+    now = datetime.datetime.now()
+    oldest_date = now - datetime.timedelta(seconds=time_period_seconds)
+
+    # Check how many valid entries there are
+    rl_valid = RateLimit.query.filter(and_(
+        RateLimit.rate_id == rate_id,
+        RateLimit.dt > oldest_date)).count()
+
+    # Only add DB entry if valid entries is less than 2 * number_requests
+    # Lowers resource usage during DOS attack
+    if rl_valid < 2 * number_requests:
+        new_count = RateLimit()
+        new_count.rate_id = rate_id
+        new_count.dt = now
+        new_count.save()
+
+    # Delete all expired
+    rl_invalid = RateLimit.query.filter(and_(
+        RateLimit.rate_id == rate_id,
+        RateLimit.dt < oldest_date))
+    for rl in rl_invalid.all():
+        rl.delete()
+
+    # logger.info(f"NOW: {now}, CHK: {oldest_date}")
+    # logger.info(f"VALID={rl_valid}, INVALID={rl_invalid.count()}")
+
+    if rl_valid > number_requests:
+        return True  # Rate limited

@@ -10,7 +10,7 @@ from sqlalchemy import and_
 
 import config
 from bitchan_client import DaemonCom
-from config import DATABASE_BITCHAN
+from config import DB_PATH
 from database.models import AddressBook
 from database.models import Chan
 from database.models import Identity
@@ -25,8 +25,6 @@ from utils.general import process_passphrase
 from utils.generate_popup import generate_reply_link_and_popup_html
 from utils.gpg import gpg_process_texts
 from utils.shared import regenerate_card_popup_post_html
-
-DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 
 logger = logging.getLogger("bitchan.replacements")
 daemon_com = DaemonCom()
@@ -474,7 +472,7 @@ def replace_with_saved_replacements(message_id, body, address=None):
     return body
 
 
-def process_replacements(body, seed, message_id, address=None, steg=False, preview=False):
+def process_replacements(body, seed, message_id, address=None, steg=False, preview=False, force_replacements=False):
     """Replace portions of text for formatting and text generation purposes"""
     if not body:
         return body
@@ -483,7 +481,7 @@ def process_replacements(body, seed, message_id, address=None, steg=False, previ
         this_message = new_session.query(Messages).filter(
             Messages.message_id == message_id).first()
 
-        if this_message and this_message.text_replacements and not steg:
+        if this_message and this_message.text_replacements and not steg and not force_replacements:
             return this_message.text_replacements
 
     body = replace_with_saved_replacements(message_id, body, address=address)

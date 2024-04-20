@@ -4,9 +4,11 @@ import json
 import logging
 import os
 import re
+import subprocess
 import time
 from threading import Thread
 
+import qbittorrentapi
 from flask import Response
 from flask import redirect
 from flask import render_template
@@ -35,6 +37,7 @@ from database.models import ModLog
 from database.models import StringReplace
 from database.models import Threads
 from database.models import UploadSites
+from database.models import UploadTorrents
 from database.models import regenerate_upload_sites
 from flask_routes import flask_session_login
 from flask_routes.utils import count_views
@@ -44,6 +47,7 @@ from forms import forms_settings
 from utils import themes
 from utils.download import process_attachments
 from utils.files import LF
+from utils.files import delete_file
 from utils.files import delete_files_recursive
 from utils.gateway import api
 from utils.gateway import generate_identity
@@ -53,6 +57,7 @@ from utils.posts import delete_post
 from utils.posts import process_message_replies
 from utils.posts import update_board_timestamp
 from utils.posts import update_thread_timestamp
+from utils.replacements import process_replacements
 from utils.replacements import replace_lt_gt
 from utils.routes import allowed_access
 from utils.routes import ban_and_delete
@@ -480,6 +485,46 @@ def diag():
             status_msg['status_title'] = "Success"
             status_msg['status_message'].append(f"Renamed hash entries")
 
+        elif form_diag.stop_bitmessage_and_daemon.data:
+            try:
+                if config.DOCKER:
+                    p = subprocess.Popen('docker stop -t 30 bitchan_daemon', shell=True, stdout=subprocess.PIPE)
+                    out, err = p.communicate()
+                    logger.info(f"Stop bitchan_daemon Output: {out}, Error: {err}")
+                    p = subprocess.Popen('docker stop -t 30 bitchan_bitmessage', shell=True, stdout=subprocess.PIPE)
+                    out, err = p.communicate()
+                    logger.info(f"Stop bitchan_mitmessage Output: {out}, Error: {err}")
+                else:
+                    subprocess.Popen('service bitchan_bitmessage stop', shell=True)
+                    subprocess.Popen('service bitchan_daemon stop', shell=True)
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append(
+                    "Stopping Bitmessage and Daemon. Give it time to complete.")
+            except Exception as err:
+                status_msg['status_message'].append(
+                    "Couldn't stop Bitmessage and Daemon: {}".format(err))
+                logger.exception("Couldn't stop Bitmessage and Daemon")
+
+        elif form_diag.start_bitmessage_and_daemon.data:
+            try:
+                if config.DOCKER:
+                    p = subprocess.Popen('docker start bitchan_bitmessage', shell=True, stdout=subprocess.PIPE)
+                    out, err = p.communicate()
+                    logger.info(f"Start bitchan_bitmessage Output: {out}, Error: {err}")
+                    p = subprocess.Popen('docker start bitchan_daemon', shell=True, stdout=subprocess.PIPE)
+                    out, err = p.communicate()
+                    logger.info(f"Start bitchan_daemon Output: {out}, Error: {err}")
+                else:
+                    subprocess.Popen('service bitchan_bitmessage start', shell=True)
+                    subprocess.Popen('service bitchan_daemon start', shell=True)
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append(
+                    "Starting Bitmessage and Daemon. Give it time to complete.")
+            except Exception as err:
+                status_msg['status_message'].append(
+                    "Couldn't stop Bitmessage and Daemon: {}".format(err))
+                logger.exception("Couldn't stop Bitmessage and Daemon")
+
         elif form_diag.restart_bitmessage.data:
             try:
                 daemon_com.restart_bitmessage()
@@ -741,7 +786,7 @@ def diag():
                     msgs = Messages.query.filter(
                         and_(or_(Messages.file_download_successful.is_(False),
                                  Messages.file_download_successful.is_(None)),
-                             Messages.file_url.isnot(None))).all()
+                             Messages.file_url.is_not(None))).all()
                     for msg in msgs:
                         logger.info(f"Starting download for post with message ID {msg.message_id}")
                         daemon_com.set_start_download(msg.message_id)
@@ -754,7 +799,7 @@ def diag():
 
         elif form_diag.regenerate_all_thumbnails.data:
             try:
-                for each_msg in Messages.query.filter(and_(Messages.file_amount.isnot(None), Messages.file_amount != 0)).all():
+                for each_msg in Messages.query.filter(and_(Messages.file_amount.is_not(None), Messages.file_amount != 0)).all():
                     extract_path = "{}/{}".format(config.FILE_DIRECTORY, each_msg.message_id)
                     errors_files, media_info, message_steg = process_attachments(
                         each_msg.message_id, extract_path, progress=False, silent=True, overwrite_thumbs=True)
@@ -814,11 +859,20 @@ def diag():
                     try:
                         regenerate_card_popup_post_html(message_id=message.message_id)
                         status_msg['status_title'] = "Success"
-                        status_msg['status_message'].append(f"Deleted HTML for post {post_id}.")
+                        status_msg['status_message'].append(f"Regenerated HTML for post {post_id}.")
                     except Exception as err:
                         status_msg['status_message'].append(
-                            f"Couldn't delete HTML for post {post_id}: {err}")
-                        logger.exception(f"Couldn't delete HTML for post {post_id}")
+                            f"Couldn't regenerate HTML for post {post_id}: {err}")
+                        logger.exception(f"Couldn't regenerate HTML for post {post_id}")
+
+                    try:
+                        process_replacements(
+                            message.original_message, message.message_id, message.message_id,
+                            address=message.thread.chan.address, force_replacements=True)
+                    except Exception as err:
+                        status_msg['status_message'].append(
+                            f"Couldn't process replacements for post {post_id}: {err}")
+                        logger.exception(f"Couldn't process replacements for for post {post_id}")
                 else:
                     status_msg['status_message'].append("Post not found")
 
@@ -905,9 +959,12 @@ def diag():
 
         elif form_diag.regenerate_all_post_numbers.data:
             try:
-                daemon_com.generate_post_numbers(all_boards=True)
+                generate = Thread(
+                    target=daemon_com.generate_post_numbers, kwargs={'all_boards': True})
+                generate.daemon = True
+                generate.start()
                 status_msg['status_title'] = "Success"
-                status_msg['status_message'].append("Regenerated all post numbers")
+                status_msg['status_message'].append("Regenerating all post numbers in new thread")
             except Exception as err:
                 status_msg['status_message'].append(
                     "Couldn't regenerate all post numbers: {}".format(err))
@@ -927,6 +984,12 @@ def diag():
                 logger.exception("Couldn't regenerate all upload sites")
 
         elif form_diag.download_backup.data:
+            dump_path = os.path.join(config.INSTALL_DIR, 'bitchan_db.sql')
+
+            # Clean up
+            delete_file(dump_path)
+            delete_files_recursive(os.path.join(config.CODE_DIR, 'venv'))
+
             try:
                 logger.info("Starting backup archive generation")
                 zs = ZipStream(compress_type=ZIP_DEFLATED, compress_level=9)
@@ -942,10 +1005,16 @@ def diag():
                             except:
                                 logger.exception(1)
 
+                # Dump the MySQL database
+                dump_cmd = f"docker exec -i bitchan_mysql /usr/bin/bash -c '/usr/bin/mysqldump -uroot -p{config.DB_PW} {config.DB_NAME} > {dump_path}'"
+                p = subprocess.Popen(dump_cmd, shell=True, stdout=subprocess.PIPE)
+                out, err = p.communicate()
+                logger.info(f"MySQL dump Output: {out}, Error: {err}")
+
+                if os.path.isfile(dump_path):
+                    zs.add_path(dump_path, "bitchan_db.sql")
                 if os.path.exists(config.CODE_DIR):
                     zs.add_path(config.CODE_DIR, "BitChan")
-                if os.path.exists(config.DATABASE_BITCHAN):
-                    zs.add_path(config.DATABASE_BITCHAN, "bitchan.db")
                 if os.path.exists(config.BM_PATH):
                     zs.add_path(config.BM_PATH, "bitmessage")
                 if os.path.exists(config.FILE_DIRECTORY):
@@ -977,6 +1046,7 @@ def diag():
                 status_msg['status_message'].append(
                     "Couldn't generate backup archive: {}".format(err))
                 logger.exception("Couldn't generate backup archive")
+                logger.exception("Couldn't generate backup archive")
 
         elif form_diag.recheck_attachments.data:
             msg_ids = []
@@ -984,8 +1054,8 @@ def diag():
 
             # find posts that indicate need to download attachments
             for each_msg in Messages.query.filter(and_(
-                    Messages.file_amount.isnot(True),
-                    Messages.file_download_successful.isnot(True),
+                    Messages.file_amount.is_not(True),
+                    Messages.file_download_successful.is_not(True),
                     Messages.file_currently_downloading.is_(False))).all():
                 msg_ids.append(each_msg.message_id)
 
@@ -1044,6 +1114,37 @@ def diag():
                     except:
                         logger.exception("scanning for orphaned attachments")
             logger.info(f"Attachment summary: found {found} with posts, found {n_found} without posts (and were deleted).")
+
+        elif form_diag.delete_all_torrents.data:
+            torrent_hashes = []
+
+            conn_info = dict(host=config.QBITTORRENT_HOST, port=8080)
+            qbt_client = qbittorrentapi.Client(**conn_info)
+            try:
+                qbt_client.auth_log_in()
+
+                # Get all hashes
+                for torrent in qbt_client.torrents_info():
+                    torrent_hashes.append(torrent.hash)
+
+                # Delete torrents
+                with qbittorrentapi.Client(**conn_info) as qbt_client:
+                    qbt_client.torrents_delete(delete_files=True, torrent_hashes=torrent_hashes)
+
+                # Delete DB entries
+                torrents_all = UploadTorrents.query.all()
+                for torrent in torrents_all:
+                    logger.info(f"Deleting DB entry for {torrent.file_hash}")
+                    torrent.delete()
+
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append("Deleted all torrents and DB entries")
+            except:
+                logger.exception("deleting all torrents")
+            finally:
+                qbt_client.auth_log_out()
+
+            logger.info(f"Deleted all torrents and DB entries")
 
         elif form_diag.restore_backup_file.data:
             try:
@@ -1151,7 +1252,11 @@ def diag():
     captcha_entry_count = Captcha.query.count()
     game_entry_count = Games.query.count()
 
-    bm_identities = daemon_com.get_identities()
+    try:  # Ensure /diag page can still be accessed even if BitChan daemon isn't running
+        bm_identities = daemon_com.get_identities()
+    except:
+        bm_identities = []
+
     bc_identities = Identity.query.all()
     orphaned_identities_bm = 0
     orphaned_identities_bc = 0

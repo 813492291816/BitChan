@@ -1,12 +1,33 @@
 import logging
 import os
+from queue import Queue, Empty
+from resource import getrusage, RUSAGE_SELF
+from threading import Thread
 
 from Crypto.Cipher import AES
 from Crypto.Cipher import ChaCha20_Poly1305
 from Crypto.Protocol.KDF import scrypt
 from Crypto.Random import get_random_bytes
 
+from utils.files import LF
+from utils.files import human_readable_size
+
 logger = logging.getLogger('bitchan.encryption')
+
+
+def memory_monitor(command_queue: Queue, poll_interval=1):
+    max_rss = 0
+    old_max = 0
+    while True:
+        try:
+            command_queue.get(timeout=poll_interval)
+            logger.info(f"(END) Max RSS {max_rss} KB")
+            return
+        except Empty:
+            max_rss = getrusage(RUSAGE_SELF).ru_maxrss
+            if max_rss > old_max:
+                old_max = max_rss
+                logger.info(f"Max RSS {max_rss} KB")
 
 
 def crypto_multi_enc(cipher_str, password, path_file_in, path_file_out, key_bytes=32):
@@ -15,8 +36,26 @@ def crypto_multi_enc(cipher_str, password, path_file_in, path_file_out, key_byte
     file_in = open(path_file_in, 'rb')
     file_out = open(path_file_out, 'wb')
 
-    salt = get_random_bytes(32)  # 32-bit salt
-    key = scrypt(password, salt, key_len=key_bytes, N=2 ** 20, r=8, p=1)  # Generate key using password and salt
+    salt = get_random_bytes(32)  # 32-byte salt
+
+    queue = Queue()
+    poll_interval = 0.5
+    monitor_thread = Thread(target=memory_monitor, args=(queue, poll_interval))
+    monitor_thread.start()
+
+    l_file = "/var/lock/key_scrypt.lock"
+    lf = LF()
+    if lf.lock_acquire(l_file, to=60):
+        try:
+            key = scrypt(password, salt, key_len=key_bytes, N=2 ** 20, r=8, p=1)  # Generate key using password and salt
+        except Exception as err:
+            logger.error("Error scrypt(): {}".format(err))
+            return
+        finally:
+            lf.lock_release(l_file)
+    else:
+        logger.error(f"Could not acquire lock {l_file}")
+        return
 
     file_out.write(salt)  # Write salt to the output file
 
@@ -42,10 +81,15 @@ def crypto_multi_enc(cipher_str, password, path_file_in, path_file_out, key_byte
 
     file_in.close()
     file_out.close()
+
+    queue.put('stop')
+    monitor_thread.join()
+
     return True
 
 
-def crypto_multi_decrypt(cipher_str, password, path_file_in, path_file_out, key_bytes=32, max_size_bytes=None):
+def crypto_multi_decrypt(cipher_str, password, path_file_in, path_file_out,
+                         key_bytes=32, max_size_bytes=None, skip_size_check=False):
     buffer_size = 1024 * 1024  # The size in bytes that we read, encrypt and write to at once
 
     # Open files
@@ -53,8 +97,21 @@ def crypto_multi_decrypt(cipher_str, password, path_file_in, path_file_out, key_
     file_out = open(path_file_out, 'wb')
 
     # Read salt and generate key
-    salt = file_in.read(32)  # read 32-bit salt
-    key = scrypt(password, salt, key_len=key_bytes, N=2 ** 20, r=8, p=1)  # Generate key using password and salt
+    salt = file_in.read(32)  # read 32-byte salt
+
+    l_file = "/var/lock/key_scrypt.lock"
+    lf = LF()
+    if lf.lock_acquire(l_file, to=60):
+        try:
+            key = scrypt(password, salt, key_len=key_bytes, N=2 ** 20, r=8, p=1)  # Generate key using password and salt
+        except Exception as err:
+            logger.error("Error scrypt(): {}".format(err))
+            return
+        finally:
+            lf.lock_release(l_file)
+    else:
+        logger.error("Unknown cipher: {}".format(cipher_str))
+        return
 
     if cipher_str == "AES-GCM":
         nonce_length = 16
@@ -65,8 +122,9 @@ def crypto_multi_decrypt(cipher_str, password, path_file_in, path_file_out, key_
         nonce = file_in.read(nonce_length)  # The nonce is 24 bytes long
         cipher = ChaCha20_Poly1305.new(key=key, nonce=nonce)
     else:
-        logger.error("Unknown cipher: {}".format(cipher_str))
-        return
+        err = "Unknown cipher: {}".format(cipher_str)
+        logger.error(err)
+        return False, err
 
     # Identify how many bytes of encrypted data there is
     # We know that the salt (32) + the nonce (based on cipher) + the data (?) + the tag (16) is in the file
@@ -83,15 +141,13 @@ def crypto_multi_decrypt(cipher_str, password, path_file_in, path_file_out, key_
         file_size += len(decrypted_data)
         logger.info("Decrypted size (so far): {} bytes".format(file_size))
 
-        if max_size_bytes and file_size > max_size_bytes:
-            logger.error(
-                "Extracted file is larger than max allowed ({} bytes > {} bytes). "
-                "Cancelling/deleting.".format(
-                    file_size, max_size_bytes))
+        if not skip_size_check and max_size_bytes and file_size > max_size_bytes:
+            err = f"During decryption, max attachment size exceeded ({human_readable_size(max_size_bytes)})."
+            logger.error(err)
             file_in.close()
             file_out.close()
             os.remove(path_file_out)
-            return False
+            return False, err
 
     data = file_in.read(int(encrypted_data_size % buffer_size))  # Read what calculated to be left of encrypted data
     decrypted_data = cipher.decrypt(data)  # Decrypt data
@@ -99,15 +155,14 @@ def crypto_multi_decrypt(cipher_str, password, path_file_in, path_file_out, key_
     file_size += len(decrypted_data)
     logger.info("Decrypted size (final): {} bytes".format(file_size))
 
-    if max_size_bytes and file_size > max_size_bytes:
-        logger.error(
-            "Extracted file is larger than max allowed ({} bytes > {} bytes). "
-            "Cancelling/deleting.".format(
-                file_size, max_size_bytes))
+    if not skip_size_check and max_size_bytes and file_size > max_size_bytes:
+        err = "During decryption, max attachment size exceeded ({} > {}).".format(
+            human_readable_size(file_size), human_readable_size(max_size_bytes))
+        logger.error(err)
         file_in.close()
         file_out.close()
         os.remove(path_file_out)
-        return False
+        return False, err
 
     # Verify encrypted file was not tampered with
     tag = file_in.read(16)
@@ -118,8 +173,9 @@ def crypto_multi_decrypt(cipher_str, password, path_file_in, path_file_out, key_
         file_in.close()
         file_out.close()
         os.remove(path_file_out)
-        raise e
+        err = f"Error decrypting: {e}"
+        return False, err
 
     file_in.close()
     file_out.close()
-    return True
+    return True, "Success"

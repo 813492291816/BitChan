@@ -4,8 +4,6 @@ import time
 import config
 from database.utils import session_scope
 
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
-
 logger = logging.getLogger("bitchan.database")
 
 
@@ -27,7 +25,7 @@ def get_db_table_daemon(tab, unique_id=None, entry=None):
     count = 3
     while count > 0:
         try:
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 if unique_id:
                     return_table = new_session.query(tab).filter(
                         tab.unique_id == unique_id)

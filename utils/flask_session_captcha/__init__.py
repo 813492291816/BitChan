@@ -5,8 +5,8 @@ import time
 from random import SystemRandom
 
 from captcha.image import ImageCaptcha
-from flask import Markup
 from flask import request
+from markupsafe import Markup
 
 from database.models import Captcha
 

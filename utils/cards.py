@@ -8,7 +8,7 @@ from sqlalchemy import and_
 from sqlalchemy import func
 
 import config
-from config import DATABASE_BITCHAN
+from config import DB_PATH
 from database.models import GlobalSettings
 from database.models import Messages
 from database.models import PostCards
@@ -17,8 +17,6 @@ from database.utils import session_scope
 from utils.generate_card import get_card_link_html
 from utils.html_truncate import truncate
 from utils.shared import post_has_image
-
-DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 
 logger = logging.getLogger('bitchan.cards')
 

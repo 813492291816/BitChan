@@ -134,6 +134,9 @@
             <div class="themed" style="padding-top: 0.5em">
                 <input type="checkbox" id="unlisted" name="unlisted" value="y"> <label for="unlisted">Make locally unlisted (will not appear on public kiosk pages). Access via the <a href="/unlisted">unlisted page</a>.</label>
             </div>
+            <div class="themed" style="padding-top: 0.5em">
+                <input type="checkbox" id="restricted" name="restricted" value="y"> <label for="restricted">Make locally restricted (will not appear on public kiosk pages and attempting to load the page URL will return a 404 Error). Access via the <a href="/restricted">restricted page</a>.</label>
+            </div>
             <div style="padding-top: 1em">
                 <input type="submit" name="join" value="Join"/>
             </div>
@@ -176,6 +179,9 @@
             </div>
             <div class="themed" style="padding-top: 0.5em">
                 <input type="checkbox" id="unlisted" name="unlisted" value="y"> <label for="unlisted">Make locally unlisted (will not appear on public kiosk pages). Access via the <a href="/unlisted">unlisted page</a>.</label>
+            </div>
+            <div class="themed" style="padding-top: 0.5em">
+                <input type="checkbox" id="restricted" name="restricted" value="y"> <label for="restricted">Make locally restricted (will not appear on public kiosk pages and attempting to load the page URL will return a 404 Error). Access via the <a href="/restricted">restricted page</a>.</label>
             </div>
             <div style="padding-top: 1em">
                 <input type="submit" name="join" value="Join"/>
@@ -255,6 +261,17 @@
                 <div class="themed" style="padding-top: 0.5em">
                     <input type="checkbox" id="require_identity_to_post" name="require_identity_to_post" value="y"> <label for="require_identity_to_post">{{config.DICT_PERMISSIONS["require_identity_to_post"]}}</label>
                 </div>
+
+                {% if stage in ["public_board", "private_board"] %}
+                <div class="themed" style="padding-top: 0.5em">
+                    <input type="checkbox" id="restrict_thread_creation" name="restrict_thread_creation" value="y"> <label for="restrict_thread_creation">{{config.DICT_PERMISSIONS["restrict_thread_creation"]}}</label>
+                </div>
+                <div class="themed" style="padding-top: 0.5em">
+                    <div>Thread Creation User Addresses (can create threads, if Restrict Thread Creation is enabled)</div>
+                    <input style="width: 100%" name="thread_creation_users" value="">
+                </div>
+                {% endif %}
+
                 <div class="themed" style="padding-top: 0.5em">
                     <input type="checkbox" id="automatic_wipe" name="automatic_wipe" value="y"> <label for="automatic_wipe">{{config.DICT_PERMISSIONS["automatic_wipe"]}}</label>
                 </div>
@@ -283,6 +300,10 @@
 
                 <div class="themed" style="padding-top: 0.5em">
                     <input type="checkbox" id="unlisted" name="unlisted" value="y"> <label for="unlisted">Make locally unlisted (will not appear on public kiosk pages). Access via the <a href="/unlisted">unlisted page</a>.</label>
+                </div>
+
+                <div class="themed" style="padding-top: 0.5em">
+                    <input type="checkbox" id="restricted" name="restricted" value="y"> <label for="restricted">Make locally restricted (will not appear on public kiosk pages and attempting to load the page URL will return a 404 Error). Access via the <a href="/restricted">restricted page</a>.</label>
                 </div>
 
                 <p class="themed" style="font-size: 2em">Owner Addresses</p>

@@ -34,6 +34,7 @@
   - [Bitmessage Settings](#bitmessage-settings){.link}
   - [Kiosk Settings](#kiosk-settings){.link}
   - [Security Settings](#security-settings){.link}
+  - [RSS Settings](#rss-settings){.link}
   - [Export](#export){.link}
   - [Post Attachment Upload Sites](#post-attachment-upload-sites){.link}
   - [Custom Flags](#custom-flags){.link}
@@ -44,7 +45,7 @@
 - [Stats](#stats){.link}
 - [Mod Log](#mod-log){.link}
 - [BC Log](#bc-log){.link}
-- [Options](#options){.link}
+- [Options Menu](#options-menu){.link}
   - [CSS Tab](#css-tab){.link}
   - [JS Tab](#js-tab){.link}
   - [Options Tab](#options-tab){.link}
@@ -54,13 +55,13 @@
 
 # About
 
-BitChan is a decentralized anonymous imageboard inspired by [Bitboard](https://github.com/michrob/bitboard){.link} and built on top of [Bitmessage](https://bitmessage.org){.link} with [Tor](https://www.torproject.org){.link} and [GnuPG](https://gnupg.org){.link}.
+BitChan is a decentralized anonymous imageboard inspired by [Bitboard](https://github.com/michrob/bitboard){.link} and built on top of [Bitmessage](https://bitmessage.org){.link} with [Tor](https://www.torproject.org){.link}, [I2P](https://i2pd.website){.link}, and [GnuPG](https://gnupg.org){.link}.
 
-BitChan solves a number of security and free speech problems that have plagued most imageboards. Centralized imageboards can be taken offline or hijacked and can leak user data. BitChan reduces the likelihood of this by being decentralized, requiring all connections to go through Tor, and not requiring Javascript.
+BitChan solves a number of security and free speech problems that have plagued most imageboards. Centralized imageboards can be taken offline or hijacked and can leak user data. BitChan reduces the likelihood of this by being decentralized, requiring all connections to go through Tor and I2P, and not requiring Javascript.
 
-When installed locally on your computer, BitChan acts as an extension to Bitmessage, a decentralized, blockchain-based messaging program. Bitmessage relies on public key encryption similar to PGP and decentralized message delivery, which due to the fact that every message is distributed to every client, also provides plausible deniability (i.e. no one knows who the message was intended to go to). Bitmessage handles the sending and receiving of messages and BitChan acts as a sophisticated message processor, which includes a web front end. All communication happens over the Tor onion routing network for anonymity and every BitChan message is encrypted using GPG, an open source version of PGP (Pretty Good Privacy). Instead of connecting to a stranger's server and volunteering potentially identifying information, BitChan anonymously adds your message to the Bitmessage block. Everyone on the Bitmessage network downloads and shares your encrypted messages and only those with the correct credentials can decrypt them.
+When installed locally on your computer, BitChan acts as an extension to Bitmessage, a decentralized, blockchain-based messaging program. Bitmessage relies on public key encryption similar to PGP and decentralized message delivery, which due to the fact that every message is distributed to every client, also provides plausible deniability (i.e. no one knows who the message was intended to go to). Bitmessage handles the sending and receiving of messages and BitChan acts as a sophisticated message processor, which includes a web front end. All communication happens over the Tor onion routing network or I2P for anonymity and every BitChan message is encrypted using GPG, an open source version of PGP (Pretty Good Privacy). Instead of connecting to a stranger's server and volunteering potentially identifying information, BitChan anonymously adds your message to the Bitmessage block. Everyone on the Bitmessage network downloads and shares your encrypted messages and only those with the correct credentials can decrypt them.
 
-Users of centralized forums often have to deal with overzealous moderators and sometimes even pressure from State powers that tend to suffocate the forum's culture. BitChan's moderation is multifaceted, but to be brief, the option exists to create entirely unmoderatable boards. Due to its decentralized design, BitChan cannot be moderated by its developers or the government. Indeed, there is no way to disconnect BitChan from the internet, and as long as people are still running Bitmessage, BitChan lives completely untouchable by any authority. With that said, boards can be created with a variety of rules which allow board owners or admins to moderate them if so desired. Unmoderated boards can be locally moderated by the user. Additionally, users can set their install to act as a Kiosk and enable a Tor Hidden Onion service to allow anonymous users to utilize their install through an .onion address, however when accessing BitChan in this way, you will be constrained by the settings that user sets for their BitChan install. In order to utilize the full features of BitChan, including reliability and a censor-free environment, you will need to install it locally on your computer.
+Users of centralized forums often have to deal with overzealous moderators and sometimes even pressure from State powers that tend to suffocate the forum's culture. BitChan's moderation is multifaceted, but to be brief, the option exists to create entirely unmoderatable boards. Due to its decentralized design, BitChan cannot be moderated by its developers or the government. Indeed, there is no way to disconnect BitChan from the internet, and as long as people are still running Bitmessage, BitChan lives completely untouchable by any authority. With that said, boards can be created with a variety of rules which allow board owners or admins to moderate them if so desired. Unmoderated boards can be locally moderated by the user. Additionally, users can set their install to act as a Kiosk and enable a Tor Hidden Onion service or Hidden I2P Service to allow anonymous users to utilize their install through an .onion address, however when accessing BitChan in this way, you will be constrained by the settings that user sets for their BitChan install. In order to utilize the full features of BitChan, including reliability and a censor-free environment, you will need to install it locally on your computer.
 
 BitChan features boards for forum-like discussions with image and file sharing, lists to organize and share other boards and lists, and a host of additional features. Board/list management is possible via the application of owner, admin, and user permissions. Boards and lists can be public or private and with or without owners or admins, allowing a full range of options from completely unmoderatable to strict, where only select addresses are allowed to post or modify list contents.
 
@@ -109,7 +110,7 @@ The PGP passphrase is populated by default unless a custom one is provided. As a
 
 ## Why do I have to click "Allow Download" for every post with an attachment?
 
-By default, BitChan will not auto-download attachments from upload sites. If you would like to automatically download attachments if they are below a certain size, change the "Auto-Download Max Size" option on the configuration page.
+By default, BitChan will not auto-download attachments from upload sites. If you would like to automatically download attachments if they are below a certain size, change **Attachment Auto-Download Max Size** on the configuration page.
 
 ## How do I securely get people to join my board?
 
@@ -188,7 +189,13 @@ This option removes EXIF data from .jpg and .png files prior to posting to a boa
 
 ***Upload Method***
 
-Select the desired file transfer method. Bitmessage is the most secure method of attaching a file, but only message (subject + comment + attachments + metadata) sizes of ~300 KB or less are permitted due to the size limitation of Bitmessage messages. Additionally, there is a drawback for sending large file sizes due to the required proof of work for sending Bitmessage messages. Sending large Bitmessage messages significantly increases how long it takes to send. External upload sites are supported, and additional measures have been taken to ensure the privacy of your file when uploaded to these sites. First, the attachment or attachments are zipped and encrypted with a random file name and extension. Then, the beginning and ends of the file, along with several randomly-sized segments at randomly-chosen locations in the file are removed, then uploaded to the external site. The random file parts are then sent with the message that's transmitted over Bitmessage. Once a user receives the post, the file is downloaded, the parts are inserted back into the file, then it's decrypted and unzipped. Additionally, and like all Bitmessage communication, all uploads and downloads are routed through tor.
+Select the desired file transfer method. There are three different upload methods supported: Bitmessage, I2P BitTorrent, and 3rd Party Upload Sites.
+
+Bitmessage is the most secure method of attaching a file, but only message (subject + comment + attachments + metadata) sizes of ~300 KB or less are permitted due to the size limitation of Bitmessage messages. Additionally, there is a drawback for sending large file sizes due to the required proof of work for sending Bitmessage messages. Sending large Bitmessage messages significantly increases how long it takes to send. External upload sites are supported, and additional measures have been taken to ensure the privacy of your file when uploaded to these sites. First, the attachment or attachments are zipped and encrypted with a random file name and extension. Then, the beginning and ends of the file, along with several randomly-sized segments at randomly-chosen locations in the file are removed, then uploaded to the external site. The random file parts are then sent with the message that's transmitted over Bitmessage. Once a user receives the post, the file is downloaded, the parts are inserted back into the file, then it's decrypted and unzipped. Additionally, and like all Bitmessage communication, all uploads and downloads are routed through tor.
+
+I2P BitTorrent attachments are seeded over the I2P-only BitTorrent client XD to other BitChan instances that receive the post. Those BitChan instances also begin seeding the attachment data after fully downloading it, contributing to the data distribution. After 28 days (the longest amount of time a message can exist on the Bitmessage network before being pruned), seeding stops and the torrent is deleted. The same encryption and obfuscation method is used, as described in the Bitmessage section, above.
+
+The last upload method is using a 3rd party upload site. There are many upload sites on tor hidden onions and i2p eepsites that share a common API. These can only be accessed via tor and i2p, increasing security, but these should be considered the least secure of the three. You should assume many or all of these 3rd party upload sites are honeypots, making them the least secure of the three upload methods. The same encryption and obfuscation method is used, as described in the Bitmessage section, above.
 
 ***Upload Encryption***
 
@@ -234,7 +241,7 @@ The file types below have native support in most modern web browsers:
 
 **Audio**: M4A, OPUS, WAV, MP3, OGG
 
-**Images**: JPG, JPEG, PNG, GIF, WEBP
+**Images**: APNG, AVIF, GIF, JPG, JPEG, PNG, SVG, WEBP
 
 **Video**: MP4, WEBM, OGG
 
@@ -437,6 +444,14 @@ Set a start time (epoch timestamp) and interval for when all content on the boar
 
 Require that all posts originate from an address that is not the board or list address. This doesn't necessarily mean you need an identity to post, as other boards and list addresses can be used as long as they are not on the restricted list. Board owners can add restricted addresses even after board creation occurs, however this does not change the board passphrase.
 
+### Restrict Thread Creation to Owners, Admins, and Thread Creation Users
+
+Only the addresses added as an Owner, Admin, or Thread Creation Users to the Public or Private Board are permitted to create threads on the board. Regular users will still be able to post replies to a thread on the board (unless restricted elsewhere), but will not be able to create new threads.
+
+### Thread Creation Users
+
+When Restrict Thread Creation is enabled, te only users of the board that will be able to create new threads will be Owners, Admins, and any additional addresses added to this list. The list should be addresses separated by commas.
+
 ### Allow Lists to Store PGP Passphrases
 
 When enabled, any board or list added to this list will also send the currently-set PGP passphrases (Message PGP passphrase for Lists and Message, Attachment, and Steg PGP passphrases for Boards). This allows a list to contain boards/lists with non-default PGP passphrases set and easily share them without having to supply the PGP passphrases separately from the list. When the user clicks Join from the list, the custom PGP passphrases (when the board/list was added to the list) are populated for that board/list on the following join page. If a list Owner wants to change the PGP passphrases associated with a board/list already on the list, just remove the board/list from the list, change the board/list PGP passphrases, and add the board/list again and the list will now contain the board/list with the new PSP passphrases. 
@@ -586,21 +601,21 @@ When a list is updated or a new post is made, that list/board jumps to the top o
 
 ### Attachment Auto-Download Max Size (MB)
 
-When a post is made with an attachment that has been uploaded to an external upload site, users that wish to view the attachment must download that file from the external upload site. By default, auto-downloading is disabled (this setting set to 0 MB) and a user desiring to acquire the attachment(s) must press the Download button on the post. This setting allows you to auto-download attachments at or below the set file size, in MB.
+When a post is made with an attachment that has been uploaded to an external upload site or torrent via i2p, users that wish to view the attachment must download that encrypted file. By default, auto-downloading is disabled (this setting set to 0 MB) and a user desiring to acquire the attachment(s) must press the Allow Download button on the post. This setting allows you to auto-download attachments at or below the set file size, in MB.
 
 ### Attachment Extraction Max Size (MB)
 
 Because compressed/encrypted files can be of a size significantly less than the decompressed/decrypted file size, this option prevents an exploit whereby a very large post attachment can be made. For example, a 100 GB file containing a repeating "0" character is a mere ~200 KB when compressed/encrypted. If this 100 GB file were to be added as a post attachment, the header of the file to be downloaded would only return ~200 KB. Only upon decompressing/decrypting will the true file size be revealed. This option sets a limit for how large the decompressed/decrypted post attachment file size can be.
 
-### Allow connecting to verify post attachment size
+### Allow connecting to upload site to verify post attachment size
 
-Permit connecting (through tor) to verify post attachment size. When a post arrives that indicates it has attachments on an external upload site, it also indicates what the size is. If this message was tampered with, it could indicate a smaller size than it actually is, which could trigger your auto-download to kick in, when in fact it could be incredibly large. File size checking will verify the file size before attempting an auto-download. If you allow file size checking, BitChan would recognize its true size, update the size displayed to the user and not auto-download if it's above the auto-download limit. At that point the user can decide to click the download button or not.
+Permit connecting (through tor) to upload sites to verify post attachment size. When a post arrives that indicates it has attachments on an external upload site, it also indicates what the size is. If this message was tampered with, it could indicate a smaller size than it actually is, which could trigger your auto-download to kick in, when in fact it could be much larger. File size checking will verify the file size before attempting an auto-download. If you allow file size checking, BitChan would recognize its true size, update the size displayed to the user and not auto-download if it's above the auto-download limit. At that point the user can be properly informed of the true size before using the Allow Download button or not.
 
-If you suspect that someone might want to log your tor IP by forcing you to request a file size from an external host, then you can disable this. Of course, if your **Auto-Download Max Size** is above 0 then you may be tricked into downloading a massive file. These are some challenges and trade-offs of dealing with a zero-trust distributed network.
+If you suspect that someone might want to log your tor IP by forcing you to request a file size from an external upload site, then you can disable this. Of course, if your **Attachment Auto-Download Max Size** is above 0, then you may be tricked into downloading a massive file. As the download progresses, if the downloaded size exceeds the set limit, the download will be aborted. These are the challenges and trade-offs when dealing with a zero-trust distributed network.
 
 ### Allow connecting to get book quotes
 
-Permit connecting (through tor) to get random book quotes for #stich and #godsong in posts. The #stitch and #godsong functions require connecting to websites and thus go outside the Bitmessage network. Enable this option to prevent connecting the websites associate with resolving these functions. If enabled, posts which contain these functions will not resolve, and you cannot resolve them after the fact without leaving the board, rejoining and resyncing your database. However, doing this will cause any messages which you had which are now past their TTL to be lost.
+Permit connecting (through tor) to get random book quotes for #stich and #godsong in posts. The #stitch and #godsong functions require connecting to websites and thus go outside the Bitmessage network. Disable this option to prevent connecting to the websites associated with these functions. If disabled, posts which contain these functions will not be populated with the formatted material, and instead will simply show "#stitch" or "#godsong".
 
 ### Allow connecting to NTP to sync time
 
@@ -608,7 +623,7 @@ Permit connecting (not through tor) to an NTP server to ensure your time is accu
 
 ### Never allow auto-download of unencrypted attachments
 
-If a post has unencrypted attachments from upload sites, always require the Download button to be pressed to download them. Enable this option if you don't want to auto-download any unencrypted file regardless of your **Auto-Download Max Size** setting.
+If a post has unencrypted attachments from upload sites, always require the Allow Download button to be used to download them. Enable this option if you don't want to auto-download any unencrypted file regardless of your **Attachment Auto-Download Max Size** setting.
 
 ### Remove unencrypted as attachment option
 
@@ -692,7 +707,7 @@ If tor is permitted to be used for incoming/outgoing connections, bitmessage can
 
 ## Kiosk Settings
 
-Kiosk mode allows BitChan users to turn their local instance into a hidden onion service. The kiosk operator can customize who can access the service and what they can do. Operators can grant kiosk privileges such as administration rights, turn captcha on or off as well as a number of other alterations.
+Kiosk mode allows BitChan users to turn their local instance into be accessible from a Tor Hidden Onion Service or Hidden I2P Service. The kiosk operator can customize who can access the service and what they can do. Operators can grant kiosk privileges such as administration rights, turn captcha on or off as well as a number of other alterations.
 
 ### Enable Kiosk Mode
 
@@ -712,11 +727,15 @@ Allow users to encrypt or sign PGP messages in posts.
 
 ### Disable Bitmessage as a Post Upload Method
 
-Large messages are expensive in terms of proof of work (POW), thus disabling Bitmessage as an attachment method will stop users of the kiosk from bogging it down with process heavy requests.
+Sending large posts require more computational power to perform proof of work (POW) than smaller messages, which increases the time for a post to send and ties up CPU resources while POW is being conducted. By disabling Bitmessage as an attachment method, you can prevent users of a kiosk from using this CPU-intensive Upload Method.
+
+### Disable I2P Torrent as a Post Upload Method
+
+Prevent users of a Kiosk from using I2P BitTorrent as a post attachment upload site.
 
 ### Allow Users to Initiate Post Downloads
 
-Used in tandem with the 'Auto-Download Max Size', preventing kiosk users from downloading attachments which exceed the maximum auto-download size can help prevent you kiosk's hard drive from getting filled up too fast. Only enable this setting if you are sure large downloads are not a problem.
+Used in tandem with the **Attachment Auto-Download Max Size**, preventing kiosk users from downloading attachments which exceed the maximum auto-download size can help prevent you kiosk's hard drive from getting filled up too fast. Only enable this setting if you are sure large downloads are not a problem.
 
 ### TTL Option
 
@@ -764,9 +783,65 @@ Enabling this setting will help to prevent denial of service type abuse.
 
 Enabling this setting will help to prevent denial of service type abuse.
 
-### Hide Passphrases From Board/List Information
+### What to do when a Post/Thread is Remotely Deleted
 
-Enabling this will prevent passphrases from being shown in the Board/List Information.
+When a post or thread is remotely deleted, you can choose to delete the post contents (including attachments), or merely hide it (allowing it to be unhidden at a later time).
+
+### Disable Downloading Attachments from Upload Sites
+
+If a post is received with attachments using an upload site, the attachments will not be downloaded.
+
+### Disable Downloading Attachments from I2P Torrents
+
+If a post is received with attachments using an i2p torrent, the attachments will not be downloaded.
+
+### How Long (Days) to Allow I2P Torrents for OP Posts
+
+If i2p torrent is enabled as a download method, how long should be waited after the original post to a thread is received before deleting the torrent. This is not the duration after the torrent begins seeding, but the duration after the torrent is initially started (since seeding may never occur). Therefore, at a minimum, you must account for the estimated time it would take to download the content.
+
+### How Long (Days) to Allow I2P Torrent for Reply Posts
+
+If i2p torrent is enabled as a download method, how long should be waited after a reply to a thread is received before deleting the torrent. This is not the duration after the torrent begins seeding, but the duration after the torrent is initially started (since seeding may never occur). Therefore, at a minimum, you must account for the estimated time it would take to download the content.
+
+## RSS Settings
+
+If hosting a Kiosk on a tor hidden service or I2P eepsite, an RSS can be enabled to generate a feed of all posts, board posts, and thread posts.
+
+### Enable RSS Feeds with Tor URLs
+
+Enable an RSS feed to be generated, with URLs generated using a tor address.
+
+### Enable RSS Feeds with I2P URLs
+
+Enable an RSS feed to be generated, with URLs generated using an i2p address.
+
+### Tor BitChan URL
+
+The tor address to use when generating URLs in the tor RSS feed.
+
+### I2P BitChan URL
+
+The tor address to use when generating URLs in the I2P RSS feed.
+
+### Maximum Posts per Feed
+
+How many posts to include in each feed. RSS URLs can have ?last=x appended to them, with x being an integer between 1 and the maximum set number fo posts per feed, and the feed will be reduced to that value.
+
+### Maximum Character Limit per Post
+
+The character limit that posts be truncated.
+
+### Use HTML Posts
+
+Enable HTML in posts. HTML posts will already be truncated based on popup HTML settings. Otherwise, posts will be plain text truncated to the RSS character limit specified.
+
+### Rate Limit: Number of Requests
+
+The maximum number of RSS requests allowed per time period, before further requests are denied.
+
+### Rate Limit: Time Period
+
+The time period to measure when determining if the RSS request rate needs to be limited.
 
 ## Export
 
@@ -791,7 +866,7 @@ Backups of BitChan information can be performed for boards/lists, identities, an
 
 ## Post Attachment Upload Sites
 
-Here is a list of all current external host upload sites that your instance of BitChan can use to attach files to posts. You can edit, add or delete from this list. If a user posts with an upload site that is not on your list, a link will appear in the message header. It appears as a hyperlinked 'a' and clicking it will bring you to a page allowing you to add the host to your list. In place of the 'a' a 'v' will appear if the host is already on your list, allowing you to view or edit the configuration of this host. Adding or deleting entries on this list will affect the options seen in the 'Upload Method' dropdown menu. Disabling an entry will prevent it from being viewed or used when Kiosk Mode is enabled (and as long as you aren't logged in as an Admin).
+Here is a list of all current 3rd party upload sites that your instance of BitChan can use for transferring post attachments from one BitChan instance to another. You can edit, add or delete from this list. If a user posts with an upload site that is not in this list, a link will appear in the message header (as a hyperlinked 'a') that will bring you to a page allowing you to add the new host to your list. In place of the 'a', a 'v' will appear if the host is already on your list, allowing you to view or edit the host configuration. Adding or deleting entries on this list will affect the options in the 'Upload Method' dropdown menu when authoring a post. Disabling an entry will prevent it from being visible or used when Kiosk Mode is enabled.
 
 ## Custom Flags
 
@@ -803,37 +878,36 @@ BitChan comes with national flag images, but you can also add your own. The name
 
 When composing a message, custom flags will appear at the top of the flag dropdown menu with the prefix **Custom**.
 
-## Hidden Onion Service
+## Tor Hidden Onion Service
 
-A hidden tor onion services (v3) can be enabled to allow connecting to your BitChan install via an .onion address using tor browser. If enabling a random address, a random onion address will be generated and displayed. You can also provide a zip file containing credentials for hosting a custom onion address that you previously generated. This can be beneficial if you want to enable Kiosk Mode to allow anonymous access without exposing your IP address. See the README for more information about the benefits of setting up a hidden onion service on a virtual private server.
+A hidden tor onion services (v3) can be enabled to allow connecting to your BitChan install via an .onion address using tor browser. If enabling a random address, a random onion address will be generated and displayed. You can also provide a zip file containing credentials for hosting a custom onion address that you previously generated. This can be beneficial if you want to enable Kiosk Mode to allow anonymous access without exposing your IP address. See the README for more information about the benefits of setting up a tor hidden onion service on a virtual private server.
 
-## Hidden I2P Service
+## Hidden I2P Service (eepsite)
 
 A hidden I2P service can be used to create a tunnel to your BitChan install via an .i2p address over the I2P network. This can be beneficial if you want to enable Kiosk Mode to allow anonymous access without exposing your IP address.
 
 Follow these instructions to set up an I2P tunnel to allow access to your BitChan install:
 
 1. Bring the docker containers down with `cd BitChan/docker && sudo docker compose down`
-2. Delete the I2P volume to allow reconfiguring the tunnels and i2pd config files: `sudo docker volume rm docker_i2pd`
+2. Delete the I2P volume to allow reconfiguring the tunnels and i2pd config files: `sudo rm -rf /usr/local/bitchan-docker/i2pd`
 3. Open Bitchan/docker/i2pd/Dockerfile and uncomment the COPY line that copies tunnels.conf to the i2pd volume.
-4. If you have a tunnel private key file, you can uncomment the COPY line that copies that key file to the i2pd volume. Make sure the file name is correct in Dockerfile and tunnels.conf, and place that file in BitChan/docker/i2pd/ prior to building.
-5. If you need to access the webconsole of a remote computer, either uncomment the port section of the i2pd container in docker-compose.yml, exposing port 7999 to the internet, or set up an SSH tunnel to access port 7070 at 172.28.1.6.
-6. Build and bring the containers back up: `cd BitChan/docker && sudo make daemon`
-7. Open a browser to http://172.28.1.6:7070 (or http://PublicIPAddress:7999 if enabled in docker-compose.yaml) to open the i2pd webconsole to view your I2P Tunnels and determine your .i2p address.
-8. After the tunnel has started and peers have connected, your BitChan install will be accessible at that .i2p address.
-9. You can register a short i2p address with a jump server, otherwise you can give out the b32 address for people to connect to.
+4. If you have a tunnel private key file, you can uncomment the COPY line that copies that key file to the i2pd volume. Make sure the file name is correct in Dockerfile and tunnels.conf, and place that file in BitChan/docker/i2pd/ prior to building. You can also place this file in the volume directory /usr/local/bitchan-docker/i2pd as well.
+5. Build and bring the containers back up: `cd BitChan/docker && sudo make daemon`
+6. Open a browser to http://172.28.1.6:7070 to open the i2pd webconsole to view your I2P Tunnels and determine your .i2p address.
+7. After the tunnel has started and peers have connected, your BitChan install will be accessible at that .i2p address.
+8. You can register a short i2p address with a jump server, otherwise you can give out the b32 address for people to connect to.
 
-Additionally, you can use 172.28.1.6:4444 as an HTTP proxy in your browser to connect to I2P sites.
+Additionally, you can use 172.28.1.6:4444 as an HTTP proxy in your browser to connect to I2P sites and port 4447 as an i2p SOCKS proxy.
 
-Warning: If you expose port 7999 of the I2P service in docker-compose.yaml and your server is publicly-accessible, be sure to change the deafult credentials in i2pd.conf and/or comment this port back out and rebuild the containers to prevent potential unauthorized access.
+Warning: If your server IP address is publicly-accessible, be sure to change the default credentials in i2pd.conf and/or comment the i2pd port 7070 in docker-compose.yaml and rebuild the containers, to prevent potential unauthorized access.
 
 # Kiosk Mode
 
-A Kiosk Mode has been created that institutes a login and permission system to allow administration as well as anonymous posting, among other features. Admins can log in and perform any action. Non-logged in users can be allowed to only view or make posts. You can also allow non-logged in users to only view and provide one or more guest logins that permit posting. There are several more Kiosk Mode options outlined in BitChan/config.py and detailed in the manual. When used in conjunction with the integrated hidden onion service configuration, you can provide secure and anonymous access to your BitChan instance, so neither the host nor the clients can obtain any identifying information about each other.
+A Kiosk Mode has been created that institutes a login and permission system to allow administration as well as anonymous posting, among other features. Admins can log in and perform any action. Non-logged in users can be allowed to only view or make posts. You can also allow non-logged in users to only view and provide one or more guest logins that permit posting. There are several more Kiosk Mode options outlined in BitChan/config.py and detailed in the manual. When used in conjunction with the integrated Tor Hidden Onion Service or Hidden I2P Service configurations, you can provide secure and anonymous access to your BitChan instance, so neither the host nor the clients can obtain any identifying information about each other.
 
 # Status
 
-Status information about BitChan, Bitmessage and Tor can be found here. The status page can be accessed by clicking the Status link located at the bottom of most BitChan pages.
+A page to display status information about BitChan, Bitmessage and Tor. The status page can be accessed by clicking the Status link located at the top of most BitChan pages.
 
 ## BitChan Status
 
@@ -903,9 +977,9 @@ This page logs board/list creation events, list alterations and administration e
 
 This page displays output from the BitChan docker volume logs.
 
-# Options
+# Options Menu
 
-Clicking this link will show a popup allowing custom user CSS and JavaScript as well as additional options described below.
+Clicking the Options link will show a popup allowing custom user CSS and JavaScript as well as additional options, described below.
 
 ## CSS Tab
 

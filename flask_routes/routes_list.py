@@ -82,11 +82,10 @@ def list_chans(current_chan):
     if not allowed:
         return allow_msg
 
-    form_list = forms_board.List()
-    form_set = forms_board.SetChan()
-
     chan = Chan.query.filter(Chan.address == current_chan).first()
-    if not chan:
+    global_admin, _ = allowed_access("is_global_admin")
+
+    if not chan or (not global_admin and chan.restricted):
         return render_template("pages/404-board.html",
                                board_address=current_chan)
 
@@ -95,6 +94,9 @@ def list_chans(current_chan):
     except:
         return render_template("pages/404-board.html",
                                board_address=current_chan)
+
+    form_list = forms_board.List()
+    form_set = forms_board.SetChan()
 
     board = {"current_chan": chan}
     status_msg = {"status_message": []}
@@ -107,12 +109,20 @@ def list_chans(current_chan):
     except:
         this_chan_list = {}
 
-    chans = Chan.query.filter(and_(
-        Chan.unlisted.is_(False),
-        Chan.address != current_chan,
-        Chan.address.notin_(this_chan_list))).order_by(
+    if global_admin:
+        chans = Chan.query.filter(and_(
+            Chan.address != current_chan,
+            Chan.address.notin_(this_chan_list))).order_by(
             Chan.type.asc(),
             Chan.label.asc()).all()
+    else:
+        chans = Chan.query.filter(and_(
+            Chan.unlisted.is_(False),
+            Chan.restricted.is_(False),
+            Chan.address != current_chan,
+            Chan.address.notin_(this_chan_list))).order_by(
+                Chan.type.asc(),
+                Chan.label.asc()).all()
     for each_chan in chans:
         str_select = ""
         if each_chan.type == "board":
@@ -138,7 +148,6 @@ def list_chans(current_chan):
             return allow_msg
 
         join_bulk = None
-        join_bulk_list = []
         join = None
         delete = None
 
@@ -152,11 +161,6 @@ def list_chans(current_chan):
             elif each_input == "joinbulk":
                 join_bulk = True
                 break
-
-        if join_bulk:
-            for each_input in request.form:
-                if each_input.startswith("joinbulk_"):
-                    join_bulk_list.append(each_input.split("_")[1])
 
         if form_set.set_pgp_passphrase_msg.data:
             global_admin, allow_msg = allowed_access("is_global_admin")
@@ -189,7 +193,7 @@ def list_chans(current_chan):
                     chan.default_from_address = None
                 chan.save()
 
-        # Add/delete a board or list to/from a list
+        # Modify list by adding/deleting a board or list
         elif form_list.add.data or delete:
             global_admin, allow_msg = allowed_access("is_global_admin")
             board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=current_chan)
@@ -202,50 +206,43 @@ def list_chans(current_chan):
             elif delete:
                 address = delete
 
-            chan_add = Chan.query.filter(Chan.address == address).first()
-            if form_list.add.data and not chan_add:
-                status_msg["status_message"].append("Invalid list to modify")
-            else:
-                mod_list = Chan.query.filter(and_(
-                    Chan.type == "list",
-                    Chan.address == current_chan)).first()
+            chan_add = Chan.query.filter(and_(Chan.address == address)).first()
 
+            list_mod = Chan.query.filter(and_(
+                Chan.type == "list",
+                Chan.address == current_chan)).first()
+            if not list_mod:
+                status_msg["status_message"].append("Invalid list to modify")
+            elif form_list.add.data and not chan_add:
+                status_msg["status_message"].append("Invalid board/list to add")
+            else:
                 try:
-                    dict_list_addresses = json.loads(mod_list.list)
+                    dict_list_addresses = json.loads(list_mod.list)
                 except:
                     dict_list_addresses = {}
 
                 try:
-                    rules = json.loads(mod_list.rules)
+                    rules = json.loads(list_mod.rules)
                 except:
                     rules = {}
 
                 if form_list.add.data and address in dict_list_addresses:
                     status_msg["status_message"].append("Can't add address that's already on the list")
 
-                if form_list.delete.data and address not in dict_list_addresses:
+                if delete and address not in dict_list_addresses:
                     status_msg["status_message"].append("Can't delete address that's not on the list")
 
                 if address == current_chan:
                     status_msg["status_message"].append("Cannot modify an address that's the same address as the list")
 
-                def sender_has_access(address, address_type):
-                    access = get_access(address)
-                    for each_address in daemon_com.get_identities():
-                        if each_address in access[address_type]:
-                            return True
-                    for each_address in daemon_com.get_all_chans():
-                        if each_address in access[address_type]:
-                            return True
-
-                if mod_list.access == "private":
+                if list_mod.access == "private":
                     if (sender_has_access(current_chan, "primary_addresses") or
                             sender_has_access(current_chan, "secondary_addresses")):
                         # Primary and secondary access can add or delete from lists
                         modify_access = True
                     elif (form_list.add.data and
                             sender_has_access(current_chan, "tertiary_addresses")):
-                        # Only allow tertiary access to add to private lists
+                        # Tertiary access can add to private lists but not delete
                         modify_access = True
                     else:
                         # Everyone else is prohibited from adding/deleting from private lists
@@ -253,13 +250,15 @@ def list_chans(current_chan):
 
                     if not modify_access:
                         status_msg["status_message"].append(
-                            "Cannot modify this list if you are not the owner.")
+                            "Insufficient credentials to modify this list.")
 
-                # Check if passphrase is valid
+                # If adding, check if the passphrase is valid
                 if form_list.add.data:
                     errors, dict_chan_info = process_passphrase(chan_add.passphrase)
                     if not dict_chan_info:
                         status_msg['status_message'].append("Error parsing passphrase")
+                        for error in errors:
+                            status_msg['status_message'].append(error)
 
                     if "allow_list_pgp_metadata" in rules and rules["allow_list_pgp_metadata"]:
                         if dict_chan_info["type"] in ["board", "list"]:
@@ -309,7 +308,7 @@ def list_chans(current_chan):
                             f"Locally Added to List: {address}",
                             board_address=current_chan, user_from=admin_name)
 
-                    elif form_list.delete.data:
+                    elif delete:
                         dict_list_addresses.pop(address)
                         status_msg["status_message"].append(
                             "Deleted {} from the List".format(address))
@@ -319,16 +318,16 @@ def list_chans(current_chan):
                             board_address=current_chan, user_from=admin_name)
 
                     # Set the time the list changed
-                    if mod_list.list != json.dumps(dict_list_addresses):
-                        mod_list.list_timestamp_changed = time.time()
+                    if list_mod.list != json.dumps(dict_list_addresses):
+                        list_mod.list_timestamp_changed = time.time()
 
-                    mod_list.list = json.dumps(dict_list_addresses)
-                    mod_list.list_send = True
-                    mod_list.save()
+                    list_mod.list = json.dumps(dict_list_addresses)
+                    list_mod.list_send = True
+                    list_mod.save()
 
-                    time_to_send = 60 * 10
-                    logger.info("Instructing send_lists() to run in {} minutes".format(time_to_send / 60))
-                    daemon_com.update_timer_send_lists(time_to_send)
+                    logger.info("Instructing send_lists() to run in {} minutes".format(
+                        config.LIST_ADD_WAIT_TO_SEND_SEC / 60))
+                    daemon_com.update_timer_send_lists(config.LIST_ADD_WAIT_TO_SEND_SEC)
 
         elif join:
             # Join from list
@@ -345,6 +344,12 @@ def list_chans(current_chan):
             global_admin, allow_msg = allowed_access("is_global_admin")
             if not global_admin:
                 return allow_msg
+
+            join_bulk_list = []
+
+            for each_input in request.form:
+                if each_input.startswith("joinbulk_"):
+                    join_bulk_list.append(each_input.split("_")[1])
 
             if not join_bulk_list:
                 status_msg['status_title'] = "Error"
@@ -531,12 +536,14 @@ def list_bulk_add(list_address):
     if not global_admin and not board_list_admin:
         return allow_msg
 
-    form_list = forms_board.List()
-
     chan = Chan.query.filter(Chan.address == list_address).first()
-    if not chan:
+    global_admin, _ = allowed_access("is_global_admin")
+
+    if not chan or (not global_admin and chan.restricted):
         return render_template("pages/404-board.html",
                                board_address=list_address)
+
+    form_list = forms_board.List()
 
     try:
         from_list = daemon_com.get_from_list(list_address)
@@ -605,6 +612,7 @@ def list_bulk_add(list_address):
                 status_msg["status_message"].append("Invalid list to modify")
             else:
                 list_unlisted = []
+                list_restricted = []
 
                 if form_list.from_address.data:
                     mod_list.default_from_address = form_list.from_address.data
@@ -623,7 +631,10 @@ def list_bulk_add(list_address):
                     chan_add = Chan.query.filter(Chan.address == each_address).first()
                     if chan_add.unlisted and not form_list.add_unlisted.data:
                         list_unlisted.append(chan_add)
+                        continue
 
+                    if chan_add.restricted and not form_list.add_restricted.data:
+                        list_restricted.append(chan_add)
                         continue
 
                     if not chan_add:
@@ -639,13 +650,13 @@ def list_bulk_add(list_address):
                         status_msg["status_message"].append(
                             "Cannot modify an address that's the same address as the list: {}".format(each_address))
 
-                    def sender_has_access(each_address, address_type):
-                        access = get_access(each_address)
-                        for each_address in daemon_com.get_identities():
-                            if each_address in access[address_type]:
+                    def sender_has_access(address, address_type):
+                        access = get_access(address)
+                        for address in daemon_com.get_identities():
+                            if address in access[address_type]:
                                 return True
-                        for each_address in daemon_com.get_all_chans():
-                            if each_address in access[address_type]:
+                        for address in daemon_com.get_all_chans():
+                            if address in access[address_type]:
                                 return True
 
                     if mod_list.access == "private":
@@ -711,6 +722,13 @@ def list_bulk_add(list_address):
                     for each_unlisted in list_unlisted:
                         status_msg["status_message"].append(
                             f'Unlisted: /{each_unlisted.label}/ {each_unlisted.address}')
+
+                if list_restricted:
+                    status_msg["status_message"].append(
+                        f'Restricted board/list detected. Cannot add unless "Add Restricted" is selected.')
+                    for each_restricted in list_restricted:
+                        status_msg["status_message"].append(
+                            f'Restricted: /{each_restricted.label}/ {each_restricted.address}')
 
             if not status_msg['status_message']:
                 status_msg["status_message"].append(
@@ -789,3 +807,13 @@ def list_bulk_add(list_address):
                            table_chan=Chan,
                            url=url,
                            url_text=url_text)
+
+
+def sender_has_access(address_, address_type):
+    access = get_access(address_)
+    for each_address in daemon_com.get_identities():
+        if each_address in access[address_type]:
+            return True
+    for each_address in daemon_com.get_all_chans():
+        if each_address in access[address_type]:
+            return True

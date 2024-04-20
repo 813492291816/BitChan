@@ -98,6 +98,8 @@ class Join(FlaskForm):
     stage = StringField("Stage")
     join_type = SelectField("Join Type", choices=[])
     require_identity_to_post = BooleanField("Require Identity to Post")
+    restrict_thread_creation = BooleanField("Restrict Thread Creation to Owners, Admins, and Thread Creation Users")
+    thread_creation_users = StringField("Thread Creation User Addresses (separated by commas)")
     automatic_wipe = BooleanField("Automatic Wipe")
     allow_list_pgp_metadata = BooleanField("Allow Lists to Store PGP Passphrases")
     wipe_epoch = IntegerField("Time to Clear (UTC Epoch)")
@@ -116,6 +118,7 @@ class Join(FlaskForm):
     pgp_passphrase_steg = StringField("Steg PGP Passphrase")
     resync = BooleanField("Resync")
     unlisted = BooleanField("Unlisted")
+    restricted = BooleanField("Restricted")
     next = SubmitField("Next")
     join = SubmitField("Join")
 
@@ -126,6 +129,7 @@ class List(FlaskForm):
     save_from = SubmitField("Save From")
     add = SubmitField("Add")
     add_unlisted = BooleanField("Add Unlisted")
+    add_restricted = BooleanField("Add Unlisted")
     add_bulk = SubmitField("Bulk Add")
     delete = SubmitField("Delete")
 
@@ -162,6 +166,7 @@ class ModLog(FlaskForm):
 
 class Search(FlaskForm):
     search_type = StringField("Search Type")
+    search_boards = StringField("Search Boards")
     search = StringField("Search String")
     filter_hidden = BooleanField("Show Only Hidden")
     filter_op = BooleanField("Show Only OP")

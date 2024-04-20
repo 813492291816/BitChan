@@ -23,7 +23,9 @@ def count_views(f):
             "lists": [],
             "threads": [],
             "general": [],
-            "new_posts": []
+            "new_posts": [],
+            "rss_thread": [],
+            "rss_board": []
         })
 
         if f.__name__ == "new_posts" and kwargs.get("thread_hash_short"):
@@ -36,6 +38,10 @@ def count_views(f):
                 kwargs.get("current_chan") and kwargs.get("thread_id")):
             dict_keys["boards"].append((kwargs["current_chan"]))
             dict_keys["threads"].append(kwargs["thread_id"])
+        elif f.__name__ == "rss" and kwargs.get("board_address") and kwargs.get("thread_id") != "0":
+            dict_keys["rss_thread"].append((kwargs["thread_id"]))
+        elif f.__name__ == "rss" and kwargs.get("board_address") and kwargs.get("thread_id") == "0":
+            dict_keys["rss_board"].append((kwargs["board_address"]))
         else:
             dict_keys["general"].append(f.__name__)
 

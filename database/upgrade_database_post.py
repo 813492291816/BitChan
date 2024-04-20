@@ -7,11 +7,8 @@ sys.path.append(os.path.abspath(os.path.join(__file__, "../..")))
 
 from database.alembic_utils import get_versions
 from config import ALEMBIC_POST
-from config import DATABASE_BITCHAN
 from database.utils import session_scope
 import traceback
-
-DB_BITCHAN = 'sqlite:///' + DATABASE_BITCHAN
 
 
 if __name__ == "__main__":
@@ -26,7 +23,7 @@ if __name__ == "__main__":
         #     print("+++ Found version {}".format(version))
         #     try:
         #         from database.models import AddressBook
-        #         with session_scope(DB_BITCHAN) as session:
+        #         with session_scope(config.DB_PATH) as session:
         #             new_add = AddressBook()
         #             new_add.test = "EXAMPLE"
         #             session.add(new_add)
@@ -46,7 +43,7 @@ if __name__ == "__main__":
             print("+++ Found version {}".format(version))
             try:
                 from database.models import Threads
-                with session_scope(DB_BITCHAN) as session:
+                with session_scope(config.DB_PATH) as session:
                     threads = session.query(Threads).all()
                     for each_thread in threads:
                         try:

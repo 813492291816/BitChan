@@ -13,9 +13,26 @@
         {% endif %}
         <a class="link page-nav" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{recent_page - 1}}">&lt;</a>&nbsp;&nbsp;
     {% endif %}
+
+    {%- set break_tracker = namespace(pre_elipse = False) -%}
+    {%- set break_tracker = namespace(post_elipse = False) -%}
     {% for page in pages %}
-        {% if page == recent_page %}<span class="page-nav" style="font-weight: bold">[{{page}}]</span>{% else %}<a class="link page-nav" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{page}}">[{{page}}]</a>{% endif %}{% if not loop.last or recent_page < pages|length %}&nbsp;&nbsp;{% endif %}
+        {% if recent_page < page and page - recent_page > 25 %}
+            {% if not break_tracker.pre_elipse %}...&nbsp;&nbsp;{% endif %}
+            {%- set break_tracker.pre_elipse = True -%}
+        {% elif recent_page > page and recent_page - page > 25 %}
+            {% if not break_tracker.post_elipse %}...&nbsp;&nbsp;{% endif %}
+            {%- set break_tracker.post_elipse = True -%}
+        {% else %}
+            {% if page == recent_page -%}
+                <span class="page-nav" style="font-weight: bold">[{{page}}]</span>
+            {% else %}
+                <a class="link page-nav" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{page}}">[{{page}}]</a>
+            {% endif %}
+            {% if not loop.last or recent_page < pages|length %}&nbsp;&nbsp;{% endif %}
+        {% endif %}
     {% endfor %}
+
     {% if recent_page < pages|length %}
         <a class="link page-nav" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{recent_page + 1}}">&gt;</a>{% if recent_page < total_pages - 1 %}&nbsp;&nbsp;{% endif %}
         {% if recent_page < total_pages - 1 %}

@@ -9,11 +9,9 @@ import certifi
 import pycurl
 
 import config
-from config import DATABASE_BITCHAN
+from config import DB_PATH
 from database.models import UploadProgress
 from database.utils import session_scope
-
-DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 
 logger = logging.getLogger("bitchan.upload")
 
@@ -27,7 +25,7 @@ class UploadCurl:
         },
         "i2p": {
             "host": config.I2P_HOST,
-            "port": config.I2P_SOCKS_PORT,
+            "port": config.I2P_HTTP_PORT,
             "type": pycurl.PROXYTYPE_HTTP
         }
     }

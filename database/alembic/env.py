@@ -9,6 +9,22 @@ from alembic import context
 # access to the values within the .ini file in use.
 config = context.config
 
+# Pass interpolation vars to alembic.ini
+import os
+import sys
+from pathlib import Path
+
+sys.path.append(os.path.abspath(os.path.join(Path(__file__).parent.absolute(), '../..')))
+
+from config import DB_HOST
+from config import DB_NAME
+from config import DB_PW
+
+section = config.config_ini_section
+config.set_section_option(section, "DB_HOST", DB_HOST)
+config.set_section_option(section, "DB_NAME", DB_NAME)
+config.set_section_option(section, "DB_PW", DB_PW)
+
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 fileConfig(config.config_file_name)

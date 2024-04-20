@@ -16,8 +16,8 @@ logging.basicConfig(
     format="[%(asctime)s] %(levelname)s/%(name)s: %(message)s",
     handlers=[
         handlers.RotatingFileHandler(
-            config.LOG_FRONTEND_FILE, mode='a', maxBytes=5 * 1024 * 1024,
-            backupCount=1, encoding=None, delay=False
+            config.LOG_FRONTEND_FILE, mode='a', maxBytes=1024 * 1024 * 30,
+            backupCount=3, encoding=None, delay=False
         ),
         logging.StreamHandler()
     ]

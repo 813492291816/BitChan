@@ -18,8 +18,6 @@ from utils.general import timestamp_to_date
 from utils.html_truncate import truncate
 from utils.shared import get_access
 
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
-
 daemon_com = DaemonCom()
 logger = logging.getLogger("bitchan.generate_popup")
 
@@ -93,9 +91,9 @@ def generate_reply_link_and_popup_html(
         if font_size:
             style_str += ' font-size: {}'.format(font_size)
 
-        # If board is unlisted, don't link from outside the board to the unlisted board's post (non-link post)
-        if external_board and message.thread.chan.unlisted:
-            ret_str += '<span class="crosslink reply-tooltip{cls}" style="{sty};{esty}" title="Unlisted">{lstr}</span>'.format(
+        # If board is unlisted/restricted, don't link from outside the board to the unlisted board's post (non-link post)
+        if external_board and (message.thread.chan.unlisted or message.thread.chan.restricted):
+            ret_str += '<span class="crosslink reply-tooltip{cls}" style="{sty};{esty}" title="Unlisted/Restricted">{lstr}</span>'.format(
                 cls=classes_str,
                 sty=style_str,
                 esty=extra_style,
@@ -272,7 +270,7 @@ def generate_popup_post_header(message, external_thread=False):
             sticky_remote = False
             if message.thread.stickied_local:
                 sticky_local = True
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 admin_cmd = new_session.query(Command).filter(and_(
                     Command.action == "set",
                     Command.action_type == "thread_options",
@@ -294,7 +292,7 @@ def generate_popup_post_header(message, external_thread=False):
             locked_remote = False
             if message.thread.locked_local:
                 locked_local = True
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 admin_cmd = new_session.query(Command).filter(and_(
                     Command.action == "set",
                     Command.action_type == "thread_options",
@@ -316,7 +314,7 @@ def generate_popup_post_header(message, external_thread=False):
             anchored_remote = False
             if message.thread.anchored_local:
                 anchored_local = True
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 admin_cmd = new_session.query(Command).filter(and_(
                     Command.action == "set",
                     Command.action_type == "thread_options",
@@ -348,7 +346,7 @@ def generate_popup_post_body_file_info(message):
             ret_str += "s"
 
         if message.file_size:
-            ret_str += " ({}), ".format(human_readable_size(message.file_size))
+            ret_str += " ({}): ".format(human_readable_size(message.file_size))
 
         file_order, attach, number_files = attachment_info(message.message_id)
         for i, file_name in enumerate(file_order):
@@ -388,7 +386,10 @@ def generate_popup_post_body_message(message, moderating=False):
             str_return = '<blockquote class="post">{}'.format(
                 truncated_str.rstrip().replace('\n', ' '))
             if is_truncated:
-                str_return += '<br/>...'
+                if len(msg_gen) > 900:
+                    str_return += f'<br/>... [message truncated]'
+                else:
+                    str_return += f'<br/>...'
             str_return += '</blockquote>'
 
             # Remove all hyperlinks
@@ -414,7 +415,7 @@ def attachment_info(message_id):
         return [], {}, 0
 
     attach_info = {}
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         number_files = 0
         message = new_session.query(Messages).filter(
             Messages.message_id == message_id).first()

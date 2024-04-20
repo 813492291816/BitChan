@@ -6,7 +6,13 @@
         {% for i in range(debug_post_columns|length) %}
             <tr>
                 <td>{{debug_post_columns[i]}}</td>
-                <td>{{debug_post_data[i]}}</td>
+                <td style="font-family: 'Lucida Console', Monaco, monospace;">
+            {%- if debug_post_data[i] and debug_post_columns[i] == "original_message" -%}
+                {{debug_post_data[i].replace('\n', '\\n')}}
+            {%- else -%}
+                {{debug_post_data[i]}}
+            {%- endif -%}
+                </td>
             </tr>
         {% endfor %}
         </tbody>

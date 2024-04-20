@@ -1,0 +1,72 @@
+{% extends "layout.html" %}
+
+{% block title %}Restricted - {% endblock %}
+
+{% block head %}
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+
+        tr:nth-child(odd) {
+            background-color: {{themes[get_theme()].posthighlight}};
+        }
+
+        .table-heading {
+            text-decoration: underline;
+            text-align: left;
+        }
+
+        .wrap {
+            text-align: center;
+        }
+        .outer {
+            display: inline-block;
+            margin: 0 auto;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+<div class='wrap'>
+
+    <h1 class="title themed bold" style="text-align: center">Restricted Boards/Lists</h1>
+
+    <div class='outer' style="padding-bottom: 3em;">
+        <table class="themed">
+            <tr>
+                <td>Address</td>
+                <td>Type</td>
+                <td>Name</td>
+            </tr>
+        {% for each_type in [chans_board_info, chans_list_info] %}
+            {% for each_address in each_type if each_type[each_address]["db"].restricted %}
+            <tr>
+                <td style="font-family: monospace">{{each_address}}</td>
+                <td>{% if each_type == chans_board_info %}Board{% else %}List{% endif %}</td>
+                <td>
+                    {% if each_type == chans_board_info %}
+                    <a class="link" href="/board/{{each_address}}/1">/{{each_type[each_address]["label_short"]|safe}}/ - {{each_type[each_address]["description"]|safe}}</a>
+                    {% elif each_type == chans_list_info %}
+                    <a class="link" href="/list/{{each_address}}">/{{each_type[each_address]["label_short"]|safe}}/ - {{each_type[each_address]["description"]|safe}}</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        {% endfor %}
+        </table>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    <div style="padding-top: 1em"></div>
+</div>
+{% endblock %}

@@ -47,12 +47,36 @@
 
     <table class="table themed" style="max-width: 900px; text-align: left; margin-left: auto; margin-right: auto;">
         <tr>
+            <td><a class="link" href="http://{{config.I2P_HOST}}:{{config.I2P_WEBUI_PORT}}">I2P User Interface</a></td>
+            <td>Purple i2p daemon web user interface.</td>
+        </tr>
+        <tr>
+            <td><a class="link" href="http://{{config.QBITTORRENT_HOST}}:{{config.QBITTORRENT_PORT}}">qBittorrent User Interface</a></td>
+            <td>qBittorrent web user interface.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="stop_bitmessage_and_daemon" value="Stop Bitmessage and Daemon"/>
+                </form>
+            </td>
+            <td>Stop Bitmessage and the BitChan Daemon.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="start_bitmessage_and_daemon" value="Start Bitmessage and Daemon"/>
+                </form>
+            </td>
+            <td>Start Bitmessage and the BitChan Daemon.</td>
+        </tr>
+        <tr>
             <td>
                 <form method="post">
                     <input type="submit" name="restart_bitmessage" value="Restart Bitmessage"/>
                 </form>
             </td>
-            <td>Restart Bitmessage associate with BitChan.</td>
+            <td>Restart Bitmessage (Daemon is required to be running for this command to work).</td>
         </tr>
         <tr>
             <td>
@@ -173,6 +197,14 @@
                 </form>
             </td>
             <td>Delete attachments for posts that do not exist.</td>
+        </tr>
+          <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="delete_all_torrents" value="Delete All Torrents and DB Entries"/>
+                </form>
+            </td>
+            <td>Delete all torrents, their data, and torrent DB entries.</td>
         </tr>
         <tr>
             <td>
@@ -295,7 +327,7 @@
                     <input type="submit" name="download_backup" value="Download Backup Archive"/>
                 </form>
             </td>
-            <td>Zip and export a whole BitChan backup file, which includes the Bitmessage inventory and BitChan database. This contains everything needed to completely restore BitChan to the exact state it was when it was backed up.</td>
+            <td>NOTE: BITMESSAGE AND THE DAEMON SHOULD BE STOPPED BEFORE DOING THIS, AS THE DATA IS STREAMED. START BITMESSAGE AND TEH DAEMON AFTER THE DOWNLOAD COMPLETES. Zip and export a whole BitChan backup file, which includes the Bitmessage inventory and BitChan database. This contains everything needed to completely restore BitChan to the exact state it was when it was backed up.</td>
         </tr>
         <tr>
             <td>
@@ -358,9 +390,9 @@
                     <tr>
                         <td>{{each_id}}</td>
                         <td>{{each_data['logged_in']}}</td>
-                        <td>{% if each_data['credentials'] %}{{each_data['credentials']['id']}}{% endif %}</td>
+                        <td>{% if each_data['credentials'] %}{{each_data['credentials']['name']}}{% endif %}</td>
                         <td>{% if each_data['credentials'] %}{{each_data['credentials']['single_session']}}{% endif %}</td>
-                        <td>{% if each_data['credentials'] %}{{each_data['credentials']['admin']}}{% endif %}</td>
+                        <td>{% if each_data['credentials'] %}{{each_data['credentials']['global_admin']}}{% endif %}</td>
                     </tr>
             {% endfor %}
                 </table>

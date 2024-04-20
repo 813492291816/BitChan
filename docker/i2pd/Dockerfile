@@ -1,13 +1,51 @@
-FROM purplei2p/i2pd:latest
+FROM alpine:3.19.1
 
-RUN mkdir -p /home/i2pd/data
+ARG GIT_BRANCH="master"
+ENV GIT_BRANCH=${GIT_BRANCH}
+ARG GIT_TAG="2.51.0"
+ENV GIT_TAG=${GIT_TAG}
+ARG REPO_URL="https://github.com/PurpleI2P/i2pd.git"
+ENV REPO_URL=${REPO_URL}
 
-COPY docker/i2pd/i2pd.conf /home/i2pd/data/i2pd.conf
+ENV I2PD_HOME="/home/i2pd"
+ENV DATA_DIR="${I2PD_HOME}/data"
+
+RUN mkdir -p "$I2PD_HOME" \
+    && mkdir -p "$I2PD_HOME/data" \
+    && adduser -S -h "$I2PD_HOME" i2pd
+
+RUN apk update \
+    && apk --no-cache --virtual build-dependendencies add make gcc g++ libtool zlib-dev boost-dev build-base openssl-dev openssl miniupnpc-dev git \
+    && mkdir -p /tmp/build \
+    && cd /tmp/build && git clone -b ${GIT_BRANCH} ${REPO_URL} \
+    && cd i2pd \
+    && if [ -n "${GIT_TAG}" ]; then git checkout tags/${GIT_TAG}; fi \
+    && make -j$(nproc) USE_UPNP=yes \
+    && cp -R contrib/certificates /i2pd_certificates \
+    && mkdir -p /usr/local/bin \
+    && mv i2pd /usr/local/bin \
+    && cd /usr/local/bin \
+    && strip i2pd \
+    && rm -fr /tmp/build \
+    && apk --no-cache --purge del build-dependendencies
+
+RUN apk --no-cache add boost-filesystem boost-system boost-program_options boost-date_time boost-thread boost-iostreams openssl miniupnpc musl-utils libstdc++
+
+COPY docker/i2pd/i2pd.conf /home/i2pd/i2pd.conf
 
 # Set up the HTTP tunnel
 #COPY docker/i2pd/tunnels.conf /home/i2pd/data/tunnels.conf
 
-# If you have a private key for a tunnel, place it in this directory,
-# set the file name in tunnels.conf, and uncomment the lines above and below.
-# If you don't have have a private key file, one will be generated
+# If you have a key for a tunnel, copy it to docker/i2pd/bitchan-tunnel.dat
+# before building and uncomment the lines above and below.
+# If you don't have have a key file, one will be generated
 #COPY docker/i2pd/bitchan-tunnel.dat /home/i2pd/data/bitchan-tunnel.dat
+
+COPY docker/i2pd/entrypoint.sh /home/i2pd/entrypoint.sh
+RUN chmod a+x /home/i2pd/entrypoint.sh
+
+RUN echo "export DATA_DIR=${DATA_DIR}" >> /etc/profile
+
+EXPOSE 7070 4444 4447 7656 2827 7654 7650
+
+ENTRYPOINT [ "/home/i2pd/entrypoint.sh" ]

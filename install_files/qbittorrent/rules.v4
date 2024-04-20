@@ -1,0 +1,7 @@
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+-A OUTPUT -m owner --gid-owner qb -d 127.0.0.0/8 -j ACCEPT
+-A OUTPUT -m owner --gid-owner qb -j DROP
+COMMIT

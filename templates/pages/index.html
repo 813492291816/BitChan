@@ -54,9 +54,9 @@
     {% endif %}
 
     <div class="intro themed center">
-        <h1 class="title themed bold">Welcome to BitChan {{config.VERSION_BITCHAN}}</h1>
+        {% if not settings.hide_version %}<h1 class="title themed bold">Welcome to BitChan {{config.VERSION_BITCHAN}}</h1>{% endif %}
         {{current_time}}
-    {%- if not settings.enable_kiosk_mode or logged_in -%}
+    {%- if not settings.enable_kiosk_mode or global_admin -%}
         , <a class="bold link" href="/mailbox/0/0/0/0">{{unread_mail}} Unread Messages</a>
     {% endif -%}
 
@@ -73,7 +73,11 @@
 
     {% if newest_posts and settings.chan_update_display_number %}
     <div class="intro themed">
-        <a class="link" style="margin-top: -10px; margin-left: -10px" href="/overboard/0/1">Overboard</a> / <a class="link" href="/recent/0/1">Recent</a>
+        <a class="link" style="margin-top: -10px; margin-left: -10px" href="/overboard/0/1">Overboard</a>
+        / <a class="link" href="/recent/0/1">Recent</a>
+        {% if settings.rss_enable %}/ <a class="link" title="RSS via Tor" href="/rss/tor/0/0">RSS-tor</a>{% endif %}
+        {% if settings.rss_enable_i2p %}/ <a class="link" title="RSS via I2P" href="/rss/i2p/0/0">RSS-i2p</a>{% endif %}
+
         {% for each_chan in newest_posts %}
             {% if loop.index <= settings.chan_update_display_number %}
                 {% if newest_posts[each_chan]["type"] == "board" %}

@@ -45,9 +45,14 @@ def verify_wait(full_path_b64):
     page_id = str(uuid.uuid4())
     session[page_id] = time.time()
 
+    wait_sec = 5
+    if "did_not_wait" in session:
+        wait_sec += session["did_not_wait"] * 5
+
     return render_template("pages/verify_wait.html",
                            page_id=page_id,
-                           full_path_b64=full_path_b64)
+                           full_path_b64=full_path_b64,
+                           wait_sec=wait_sec)
 
 
 @blueprint.route('/verify/<page_id>/<full_path_b64>', methods=('GET', 'POST'))
@@ -68,8 +73,15 @@ def verify_test(page_id, full_path_b64):
         return '<div style="text-align:center;padding-top:2em">Invalid ID. <a href="/">Reverify</a></div>'
 
     ts = session[page_id]
-    if time.time() < ts + 5:
+    wait_sec = 5
+    if "did_not_wait" in session:
+        wait_sec += session["did_not_wait"] * 5
+    if time.time() < ts + wait_sec:
         session.pop(page_id)
+        if "did_not_wait" not in session:
+            session["did_not_wait"] = 1
+        else:
+            session["did_not_wait"] += 1
         return '<div style="text-align:center;padding-top:2em">Invalid Wait. <a href="/">Reverify</a></div>'
 
     if request.method == 'POST':
@@ -94,14 +106,8 @@ def verify_test(page_id, full_path_b64):
             session.pop(page_id)
             logger.info("Post request session: {}".format(session))
 
-            if full_path_b64 == "0":
-                return redirect(url_for('routes_main.index'))
-            else:
-                try:
-                    full_path_url = base64.b64decode(full_path_b64.encode()).decode()
-                    return redirect(full_path_url)
-                except:
-                    return redirect(url_for('routes_main.index'))
+            return redirect(url_for('routes_verify.verify_success',
+                                    full_path_b64=full_path_b64))
         else:
             if "verify_captcha_count" not in session:
                 session["verify_captcha_count"] = 1
@@ -115,3 +121,23 @@ def verify_test(page_id, full_path_b64):
     return render_template("pages/verify_test.html",
                            page_id=page_id,
                            full_path=full_path_b64)
+
+
+@blueprint.route('/success/<full_path_b64>', methods=('GET', 'POST'))
+@watch_ban
+@count_views
+def verify_success(full_path_b64):
+    if "banned" in session:
+        if session["banned"] == 1:
+            return "err"
+        elif session["banned"] == 2:
+            abort(404)
+
+    if full_path_b64 == "0":
+        return redirect(url_for('routes_main.index'))
+    else:
+        try:
+            full_path_url = base64.b64decode(full_path_b64.encode()).decode()
+            return redirect(full_path_url)
+        except:
+            return redirect(url_for('routes_main.index'))

@@ -34,11 +34,9 @@ from requests_toolbelt import MultipartEncoder
 from requests_toolbelt import MultipartEncoderMonitor
 from user_agent import generate_user_agent
 
-from config import DATABASE_BITCHAN
+from config import DB_PATH
 from database.models import UploadProgress
 from database.utils import session_scope
-
-DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
 
 logger = logging.getLogger('bitchan.anonfile')
 

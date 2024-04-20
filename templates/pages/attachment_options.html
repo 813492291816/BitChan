@@ -1,6 +1,5 @@
 {% extends "layout.html" %}
 
-{% set global_admin, _ = allowed_access("is_global_admin") %}
 {% set file_order, attach, number_files = attachment_info(message_id) %}
 {% set post = table_messages.query.filter(table_messages.message_id == message_id).first() %}
 

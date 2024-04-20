@@ -122,190 +122,186 @@ def mod_thread(address, thread_id, mod_type):
     url = "/thread/{}/{}".format(address, thread.thread_hash_short)
     url_text = "Thread: {}".format(thread.subject)
 
-    lf = LF()
-    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-        try:
-            from_user = None
-            log_description = ""
+    try:
+        from_user = None
+        log_description = ""
 
-            message = Messages.query.filter(and_(
-                Messages.thread_id == thread.id,
-                Messages.is_op.is_(True))).first()
-            if message:
-                message_id = message.message_id
+        message = Messages.query.filter(and_(
+            Messages.thread_id == thread.id,
+            Messages.is_op.is_(True))).first()
+        if message:
+            message_id = message.message_id
 
-            #
-            # Locally sticky/unsticky
-            #
-            if mod_type in ["thread_sticky_local", "thread_unsticky_local"]:
-                thread.stickied_local = bool(mod_type == "thread_sticky_local")
-                thread.save()
+        #
+        # Locally sticky/unsticky
+        #
+        if mod_type in ["thread_sticky_local", "thread_unsticky_local"]:
+            thread.stickied_local = bool(mod_type == "thread_sticky_local")
+            thread.save()
 
-                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
+            regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
 
-                if mod_type == "thread_sticky_local":
-                    log_description = "Locally stickied thread"
-                    status_msg['status_message'].append("Locally stickied thread: '{}'".format(thread.subject))
-                    status_msg['status_title'] = "Locally stickied thread"
-                else:
-                    log_description = "Locally unstickied thread"
-                    status_msg['status_message'].append("Locally unstickied thread: '{}'".format(thread.subject))
-                    status_msg['status_title'] = "Locally unstickied thread"
+            if mod_type == "thread_sticky_local":
+                log_description = "Locally stickied thread"
+                status_msg['status_message'].append("Locally stickied thread: '{}'".format(thread.subject))
+                status_msg['status_title'] = "Locally stickied thread"
+            else:
+                log_description = "Locally unstickied thread"
+                status_msg['status_message'].append("Locally unstickied thread: '{}'".format(thread.subject))
+                status_msg['status_title'] = "Locally unstickied thread"
 
-            #
-            # Locally lock/unlock
-            #
-            elif mod_type in ["thread_lock_local", "thread_unlock_local"]:
-                thread.locked_local = bool(mod_type == "thread_lock_local")
-                thread.locked_local_ts = time.time()
-                thread.save()
+        #
+        # Locally lock/unlock
+        #
+        elif mod_type in ["thread_lock_local", "thread_unlock_local"]:
+            thread.locked_local = bool(mod_type == "thread_lock_local")
+            thread.locked_local_ts = time.time()
+            thread.save()
 
-                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
+            regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
 
-                if mod_type == "thread_lock_local":
-                    log_description = "Locally locked thread"
-                    status_msg['status_message'].append("Locally locked thread: '{}'".format(thread.subject))
-                    status_msg['status_title'] = "Locally locked thread"
-                else:
-                    log_description = "Locally unlocked thread"
-                    status_msg['status_message'].append("Locally unlocked thread: '{}'".format(thread.subject))
-                    status_msg['status_title'] = "Locally unlocked thread"
+            if mod_type == "thread_lock_local":
+                log_description = "Locally locked thread"
+                status_msg['status_message'].append("Locally locked thread: '{}'".format(thread.subject))
+                status_msg['status_title'] = "Locally locked thread"
+            else:
+                log_description = "Locally unlocked thread"
+                status_msg['status_message'].append("Locally unlocked thread: '{}'".format(thread.subject))
+                status_msg['status_title'] = "Locally unlocked thread"
 
-            #
-            # Locally anchor/unanchor
-            #
-            elif mod_type in ["thread_anchor_local", "thread_unanchor_local"]:
-                thread.anchored_local = bool(mod_type == "thread_anchor_local")
-                thread.anchored_local_ts = time.time()
-                thread.save()
+        #
+        # Locally anchor/unanchor
+        #
+        elif mod_type in ["thread_anchor_local", "thread_unanchor_local"]:
+            thread.anchored_local = bool(mod_type == "thread_anchor_local")
+            thread.anchored_local_ts = time.time()
+            thread.save()
 
-                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
+            regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
 
-                if mod_type == "thread_anchor_local":
-                    log_description = "Locally anchored thread"
-                    status_msg['status_message'].append("Locally anchored thread: '{}'".format(thread.subject))
-                    status_msg['status_title'] = "Locally anchored thread"
-                else:
-                    log_description = "Locally unanchored thread"
-                    status_msg['status_message'].append("Locally unanchored thread: '{}'".format(thread.subject))
-                    status_msg['status_title'] = "Locally unanchored thread"
+            if mod_type == "thread_anchor_local":
+                log_description = "Locally anchored thread"
+                status_msg['status_message'].append("Locally anchored thread: '{}'".format(thread.subject))
+                status_msg['status_title'] = "Locally anchored thread"
+            else:
+                log_description = "Locally unanchored thread"
+                status_msg['status_message'].append("Locally unanchored thread: '{}'".format(thread.subject))
+                status_msg['status_title'] = "Locally unanchored thread"
 
-            #
-            # Send message to remotely sticky/unsticky thread
-            #
-            if mod_type in ["thread_sticky_remote",
-                            "thread_unsticky_remote",
-                            "thread_lock_remote",
-                            "thread_unlock_remote",
-                            "thread_anchor_remote",
-                            "thread_unanchor_remote"]:
-                dict_message = {
-                    "version": config.VERSION_MSG,
-                    "timestamp_utc": daemon_com.get_utc(),
-                    "message_type": "admin",
-                    "chan_type": "board",
-                    "action": "set",
-                    "action_type": "thread_options",
-                    "thread_id": thread_id,
-                    "options": {}
-                }
+        #
+        # Send message to remotely sticky/unsticky thread
+        #
+        if mod_type in ["thread_sticky_remote",
+                        "thread_unsticky_remote",
+                        "thread_lock_remote",
+                        "thread_unlock_remote",
+                        "thread_anchor_remote",
+                        "thread_unanchor_remote"]:
+            dict_message = {
+                "version": config.VERSION_MSG,
+                "timestamp_utc": daemon_com.get_utc(),
+                "message_type": "admin",
+                "chan_type": "board",
+                "action": "set",
+                "action_type": "thread_options",
+                "thread_id": thread_id,
+                "options": {}
+            }
 
-                if not form_confirm.address.data:
-                    status_msg['status_message'].append("From address required")
-                    status_msg['status_title'] = "Error"
+            if not form_confirm.address.data:
+                status_msg['status_message'].append("From address required")
+                status_msg['status_title'] = "Error"
 
-                if not status_msg['status_message']:
-                    # Set options to send
-                    if mod_type in ["thread_sticky_remote", "thread_unsticky_remote"]:
-                        dict_message["options"]["sticky"] = bool(mod_type == "thread_sticky_remote")
-                        if mod_type == "thread_sticky_remote":
-                            status_msg['status_message'].append("Remotely stickied thread: '{}'".format(thread.subject))
-                            status_msg['status_title'] = "Remotely stickied thread"
-                        else:
-                            status_msg['status_message'].append("Remotely unstickied thread: '{}'".format(thread.subject))
-                            status_msg['status_title'] = "Remotely unstickied thread"
+            if not status_msg['status_message']:
+                # Set options to send
+                if mod_type in ["thread_sticky_remote", "thread_unsticky_remote"]:
+                    dict_message["options"]["sticky"] = bool(mod_type == "thread_sticky_remote")
+                    if mod_type == "thread_sticky_remote":
+                        status_msg['status_message'].append("Remotely stickied thread: '{}'".format(thread.subject))
+                        status_msg['status_title'] = "Remotely stickied thread"
+                    else:
+                        status_msg['status_message'].append("Remotely unstickied thread: '{}'".format(thread.subject))
+                        status_msg['status_title'] = "Remotely unstickied thread"
 
-                    elif mod_type in ["thread_lock_remote", "thread_unlock_remote"]:
-                        dict_message["options"]["lock"] = bool(mod_type == "thread_lock_remote")
-                        dict_message["options"]["lock_ts"] = time.time()
-                        if mod_type == "thread_lock_remote":
-                            status_msg['status_message'].append("Remotely locked thread: '{}'".format(thread.subject))
-                            status_msg['status_title'] = "Remotely locked thread"
-                        else:
-                            status_msg['status_message'].append("Remotely unlocked thread: '{}'".format(thread.subject))
-                            status_msg['status_title'] = "Remotely unlocked thread"
+                elif mod_type in ["thread_lock_remote", "thread_unlock_remote"]:
+                    dict_message["options"]["lock"] = bool(mod_type == "thread_lock_remote")
+                    dict_message["options"]["lock_ts"] = time.time()
+                    if mod_type == "thread_lock_remote":
+                        status_msg['status_message'].append("Remotely locked thread: '{}'".format(thread.subject))
+                        status_msg['status_title'] = "Remotely locked thread"
+                    else:
+                        status_msg['status_message'].append("Remotely unlocked thread: '{}'".format(thread.subject))
+                        status_msg['status_title'] = "Remotely unlocked thread"
 
-                    elif mod_type in ["thread_anchor_remote", "thread_unanchor_remote"]:
-                        dict_message["options"]["anchor"] = bool(mod_type == "thread_anchor_remote")
-                        dict_message["options"]["anchor_ts"] = time.time()
-                        if mod_type == "thread_anchor_remote":
-                            status_msg['status_message'].append("Remotely anchored thread: '{}'".format(thread.subject))
-                            status_msg['status_title'] = "Remotely anchored thread"
-                        else:
-                            status_msg['status_message'].append("Remotely unanchored thread: '{}'".format(thread.subject))
-                            status_msg['status_title'] = "Remotely unanchored thread"
+                elif mod_type in ["thread_anchor_remote", "thread_unanchor_remote"]:
+                    dict_message["options"]["anchor"] = bool(mod_type == "thread_anchor_remote")
+                    dict_message["options"]["anchor_ts"] = time.time()
+                    if mod_type == "thread_anchor_remote":
+                        status_msg['status_message'].append("Remotely anchored thread: '{}'".format(thread.subject))
+                        status_msg['status_title'] = "Remotely anchored thread"
+                    else:
+                        status_msg['status_message'].append("Remotely unanchored thread: '{}'".format(thread.subject))
+                        status_msg['status_title'] = "Remotely unanchored thread"
 
-                    pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-                    chan = Chan.query.filter(Chan.address == address).first()
-                    if chan and chan.pgp_passphrase_msg:
-                        pgp_passphrase_msg = chan.pgp_passphrase_msg
+                pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
+                chan = Chan.query.filter(Chan.address == address).first()
+                if chan and chan.pgp_passphrase_msg:
+                    pgp_passphrase_msg = chan.pgp_passphrase_msg
 
-                    str_message = json.dumps(dict_message)
-                    gpg = gnupg.GPG()
-                    message_encrypted = gpg.encrypt(
-                        str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
-                    message_send = base64.b64encode(message_encrypted.data).decode()
+                str_message = json.dumps(dict_message)
+                gpg = gnupg.GPG()
+                message_encrypted = gpg.encrypt(
+                    str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
+                message_send = base64.b64encode(message_encrypted.data).decode()
 
-                    # Don't allow a message to send while Bitmessage is restarting
-                    allow_send = False
-                    timer = time.time()
-                    while not allow_send:
-                        if daemon_com.bitmessage_restarting() is False:
-                            allow_send = True
-                        if time.time() - timer > config.BM_WAIT_DELAY:
-                            logger.error(
-                                "{}: Unable to send message: "
-                                "Could not detect Bitmessage running.".format(thread_id[0:6]))
-                            return
-                        time.sleep(1)
+                # Don't allow a message to send while Bitmessage is restarting
+                allow_send = False
+                timer = time.time()
+                while not allow_send:
+                    if daemon_com.bitmessage_restarting() is False:
+                        allow_send = True
+                    if time.time() - timer > config.BM_WAIT_DELAY:
+                        logger.error(
+                            "{}: Unable to send message: "
+                            "Could not detect Bitmessage running.".format(thread_id[0:6]))
+                        return
+                    time.sleep(1)
 
-                    if allow_send:
-                        lf = LF()
-                        if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
-                            try:
-                                return_str = api.sendMessage(
-                                    address,
-                                    form_confirm.address.data,
-                                    "",
-                                    message_send,
-                                    2,
-                                    config.BM_TTL)
-                                if return_str:
-                                    logger.info("{}: Message to globally {} sent from {} to {}".format(
-                                        thread_id[0:6], mod_type, form_confirm.address.data, address))
-                            finally:
-                                time.sleep(config.API_PAUSE)
-                                lf.lock_release(config.LOCKFILE_API)
+                if allow_send:
+                    lf = LF()
+                    if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+                        try:
+                            return_str = api.sendMessage(
+                                address,
+                                form_confirm.address.data,
+                                "",
+                                message_send,
+                                2,
+                                config.BM_TTL)
+                            if return_str:
+                                logger.info("{}: Message to globally {} sent from {} to {}".format(
+                                    thread_id[0:6], mod_type, form_confirm.address.data, address))
+                        finally:
+                            time.sleep(config.API_PAUSE)
+                            lf.lock_release(config.LOCKFILE_API)
 
-            if mod_type in ["thread_sticky_local",
-                            "thread_unsticky_local",
-                            "thread_lock_local",
-                            "thread_unlock_local",
-                            "thread_anchor_local",
-                            "thread_unanchor_local"]:
-                # Only log local events.
-                # Global events will be logged when the admin command message is processed
-                add_mod_log_entry(
-                    log_description,
-                    message_id=message_id,
-                    user_from=from_user,
-                    board_address=address,
-                    thread_hash=thread_id)
+        if mod_type in ["thread_sticky_local",
+                        "thread_unsticky_local",
+                        "thread_lock_local",
+                        "thread_unlock_local",
+                        "thread_anchor_local",
+                        "thread_unanchor_local"]:
+            # Only log local events.
+            # Global events will be logged when the admin command message is processed
+            add_mod_log_entry(
+                log_description,
+                message_id=message_id,
+                user_from=from_user,
+                board_address=address,
+                thread_hash=thread_id)
 
-        except Exception as err:
-            logger.error("Exception while deleting message(s): {}".format(err))
-        finally:
-            lf.lock_release(config.LOCKFILE_MSG_PROC)
+    except Exception as err:
+        logger.error("Exception while deleting message(s): {}".format(err))
 
     return render_template("pages/alert.html",
                            board=board,
@@ -340,30 +336,27 @@ def bulk_delete_thread(address):
                 if each_input.startswith("deletethreadbulk_"):
                     delete_bulk_thread_hashes.append(each_input.split("_")[1])
 
-            lf = LF()
-            if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-                try:
-                    for each_thread_hash in delete_bulk_thread_hashes:
-                        thread = Threads.query.filter(
-                            Threads.thread_hash == each_thread_hash).first()
-                        if thread:
-                            list_delete_message_ids = []
-                            for message in thread.messages:
-                                list_delete_message_ids.append(message.message_id)
+            try:
+                for each_thread_hash in delete_bulk_thread_hashes:
+                    thread = Threads.query.filter(
+                        Threads.thread_hash == each_thread_hash).first()
+                    if thread:
+                        list_delete_message_ids = []
+                        for message in thread.messages:
+                            list_delete_message_ids.append(message.message_id)
 
-                            # First, delete messages from database
-                            if list_delete_message_ids:
-                                for each_id in list_delete_message_ids:
-                                    delete_post(each_id)
+                        # First, delete messages from database
+                        if list_delete_message_ids:
+                            for each_id in list_delete_message_ids:
+                                delete_post(each_id)
 
-                            # Next, delete thread from DB
-                            delete_thread(each_thread_hash)
-                            status_msg['status_message'].append("Thread deleted: {}".format(thread.subject))
-                except Exception as err:
-                    logger.error("Exception while deleting message(s): {}".format(err))
-                finally:
-                    daemon_com.signal_generate_post_numbers()
-                    lf.lock_release(config.LOCKFILE_MSG_PROC)
+                        # Next, delete thread from DB
+                        delete_thread(each_thread_hash)
+                        status_msg['status_message'].append("Thread deleted: {}".format(thread.subject))
+            except Exception as err:
+                logger.error("Exception while deleting message(s): {}".format(err))
+            finally:
+                daemon_com.signal_generate_post_numbers()
 
             status_msg['status_title'] = "Success"
             status_msg['status_title'] = "Deleted Thread"
@@ -420,67 +413,63 @@ def restore(address, message_id, thread_id, restore_type):
     if message_id == "0":
         message_id = None
 
-    lf = LF()
-    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-        try:
-            if restore_type in ["restore_post", "restore_thread"]:
-                if restore_type == "restore_thread" and thread:
-                    restore_thread(thread_id)
-                elif restore_type == "restore_post" and message:
-                    restore_post(message_id)
+    try:
+        if restore_type in ["restore_post", "restore_thread"]:
+            if restore_type == "restore_thread" and thread:
+                restore_thread(thread_id)
+            elif restore_type == "restore_post" and message:
+                restore_post(message_id)
 
-                log_description = ""
-                if restore_type == "restore_post":
-                    status_msg['status_message'].append('Locally restore post from "{}"'.format(thread.subject))
-                    status_msg['status_title'] = "Success"
-                    log_description = 'Locally restore post from thread "{}"'.format(thread.subject)
-                elif restore_type == "restore_thread":
-                    status_msg['status_message'].append('Locally restore thread "{}"'.format(thread.subject))
-                    status_msg['status_title'] = "Success"
-                    log_description = 'Locally restore thread "{}"'.format(thread.subject)
+            log_description = ""
+            if restore_type == "restore_post":
+                status_msg['status_message'].append('Locally restore post from "{}"'.format(thread.subject))
+                status_msg['status_title'] = "Success"
+                log_description = 'Locally restore post from thread "{}"'.format(thread.subject)
+            elif restore_type == "restore_thread":
+                status_msg['status_message'].append('Locally restore thread "{}"'.format(thread.subject))
+                status_msg['status_title'] = "Success"
+                log_description = 'Locally restore thread "{}"'.format(thread.subject)
 
-                # Find if any admin commands exist for deleting this post or thread
-                # If so, add override to indicate local action has been taken to restore or delete
-                admin_cmd = Command.query.filter(and_(
-                    Command.chan_address == address,
-                    Command.action == "delete",
-                    or_(Command.action_type == "delete_post",
-                        Command.action_type == "delete_thread"))).all()
-                for each_cmd in admin_cmd:
-                    try:
-                        options = json.loads(each_cmd.options)
-                    except:
-                        options = {}
-                    if (
-                            ("delete_thread" in options and
-                             "thread_id" in options["delete_thread"] and
-                             options["delete_thread"]["thread_id"] == thread_id)
-                            or
-                            ("delete_post" in options and
-                             "message_id" in options["delete_post"] and
-                             options["delete_thread"]["message_id"] == message_id)
-                            ):
-                        admin_cmd.locally_restored = True
-                        admin_cmd.save()
-                        break
+            # Find if any admin commands exist for deleting this post or thread
+            # If so, add override to indicate local action has been taken to restore or delete
+            admin_cmd = Command.query.filter(and_(
+                Command.chan_address == address,
+                Command.action == "delete",
+                or_(Command.action_type == "delete_post",
+                    Command.action_type == "delete_thread"))).all()
+            for each_cmd in admin_cmd:
+                try:
+                    options = json.loads(each_cmd.options)
+                except:
+                    options = {}
+                if (
+                        ("delete_thread" in options and
+                         "thread_id" in options["delete_thread"] and
+                         options["delete_thread"]["thread_id"] == thread_id)
+                        or
+                        ("delete_post" in options and
+                         "message_id" in options["delete_post"] and
+                         options["delete_thread"]["message_id"] == message_id)
+                        ):
+                    admin_cmd.locally_restored = True
+                    admin_cmd.save()
+                    break
 
-                user_from_tmp = get_logged_in_user_name()
-                user_from = user_from_tmp if user_from_tmp else None
+            user_from_tmp = get_logged_in_user_name()
+            user_from = user_from_tmp if user_from_tmp else None
 
-                add_mod_log_entry(
-                    log_description,
-                    message_id=message_id,
-                    user_from=user_from,
-                    board_address=address,
-                    thread_hash=thread_id)
+            add_mod_log_entry(
+                log_description,
+                message_id=message_id,
+                user_from=user_from,
+                board_address=address,
+                thread_hash=thread_id)
 
-                # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
-                time.sleep(1)
+            # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
+            time.sleep(1)
 
-        except Exception as err:
-            logger.error("Exception while restoring post/thread: {}".format(err))
-        finally:
-            lf.lock_release(config.LOCKFILE_MSG_PROC)
+    except Exception as err:
+        logger.error("Exception while restoring post/thread: {}".format(err))
 
     if 'status_title' not in status_msg and status_msg['status_message']:
         status_msg['status_title'] = "Error"
@@ -543,37 +532,33 @@ def delete_post_with_password(address, message_id, thread_id):
     url = "/thread/{}/{}".format(address, thread_id)
     url_text = "{}".format(thread.subject)
 
-    lf = LF()
-    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-        try:
-            if not form_confirm.address.data:
-                status_msg['status_message'].append("From address required")
+    try:
+        if not form_confirm.address.data:
+            status_msg['status_message'].append("From address required")
 
-            if not form_confirm.text.data:
-                status_msg['status_message'].append("Password required")
+        if not form_confirm.text.data:
+            status_msg['status_message'].append("Password required")
 
-            message = Messages.query.filter(Messages.message_id == message_id).first()
-            if not message:
-                status_msg['status_message'].append("Message not found")
+        message = Messages.query.filter(Messages.message_id == message_id).first()
+        if not message:
+            status_msg['status_message'].append("Message not found")
 
-            if message and not message.thread:
-                status_msg['status_message'].append("Thread not found")
+        if message and not message.thread:
+            status_msg['status_message'].append("Thread not found")
 
-            if not status_msg['status_message']:
-                send_post_delete_request(
-                    form_confirm.address.data,
-                    address,
-                    message_id,
-                    message.thread.thread_hash,
-                    form_confirm.text.data)
-                status_msg['status_message'].append(
-                    "Remotely send request to delete post with password in thread '{}'".format(thread.subject))
-                status_msg['status_title'] = "Success"
+        if not status_msg['status_message']:
+            send_post_delete_request(
+                form_confirm.address.data,
+                address,
+                message_id,
+                message.thread.thread_hash,
+                form_confirm.text.data)
+            status_msg['status_message'].append(
+                "Remotely send request to delete post with password in thread '{}'".format(thread.subject))
+            status_msg['status_title'] = "Success"
 
-        except Exception as err:
-            logger.error("Exception while deleting message(s): {}".format(err))
-        finally:
-            lf.lock_release(config.LOCKFILE_MSG_PROC)
+    except Exception as err:
+        logger.error("Exception while deleting message(s): {}".format(err))
 
     if 'status_title' not in status_msg and status_msg['status_message']:
         status_msg['status_title'] = "Error"
@@ -637,168 +622,168 @@ def delete(address, message_id, thread_id, delete_type):
         url = "/thread/{}/{}".format(address, thread_id)
         url_text = "{}".format(thread.subject)
 
-    lf = LF()
-    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-        try:
-            if delete_type in ["delete_post", "delete_thread"]:
-                only_hide = False
+    try:
+        if delete_type in ["delete_post", "delete_thread"]:
+            only_hide = False
+            if janitor:
+                only_hide = True
+
+            list_delete_message_ids = []
+            if delete_type == "delete_thread" and thread:
+                board["current_thread"] = None
+                for message in thread.messages:
+                    list_delete_message_ids.append(message.message_id)
+            elif delete_type == "delete_post":
+                list_delete_message_ids.append(message_id)
+
+            log_description = ""
+            if delete_type == "delete_post":
                 if janitor:
-                    only_hide = True
+                    log_description = 'Janitor: Locally delete (locally hide) post from thread "{}"'.format(thread.subject)
+                else:
+                    log_description = 'Locally delete post from thread "{}"'.format(thread.subject)
+            elif delete_type == "delete_thread":
+                if janitor:
+                    log_description = 'Janitor: Locally delete (locally hide) thread "{}"'.format(thread.subject)
+                else:
+                    log_description = 'Locally delete thread "{}"'.format(thread.subject)
 
-                list_delete_message_ids = []
-                if delete_type == "delete_thread" and thread:
-                    board["current_thread"] = None
-                    for message in thread.messages:
-                        list_delete_message_ids.append(message.message_id)
-                elif delete_type == "delete_post":
-                    list_delete_message_ids.append(message_id)
+            status_msg['status_message'].append(log_description)
+            status_msg['status_title'] = "Success"
 
-                log_description = ""
-                if delete_type == "delete_post":
-                    if janitor:
-                        log_description = 'Janitor: Locally delete (locally hide) post from thread "{}"'.format(thread.subject)
-                    else:
-                        log_description = 'Locally delete post from thread "{}"'.format(thread.subject)
-                elif delete_type == "delete_thread":
-                    if janitor:
-                        log_description = 'Janitor: Locally delete (locally hide) thread "{}"'.format(thread.subject)
-                    else:
-                        log_description = 'Locally delete thread "{}"'.format(thread.subject)
+            # If local, first delete messages
+            if list_delete_message_ids:
+                for each_id in list_delete_message_ids:
+                    delete_post(each_id, only_hide=only_hide)
+                daemon_com.signal_generate_post_numbers()
 
-                status_msg['status_message'].append(log_description)
-                status_msg['status_title'] = "Success"
+            # If local, next delete thread
+            if delete_type == "delete_thread" and thread:
+                delete_thread(thread_id, only_hide=only_hide)
 
-                # If local, first delete messages
-                if list_delete_message_ids:
-                    for each_id in list_delete_message_ids:
-                        delete_post(each_id, only_hide=only_hide)
-                    daemon_com.signal_generate_post_numbers()
+            # Find if any admin commands exist for deleting this post or thread
+            # If so, add override to indicate local action has been taken to restore or delete
+            admin_cmd = Command.query.filter(and_(
+                Command.chan_address == address,
+                Command.action == "delete",
+                or_(Command.action_type == "delete_post",
+                    Command.action_type == "delete_thread"))).all()
+            for each_cmd in admin_cmd:
+                try:
+                    options = json.loads(each_cmd.options)
+                except:
+                    options = {}
+                if (
+                        ("delete_thread" in options and
+                         "thread_id" in options["delete_thread"] and
+                         options["delete_thread"]["thread_id"] == thread_id)
+                        or
+                        ("delete_post" in options and
+                         "message_id" in options["delete_post"] and
+                         options["delete_thread"]["message_id"] == message_id)
+                        ):
+                    admin_cmd.locally_deleted = True
+                    admin_cmd.save()
+                    break
 
-                # If local, next delete thread
-                if delete_type == "delete_thread" and thread:
-                    delete_thread(thread_id, only_hide=only_hide)
+            user_from_tmp = get_logged_in_user_name()
+            user_from = user_from_tmp if user_from_tmp else None
 
-                # Find if any admin commands exist for deleting this post or thread
-                # If so, add override to indicate local action has been taken to restore or delete
-                admin_cmd = Command.query.filter(and_(
-                    Command.chan_address == address,
-                    Command.action == "delete",
-                    or_(Command.action_type == "delete_post",
-                        Command.action_type == "delete_thread"))).all()
-                for each_cmd in admin_cmd:
-                    try:
-                        options = json.loads(each_cmd.options)
-                    except:
-                        options = {}
-                    if (
-                            ("delete_thread" in options and
-                             "thread_id" in options["delete_thread"] and
-                             options["delete_thread"]["thread_id"] == thread_id)
-                            or
-                            ("delete_post" in options and
-                             "message_id" in options["delete_post"] and
-                             options["delete_thread"]["message_id"] == message_id)
-                            ):
-                        admin_cmd.locally_deleted = True
-                        admin_cmd.save()
-                        break
+            add_mod_log_entry(
+                log_description,
+                message_id=message_id,
+                user_from=user_from,
+                board_address=address,
+                thread_hash=thread_id)
 
-                user_from_tmp = get_logged_in_user_name()
-                user_from = user_from_tmp if user_from_tmp else None
+            # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
+            time.sleep(1)
 
-                add_mod_log_entry(
-                    log_description,
-                    message_id=message_id,
-                    user_from=user_from,
-                    board_address=address,
-                    thread_hash=thread_id)
+        # Send message to remotely delete post/thread
+        elif delete_type in ["delete_post_all", "delete_thread_all"]:
+            if not global_admin and not board_list_admin:
+                return allow_msg
 
-                # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
-                time.sleep(1)
+            if not form_confirm.address.data and delete_type in ["delete_thread_all", "delete_post_all"]:
+                status_msg['status_message'].append("From address required")
 
-            # Send message to remotely delete post/thread
-            elif delete_type in ["delete_post_all", "delete_thread_all"]:
-                if not global_admin and not board_list_admin:
-                    return allow_msg
+            if not status_msg['status_message']:
+                if delete_type == "delete_post_all":
+                    status_msg['status_message'].append("Remotely deleted post from thread: '{}'".format(thread.subject))
+                    status_msg['status_title'] = "Success"
+                elif delete_type == "delete_thread_all":
+                    status_msg['status_message'].append("Remotely deleted thread: '{}'".format(thread.subject))
+                    status_msg['status_title'] = "Success"
 
-                if not form_confirm.address.data and delete_type in ["delete_thread_all", "delete_post_all"]:
-                    status_msg['status_message'].append("From address required")
-
-                if not status_msg['status_message']:
-                    if delete_type == "delete_post_all":
-                        status_msg['status_message'].append("Remotely deleted post from thread: '{}'".format(thread.subject))
-                        status_msg['status_title'] = "Success"
-                    elif delete_type == "delete_thread_all":
-                        status_msg['status_message'].append("Remotely deleted thread: '{}'".format(thread.subject))
-                        status_msg['status_title'] = "Success"
-
-                    dict_message = {
-                        "version": config.VERSION_MSG,
-                        "timestamp_utc": daemon_com.get_utc(),
-                        "message_type": "admin",
-                        "chan_type": "board",
-                        "action": "delete",
-                        "options": {}
+                dict_message = {
+                    "version": config.VERSION_MSG,
+                    "timestamp_utc": daemon_com.get_utc(),
+                    "message_type": "admin",
+                    "chan_type": "board",
+                    "action": "delete",
+                    "options": {}
+                }
+                if delete_type == "delete_post_all":
+                    dict_message["action_type"] = "delete_post"
+                    dict_message["options"]["delete_post"] = {
+                        "thread_id": thread_id,
+                        "message_id": message_id
                     }
-                    if delete_type == "delete_post_all":
-                        dict_message["action_type"] = "delete_post"
-                        dict_message["options"]["delete_post"] = {
-                            "thread_id": thread_id,
-                            "message_id": message_id
-                        }
-                    elif delete_type == "delete_thread_all":
-                        dict_message["action_type"] = "delete_thread"
-                        dict_message["options"]["delete_thread"] = {
-                            "thread_id": thread_id,
-                            "message_id": None
-                        }
+                elif delete_type == "delete_thread_all":
+                    dict_message["action_type"] = "delete_thread"
+                    dict_message["options"]["delete_thread"] = {
+                        "thread_id": thread_id,
+                        "message_id": None
+                    }
 
-                    pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-                    chan = Chan.query.filter(Chan.address == address).first()
-                    if chan and chan.pgp_passphrase_msg:
-                        pgp_passphrase_msg = chan.pgp_passphrase_msg
+                pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
+                chan = Chan.query.filter(Chan.address == address).first()
+                if chan and chan.pgp_passphrase_msg:
+                    pgp_passphrase_msg = chan.pgp_passphrase_msg
 
-                    str_message = json.dumps(dict_message)
-                    gpg = gnupg.GPG()
-                    message_encrypted = gpg.encrypt(
-                        str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
-                    message_send = base64.b64encode(message_encrypted.data).decode()
+                str_message = json.dumps(dict_message)
+                gpg = gnupg.GPG()
+                message_encrypted = gpg.encrypt(
+                    str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
+                message_send = base64.b64encode(message_encrypted.data).decode()
 
-                    # Don't allow a message to send while Bitmessage is restarting
-                    allow_send = False
-                    timer = time.time()
-                    while not allow_send:
-                        if daemon_com.bitmessage_restarting() is False:
-                            allow_send = True
-                        if time.time() - timer > config.BM_WAIT_DELAY:
-                            logger.error(
-                                "{}: Unable to send message: "
-                                "Could not detect Bitmessage running.".format(thread_id[0:6]))
-                            return
-                        time.sleep(1)
+                # Don't allow a message to send while Bitmessage is restarting
+                allow_send = False
+                timer = time.time()
+                while not allow_send:
+                    if daemon_com.bitmessage_restarting() is False:
+                        allow_send = True
+                    if time.time() - timer > config.BM_WAIT_DELAY:
+                        logger.error(
+                            "{}: Unable to send message: "
+                            "Could not detect Bitmessage running.".format(thread_id[0:6]))
+                        return
+                    time.sleep(1)
 
-                    if allow_send:
-                        lf = LF()
-                        if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
-                            try:
-                                return_str = api.sendMessage(
-                                    address,
-                                    form_confirm.address.data,
-                                    "",
-                                    message_send,
-                                    2,
-                                    config.BM_TTL)
-                                if return_str:
-                                    logger.info("{}: Message to globally delete {} sent from {} to {}".format(
-                                        thread_id[0:6], delete_type, form_confirm.address.data, address))
-                            finally:
-                                time.sleep(config.API_PAUSE)
-                                lf.lock_release(config.LOCKFILE_API)
+                if allow_send:
+                    lf = LF()
+                    if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+                        try:
+                            return_str = api.sendMessage(
+                                address,
+                                form_confirm.address.data,
+                                "",
+                                message_send,
+                                2,
+                                config.BM_TTL)
+                            if return_str:
+                                logger.info("{}: Message to globally delete {} sent from {} to {}".format(
+                                    thread_id[0:6], delete_type, form_confirm.address.data, address))
+                        finally:
+                            time.sleep(config.API_PAUSE)
+                            lf.lock_release(config.LOCKFILE_API)
 
-        except Exception as err:
-            logger.error("Exception while deleting message(s): {}".format(err))
-        finally:
-            lf.lock_release(config.LOCKFILE_MSG_PROC)
+        else:
+            status_msg['status_message'].append(f"Unrecognized option: {delete_type}")
+
+    except Exception as err:
+        logger.error("Exception while deleting message(s): {}".format(err))
+        status_msg['status_message'].append(f"Exception: {err}")
 
     if 'status_title' not in status_msg and status_msg['status_message']:
         status_msg['status_title'] = "Error"
@@ -1133,88 +1118,84 @@ def delete_with_comment(address, message_id, thread_id):
             status_msg['status_message'].append("A from address is required.")
 
         if form_del_com.send.data and not status_msg['status_message']:
-            lf = LF()
-            if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-                try:
-                    # Send message to remotely delete post with comment
-                    dict_message = {
-                        "version": config.VERSION_MSG,
-                        "timestamp_utc": daemon_com.get_utc(),
-                        "message_type": "admin",
-                        "chan_type": "board",
-                        "action": "delete_comment",
-                        "action_type": "post",
-                        "options": {
-                            "delete_comment": {
-                                "comment": form_del_com.delete_comment.data,
-                                "message_id": message_id
-                            }
+            try:
+                # Send message to remotely delete post with comment
+                dict_message = {
+                    "version": config.VERSION_MSG,
+                    "timestamp_utc": daemon_com.get_utc(),
+                    "message_type": "admin",
+                    "chan_type": "board",
+                    "action": "delete_comment",
+                    "action_type": "post",
+                    "options": {
+                        "delete_comment": {
+                            "comment": form_del_com.delete_comment.data,
+                            "message_id": message_id
                         }
                     }
+                }
 
-                    pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-                    chan = Chan.query.filter(Chan.address == address).first()
-                    if chan and chan.pgp_passphrase_msg:
-                        pgp_passphrase_msg = chan.pgp_passphrase_msg
+                pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
+                chan = Chan.query.filter(Chan.address == address).first()
+                if chan and chan.pgp_passphrase_msg:
+                    pgp_passphrase_msg = chan.pgp_passphrase_msg
 
-                    str_message = json.dumps(dict_message)
-                    gpg = gnupg.GPG()
-                    message_encrypted = gpg.encrypt(
-                        str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
-                    message_send = base64.b64encode(message_encrypted.data).decode()
+                str_message = json.dumps(dict_message)
+                gpg = gnupg.GPG()
+                message_encrypted = gpg.encrypt(
+                    str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
+                message_send = base64.b64encode(message_encrypted.data).decode()
 
-                    # Don't allow a message to send while Bitmessage is restarting
-                    allow_send = False
-                    timer = time.time()
-                    while not allow_send:
-                        if daemon_com.bitmessage_restarting() is False:
-                            allow_send = True
-                        if time.time() - timer > config.BM_WAIT_DELAY:
-                            logger.error(
-                                "{}: Unable to send message: "
-                                "Could not detect Bitmessage running.".format(thread_id[0:6]))
-                            return
-                        time.sleep(1)
+                # Don't allow a message to send while Bitmessage is restarting
+                allow_send = False
+                timer = time.time()
+                while not allow_send:
+                    if daemon_com.bitmessage_restarting() is False:
+                        allow_send = True
+                    if time.time() - timer > config.BM_WAIT_DELAY:
+                        logger.error(
+                            "{}: Unable to send message: "
+                            "Could not detect Bitmessage running.".format(thread_id[0:6]))
+                        return
+                    time.sleep(1)
 
-                    if allow_send:
-                        lf = LF()
-                        if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
-                            try:
-                                return_str = api.sendMessage(
-                                    address,
-                                    form_del_com.address.data,
-                                    "",
-                                    message_send,
-                                    2,
-                                    config.BM_TTL)
-                                if return_str:
-                                    logger.info("{}: Message to globally delete with comment sent from {} to {}. "
-                                                "The message will need to propagate through the network before "
-                                                "the changes are reflected on the board.".format(
-                                                    thread_id[0:6], form_del_com.address.data, address))
+                if allow_send:
+                    lf = LF()
+                    if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+                        try:
+                            return_str = api.sendMessage(
+                                address,
+                                form_del_com.address.data,
+                                "",
+                                message_send,
+                                2,
+                                config.BM_TTL)
+                            if return_str:
+                                logger.info("{}: Message to globally delete with comment sent from {} to {}. "
+                                            "The message will need to propagate through the network before "
+                                            "the changes are reflected on the board.".format(
+                                                thread_id[0:6], form_del_com.address.data, address))
 
-                                status_msg['status_message'].append(
-                                    "Message deleted from post and replaced with comment: '{}'".format(
-                                        form_del_com.delete_comment.data))
-                                status_msg['status_title'] = "Deleted Message with Comment"
+                            status_msg['status_message'].append(
+                                "Message deleted from post and replaced with comment: '{}'".format(
+                                    form_del_com.delete_comment.data))
+                            status_msg['status_title'] = "Deleted Message with Comment"
 
-                                url = "/thread/{}/{}".format(address, thread_id)
-                                url_text = "Return to Thread"
+                            url = "/thread/{}/{}".format(address, thread_id)
+                            url_text = "Return to Thread"
 
-                                return render_template("pages/alert.html",
-                                                       board=board,
-                                                       status_msg=status_msg,
-                                                       url=url,
-                                                       url_text=url_text)
-                            finally:
-                                time.sleep(config.API_PAUSE)
-                                lf.lock_release(config.LOCKFILE_API)
-                    else:
-                        logger.error("Could not authenticate access to globally delete post with comment")
-                except Exception as err:
-                    logger.error("Exception while deleting message with comment: {}".format(err))
-                finally:
-                    lf.lock_release(config.LOCKFILE_MSG_PROC)
+                            return render_template("pages/alert.html",
+                                                   board=board,
+                                                   status_msg=status_msg,
+                                                   url=url,
+                                                   url_text=url_text)
+                        finally:
+                            time.sleep(config.API_PAUSE)
+                            lf.lock_release(config.LOCKFILE_API)
+                else:
+                    logger.error("Could not authenticate access to globally delete post with comment")
+            except Exception as err:
+                logger.error("Exception while deleting message with comment: {}".format(err))
 
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
@@ -1265,90 +1246,86 @@ def admin_board_ban_address(chan_address, ban_address, ban_type):
         status_msg['status_title'] = "Error"
 
     elif request.method == 'POST' and form_confirm.confirm.data:
-        lf = LF()
-        if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-            try:
-                # Send message to remotely ban user and delete all user messages
-                dict_message = {
-                    "version": config.VERSION_MSG,
-                    "timestamp_utc": daemon_com.get_utc(),
-                    "message_type": "admin",
-                    "chan_type": "board",
-                    "action": ban_type,
-                    "action_type": "ban_address",
-                    "chan_address": chan_address,
-                    "options": {"ban_address": ban_address}
-                }
+        try:
+            # Send message to remotely ban user and delete all user messages
+            dict_message = {
+                "version": config.VERSION_MSG,
+                "timestamp_utc": daemon_com.get_utc(),
+                "message_type": "admin",
+                "chan_type": "board",
+                "action": ban_type,
+                "action_type": "ban_address",
+                "chan_address": chan_address,
+                "options": {"ban_address": ban_address}
+            }
 
-                if ban_type == "board_ban_public" and form_confirm.text.data:
-                    dict_message["options"]["reason"] = form_confirm.text.data
+            if ban_type == "board_ban_public" and form_confirm.text.data:
+                dict_message["options"]["reason"] = form_confirm.text.data
 
-                pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
-                if chan and chan.pgp_passphrase_msg:
-                    pgp_passphrase_msg = chan.pgp_passphrase_msg
+            pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
+            if chan and chan.pgp_passphrase_msg:
+                pgp_passphrase_msg = chan.pgp_passphrase_msg
 
-                str_message = json.dumps(dict_message)
-                gpg = gnupg.GPG()
-                message_encrypted = gpg.encrypt(
-                    str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
-                message_send = base64.b64encode(message_encrypted.data).decode()
+            str_message = json.dumps(dict_message)
+            gpg = gnupg.GPG()
+            message_encrypted = gpg.encrypt(
+                str_message, symmetric="AES256", passphrase=pgp_passphrase_msg, recipients=None)
+            message_send = base64.b64encode(message_encrypted.data).decode()
 
-                # Don't allow a message to send while Bitmessage is restarting
-                allow_send = False
-                timer = time.time()
-                while not allow_send:
-                    if daemon_com.bitmessage_restarting() is False:
-                        allow_send = True
-                    if time.time() - timer > config.BM_WAIT_DELAY:
-                        logger.error(
-                            "Unable to send message: "
-                            "Could not detect Bitmessage running.")
-                        return
-                    time.sleep(1)
+            # Don't allow a message to send while Bitmessage is restarting
+            allow_send = False
+            timer = time.time()
+            while not allow_send:
+                if daemon_com.bitmessage_restarting() is False:
+                    allow_send = True
+                if time.time() - timer > config.BM_WAIT_DELAY:
+                    logger.error(
+                        "Unable to send message: "
+                        "Could not detect Bitmessage running.")
+                    return
+                time.sleep(1)
 
-                if allow_send:
-                    lf = LF()
-                    if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
-                        try:
-                            return_str = api.sendMessage(
-                                chan_address,
-                                form_confirm.address.data,
-                                "",
-                                message_send,
-                                2,
-                                config.BM_TTL)
-                            if return_str:
-                                ban_type = ""
-                                if ban_type == "board_ban_public":
-                                    ban_type = " publicly"
-                                elif ban_type == "board_ban_silent":
-                                    ban_type = " silently"
-                                reason = ""
-                                if form_confirm.text.data:
-                                    reason = " Reason: {}".format(form_confirm.text.data)
-                                status_msg['status_message'].append(
-                                    "Global message sent to{} ban {} from board {}.{}".format(
-                                        ban_type, ban_address, chan_address, reason))
-                                status_msg['status_title'] = "Ban Address"
-                        finally:
-                            time.sleep(config.API_PAUSE)
-                            lf.lock_release(config.LOCKFILE_API)
+            if allow_send:
+                lf = LF()
+                if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+                    try:
+                        return_str = api.sendMessage(
+                            chan_address,
+                            form_confirm.address.data,
+                            "",
+                            message_send,
+                            2,
+                            config.BM_TTL)
+                        if return_str:
+                            ban_type = ""
+                            if ban_type == "board_ban_public":
+                                ban_type = " publicly"
+                            elif ban_type == "board_ban_silent":
+                                ban_type = " silently"
+                            reason = ""
+                            if form_confirm.text.data:
+                                reason = " Reason: {}".format(form_confirm.text.data)
+                            status_msg['status_message'].append(
+                                "Global message sent to{} ban {} from board {}.{}".format(
+                                    ban_type, ban_address, chan_address, reason))
+                            status_msg['status_title'] = "Ban Address"
+                    finally:
+                        time.sleep(config.API_PAUSE)
+                        lf.lock_release(config.LOCKFILE_API)
 
-                    # If a public ban, add to mod log
-                    if ban_type == "board_ban_public":
-                        log_description = "Ban {}".format(ban_address)
-                        if form_confirm.text.data:
-                            log_description += ": Reason: {}".format(form_confirm.text.data)
-                        add_mod_log_entry(
-                            log_description,
-                            user_from=form_confirm.address.data,
-                            board_address=chan_address)
-                else:
-                    logger.error("Could not authenticate access to globally ban")
-            except Exception as err:
-                logger.error("Exception while banning address: {}".format(err))
-            finally:
-                lf.lock_release(config.LOCKFILE_MSG_PROC)
+                # If a public ban, add to mod log
+                if ban_type == "board_ban_public":
+                    log_description = "Ban {}".format(ban_address)
+                    if form_confirm.text.data:
+                        log_description += ": Reason: {}".format(form_confirm.text.data)
+                    add_mod_log_entry(
+                        log_description,
+                        user_from=form_confirm.address.data,
+                        board_address=chan_address)
+            else:
+                logger.error("Could not authenticate access to globally ban")
+        except Exception as err:
+            logger.error("Exception while banning address: {}".format(err))
 
     return render_template("pages/alert.html",
                            board=board,

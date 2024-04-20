@@ -10,18 +10,22 @@
         {% include '/elements/status.html' %}
     {% endif %}
 
-    {% if not logged_in -%}
     <div class="container">
+    {% if not logged_in -%}
         <form method="post" enctype="multipart/form-data" autocomplete="off" action="/login">
             <div>
-                <input type="password" name="password"/>
+                <input type="password" name="password" autofocus/>
             </div>
             <div style="padding-top: 1em; text-align: center;">
                 <input type="submit" name="login" value="Login"/>
             </div>
         </form>
-    </div>
+    {% else %}
+        <div class="themed">
+            Logged in
+        </div>
     {% endif %}
+    </div>
 
     {% if logged_in or
           (not logged_in and not settings.kiosk_login_to_view) %}

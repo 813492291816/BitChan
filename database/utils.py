@@ -7,9 +7,7 @@ import sqlalchemy
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from config import DATABASE_BITCHAN
-
-DB_PATH = 'sqlite:///' + DATABASE_BITCHAN
+from config import DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +15,7 @@ logger = logging.getLogger(__name__)
 @contextmanager
 def session_scope(db_uri):
     Session = sessionmaker()
-    engine = create_engine(
-        db_uri,
-        connect_args={'check_same_thread': False}
-    )
+    engine = create_engine(db_uri)
     Session.configure(bind=engine)
     session = Session()
     try:

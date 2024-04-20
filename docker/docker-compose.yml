@@ -1,4 +1,4 @@
-version: "2.4"
+version: "3.8"
 
 services:
   bitchan_nginx:
@@ -10,106 +10,114 @@ services:
     build:
       context: ../
       dockerfile: docker/nginx/Dockerfile
+    logging:
+      options:
+        max-size: 30m
     volumes:
-      - bitchan:/usr/local/bitchan
+      - /usr/local/bitchan-docker/bitchan:/usr/local/bitchan
       - run_vol:/run
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
+    depends_on:
+      - bitchan_flask
 #    ports:
 #      - "8000:8000"
-    cpuset: '0'
 
+  # See the manual for setting up a tor hidden service to host a kiosk.
   bitchan_tor:
     container_name: bitchan_tor
-    image: app
     networks:
       bc_net:
         ipv4_address: 172.28.1.2
     restart: always
     build:
       context: ../
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/tor/Dockerfile
     privileged: true
+    logging:
+      options:
+        max-size: 30m
     volumes:
-      - tor:/usr/local/tor
+      - /usr/local/bitchan-docker/tor:/usr/local/tor
       - run_vol:/run
-    cpuset: '0'
-    command: tor -f /usr/local/tor/torrc
-    depends_on:
-      - bitchan_nginx
+    command:
+      bash -c "/tor_setup.sh &&
+               /usr/local/bin/tor -f /usr/local/tor/torrc"
 
   bitchan_bitmessage:
     container_name: bitchan_bitmessage
     image: app
+    pull_policy: never
     networks:
       bc_net:
         ipv4_address: 172.28.1.3
     restart: always
     volumes:
-      - bitchan:/usr/local/bitchan
-      - bitmessage:/usr/local/bitmessage
+      - /usr/local/bitchan-docker/bitchan:/usr/local/bitchan
+      - /usr/local/bitchan-docker/bitmessage:/usr/local/bitmessage
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
-    cpuset: '1,2'
     command: >
-      bash -c "/home/bitchan/docker/bitmessage_setup.sh &&
+      bash -c "/home/bitchan/docker/bitmessage/bitmessage_setup.sh &&
                /home/bitchan/database/upgrade_database_docker.sh &&
                /usr/local/bin/pybitmessage -d"
     depends_on:
+      - bitchan_mysql
       - bitchan_tor
 
   bitchan_flask:
     container_name: bitchan_flask
     image: app
+    pull_policy: never
     networks:
       bc_net:
         ipv4_address: 172.28.1.4
     restart: always
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
     working_dir: /home/bitchan
     volumes:
-      - bitchan:/usr/local/bitchan
-      - bitmessage:/usr/local/bitmessage
+      - /usr/local/bitchan-docker/bitchan:/usr/local/bitchan
+      - /usr/local/bitchan-docker/bitmessage:/usr/local/bitmessage
+      - /usr/local/bitchan-docker/gnupg:/usr/local/gnupg
+      - /usr/local/bitchan-docker/tor:/usr/local/tor
+      - /usr/local/bitchan-docker/i2p_qb:/i2p_qb
       - flask_session:/home/bitchan/flask_session
-      - gnupg:/usr/local/gnupg
-      - tor:/usr/local/tor
       - var_lock:/var/lock
       - run_vol:/run
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # For bitchan to control docker containers
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # For BitChan to control docker containers
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
-    cpuset: '0'
     command: python3 -m gunicorn --workers 1 --worker-class gthread --threads 4 --timeout 1800 --bind unix:/run/bitchan.sock bitchan_flask:app
     depends_on:
       - bitchan_bitmessage
+      - bitchan_mysql
 
   bitchan_daemon:
     container_name: bitchan_daemon
     image: app
+    pull_policy: never
     networks:
       bc_net:
         ipv4_address: 172.28.1.5
     restart: always
     working_dir: /home/bitchan
     volumes:
-      - bitchan:/usr/local/bitchan
-      - bitmessage:/usr/local/bitmessage
-      - gnupg:/usr/local/gnupg
-      - tor:/usr/local/tor
+      - /usr/local/bitchan-docker/bitchan:/usr/local/bitchan
+      - /usr/local/bitchan-docker/bitmessage:/usr/local/bitmessage
+      - /usr/local/bitchan-docker/gnupg:/usr/local/gnupg
+      - /usr/local/bitchan-docker/tor:/usr/local/tor
+      - /usr/local/bitchan-docker/i2p_qb:/i2p_qb
       - var_lock:/var/lock
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # For bitchan to control docker containers
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # For BitChan to control docker containers
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
-    cpuset: '0'
-    command: bash -c "PYTHONPATH=/home/bitchan python3 bitchan_daemon.py"
+    command: bash -c "sleep 10 && PYTHONPATH=/home/bitchan python3 bitchan_daemon.py"
     depends_on:
-      - bitchan_flask
+      - bitchan_bitmessage
+      - bitchan_mysql
 
-  # You can comment out the following block to prevent i2pd from starting
-  # If your docker is publicly-accessible, you can uncomment the ports section and allow remote access (at http://publicIP:7999).
-  # If public, it's recommended to:
-  #  1. Change the user/password in i2pd.conf before building.
-  #  2. Comment port 7999 after using the webconsole to prevent access to it.
-  # See the manual for setting up an i2p hidden service to host your BitChan kiosk.
-  # If rebuilding I2P from scratch, delete I2P volume: docker volume rm docker_i2pd
+  # See the manual for setting up an i2p hidden service to host a kiosk.
   bitchan_i2p:
     container_name: bitchan_i2p
     networks:
@@ -119,28 +127,68 @@ services:
     build:
       context: ../
       dockerfile: docker/i2pd/Dockerfile
+    logging:
+      options:
+        max-size: 30m
+    ports:
+      - "7070:7070"  # Access to the webconsole is at http://publicIP:7070
+                     # If public, it's recommended to change the user/password in i2pd.conf
     volumes:
-      - i2pd:/home/i2pd/data
-    cpuset: '0'
-#    ports:
-#      - "7999:7070"  # I2P Console UI port
+      - /usr/local/bitchan-docker/i2pd:/home/i2pd/data
+    privileged: true
+
+  bitchan_qbittorrent:
+    container_name: bitchan_qbittorrent
+    networks:
+      bc_net:
+        ipv4_address: 172.28.1.8
+    cap_add:
+      - NET_ADMIN
+    build:
+      context: ../
+      dockerfile: docker/qbittorrent/Dockerfile
+    restart: always
+    logging:
+      options:
+        max-size: 30m
+    ports:
+      - "8080:8080"  # qBittorrent Web-UI Port
+                     # If not accessing from localhost, use "docker logs bitchan_qbittorrent" to get admin password
+    volumes:
+      - /usr/local/bitchan-docker/i2p_qb:/i2p_qb
+    depends_on:
+      - bitchan_i2p
+
+  bitchan_mysql:
+    container_name: bitchan_mysql
+    image: mysql:8.3.0
+    networks:
+      bc_net:
+        ipv4_address: 172.28.1.7
+    restart: always
+    environment:
+      MYSQL_DATABASE: 'bitchan_db'
+      MYSQL_ROOT_PASSWORD: Bitchandbpw
+    logging:
+      options:
+        max-size: 30m
+    volumes:
+      - /usr/local/bitchan-docker/bitchan:/usr/local/bitchan
+      - /usr/local/bitchan-docker/mysql:/var/lib/mysql
+    command:
+      --sort_buffer_size=1000000
 
 volumes:
   run_vol:
     driver_opts:
       type: tmpfs
       device: tmpfs
-  bitchan:
-  bitmessage:
-  gnupg:
   flask_session:
-  tor:
-  i2pd:
   var_lock:
 
 networks:
-    bc_net:
-        ipam:
-            driver: default
-            config:
-                - subnet: 172.28.0.0/16
+  bc_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16

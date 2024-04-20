@@ -1,7 +1,6 @@
 {% extends "layout.html" %}
 
 {% set total_pages = (mod_log_count / settings.results_per_page_mod_log)|round(0, "ceil")|int %}
-{% set global_admin, allow_msg = allowed_access("is_global_admin") %}
 
 {%- if address != "0" %}
     {% set chan_label, chan_description, chan_type = get_chan_mod_info(address) %}

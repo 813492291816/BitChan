@@ -3,66 +3,23 @@ import logging
 import sqlite3
 import time
 from binascii import unhexlify
+from urllib.parse import urlparse
 
 from sqlalchemy import and_
 
 import config
+from bitchan_client import DaemonCom
 from database.models import Chan
 from database.models import Command
+from database.models import GlobalSettings
 from database.models import Messages
 from database.models import ModLog
-from database.models import GlobalSettings
 from database.models import PostCards
 from database.models import Threads
 from database.utils import session_scope
 
 logger = logging.getLogger('bitchan.shared')
-
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
-
-
-def get_post_ttl(form_ttl=2419200):
-    """Determine post TTL"""
-    with session_scope(DB_PATH) as new_session:
-        settings = new_session.query(GlobalSettings).first()
-
-        if form_ttl < 3600:
-            form_ttl = 3600
-        elif form_ttl > 2419200:
-            form_ttl = 2419200
-
-        if not settings.enable_kiosk_mode:
-            return form_ttl
-
-        if settings.kiosk_ttl_option == "selectable_max_28_days":
-            ttl = form_ttl
-        elif settings.kiosk_ttl_option == "selectable_max_custom":
-            if form_ttl <= settings.kiosk_ttl_seconds:
-                ttl = form_ttl
-            else:
-                ttl = settings.kiosk_ttl_seconds
-        elif settings.kiosk_ttl_option == "forced_28_days":
-            ttl = 2419200
-        elif settings.kiosk_ttl_option == "forced_102_hours":
-            ttl = 367200
-        elif settings.kiosk_ttl_option == "forced_custom":
-            ttl = settings.kiosk_ttl_seconds
-        else:
-            ttl = 2419200
-
-    return ttl
-
-
-def get_post_id(message_id):
-    return message_id[-config.ID_LENGTH:].upper()
-
-
-def diff_list_added_removed(list1, list2):
-    set1 = set(list1)
-    set2 = set(list2)
-    removed = list(sorted(set1 - set2))
-    added = list(sorted(set2 - set1))
-    return removed, added
+daemon_com = DaemonCom()
 
 
 def add_mod_log_entry(
@@ -74,7 +31,7 @@ def add_mod_log_entry(
         thread_hash=None,
         success=True,
         hidden=False):
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         log_entry = ModLog()
         log_entry.description = description
         log_entry.message_id = message_id
@@ -96,50 +53,57 @@ def add_mod_log_entry(
         new_session.commit()
 
 
-def get_msg_expires_time(msg_id: str):
-    try:
-        conn = sqlite3.connect('file:{}?mode=ro'.format(
-            config.BM_MESSAGES_DAT), uri=True, check_same_thread=False)
-        conn.text_factory = bytes
-        c = conn.cursor()
-        c.execute('SELECT expirestime FROM inventory WHERE hash=?', (unhexlify(msg_id),))
-        data = c.fetchall()
-        if data:
-            return data[0][0]
-    except Exception:
-        logger.exception("except {}".format(msg_id))
+def check_tld_i2p(urls):
+    """Ensure list of trackers have i2p TLD"""
+    non_i2p_urls = []
+    for url in urls:
+        try:
+            domain = urlparse(url).netloc
+            tld = domain.split(".")[-1]
+            if tld.lower() != "i2p":
+                non_i2p_urls.append(url)
+        except:
+            non_i2p_urls.append(url)
+    return non_i2p_urls
 
 
-def is_access_same_as_db(options, chan_entry):
-    """Check if command access same as chan access"""
-    return_dict = {
-        "secondary_access": False,
-        "tertiary_access": False,
-        "restricted_access": False
-    }
+def can_address_create_thread(from_address, chan_address):
+    chans_board_info = daemon_com.get_chans_board_info()
+    rules = chans_board_info[chan_address]["rules"]
+    if ("restrict_thread_creation" in rules and
+            "enabled" in rules["restrict_thread_creation"] and
+            rules["restrict_thread_creation"]["enabled"]):
+        access = get_access(chan_address)
+        thread_creation_addresses = []
+        if ("addresses" in rules["restrict_thread_creation"] and
+                rules["restrict_thread_creation"]["addresses"]):
+            thread_creation_addresses = rules["restrict_thread_creation"]["addresses"]
+        if from_address not in access["primary_addresses"] + access["secondary_addresses"] + thread_creation_addresses:
+            return False
+        else:
+            return True
+    else:
+        return True
 
-    if "modify_admin_addresses" in options:
-        # sort both lists and compare
-        command = sorted(options["modify_admin_addresses"])
-        chan = sorted(json.loads(chan_entry.secondary_addresses))
-        if command == chan:
-            return_dict["secondary_access"] = True
 
-    if "modify_user_addresses" in options:
-        # sort both lists and compare
-        command = sorted(options["modify_user_addresses"])
-        chan = sorted(json.loads(chan_entry.tertiary_addresses))
-        if command == chan:
-            return_dict["tertiary_access"] = True
+def diff_list_added_removed(list1, list2):
+    set1 = set(list1)
+    set2 = set(list2)
+    removed = list(sorted(set1 - set2))
+    added = list(sorted(set2 - set1))
+    return removed, added
 
-    if "modify_restricted_addresses" in options:
-        # sort both lists and compare
-        command = sorted(options["modify_restricted_addresses"])
-        chan = sorted(json.loads(chan_entry.restricted_addresses))
-        if command == chan:
-            return_dict["restricted_access"] = True
 
-    return return_dict
+def get_access(address):
+    with session_scope(config.DB_PATH) as new_session:
+        chan = new_session.query(Chan).filter(Chan.address == address).first()
+        if chan:
+            admin_cmd = new_session.query(Command).filter(and_(
+                Command.action == "set",
+                Command.action_type == "options",
+                Command.chan_address == chan.address)).first()
+            return get_combined_access(admin_cmd, chan)
+    return {}
 
 
 def get_combined_access(command, chan):
@@ -180,20 +144,90 @@ def get_combined_access(command, chan):
     return access
 
 
-def get_access(address):
-    with session_scope(DB_PATH) as new_session:
-        chan = new_session.query(Chan).filter(Chan.address == address).first()
-        if chan:
-            admin_cmd = new_session.query(Command).filter(and_(
-                Command.action == "set",
-                Command.action_type == "options",
-                Command.chan_address == chan.address)).first()
-            return get_combined_access(admin_cmd, chan)
-    return {}
+def get_msg_expires_time(msg_id: str):
+    try:
+        conn = sqlite3.connect('file:{}?mode=ro'.format(
+            config.BM_MESSAGES_DAT), uri=True, check_same_thread=False)
+        conn.text_factory = bytes
+        c = conn.cursor()
+        c.execute('SELECT expirestime FROM inventory WHERE hash=?', (unhexlify(msg_id),))
+        data = c.fetchall()
+        if data:
+            return data[0][0]
+    except Exception:
+        logger.exception("except {}".format(msg_id))
+
+
+def get_post_id(message_id):
+    return message_id[-config.ID_LENGTH:].upper()
+
+
+def get_post_ttl(form_ttl=2419200):
+    """Determine post TTL"""
+    with session_scope(config.DB_PATH) as new_session:
+        settings = new_session.query(GlobalSettings).first()
+
+        if form_ttl < 3600:
+            form_ttl = 3600
+        elif form_ttl > 2419200:
+            form_ttl = 2419200
+
+        if not settings.enable_kiosk_mode:
+            return form_ttl
+
+        if settings.kiosk_ttl_option == "selectable_max_28_days":
+            ttl = form_ttl
+        elif settings.kiosk_ttl_option == "selectable_max_custom":
+            if form_ttl <= settings.kiosk_ttl_seconds:
+                ttl = form_ttl
+            else:
+                ttl = settings.kiosk_ttl_seconds
+        elif settings.kiosk_ttl_option == "forced_28_days":
+            ttl = 2419200
+        elif settings.kiosk_ttl_option == "forced_102_hours":
+            ttl = 367200
+        elif settings.kiosk_ttl_option == "forced_custom":
+            ttl = settings.kiosk_ttl_seconds
+        else:
+            ttl = 2419200
+
+    return ttl
+
+
+def is_access_same_as_db(options, chan_entry):
+    """Check if command access same as chan access"""
+    return_dict = {
+        "secondary_access": False,
+        "tertiary_access": False,
+        "restricted_access": False
+    }
+
+    if "modify_admin_addresses" in options:
+        # sort both lists and compare
+        command = sorted(options["modify_admin_addresses"])
+        chan = sorted(json.loads(chan_entry.secondary_addresses))
+        if command == chan:
+            return_dict["secondary_access"] = True
+
+    if "modify_user_addresses" in options:
+        # sort both lists and compare
+        command = sorted(options["modify_user_addresses"])
+        chan = sorted(json.loads(chan_entry.tertiary_addresses))
+        if command == chan:
+            return_dict["tertiary_access"] = True
+
+    if "modify_restricted_addresses" in options:
+        # sort both lists and compare
+        command = sorted(options["modify_restricted_addresses"])
+        chan = sorted(json.loads(chan_entry.restricted_addresses))
+        if command == chan:
+            return_dict["restricted_access"] = True
+
+    return return_dict
 
 
 def post_has_image(message_id):
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         message = new_session.query(Messages).filter(
             Messages.message_id == message_id).first()
         if message:
@@ -208,7 +242,7 @@ def post_has_image(message_id):
 
 def regenerate_ref_to_from_post(message_id, delete_message=False):
     """Regenerate posts referencing to and from restored post"""
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         message = new_session.query(Messages).filter(
             Messages.message_id == message_id).first()
         if message:
@@ -239,7 +273,7 @@ def regenerate_card_popup_post_html(
         regenerate_popup_html=True,
         regenerate_cards=True):
 
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         # Regenerate OP post of thread
         if thread_hash:
             thread = new_session.query(Threads).filter(
@@ -300,3 +334,24 @@ def regenerate_card_popup_post_html(
                         card_test.regenerate = True
 
         new_session.commit()
+
+
+def return_list_of_csv_bitmessage_addresses(form_list, status):
+    add_list_failed = []
+    add_list_passed = []
+    try:
+        if form_list:
+            list_additional = form_list.replace(" ", "").split(",")
+            for each_address in list_additional:
+                if (not each_address.startswith("BM-") or
+                        len(each_address) > 38 or
+                        len(each_address) < 34):
+                    add_list_failed.append(each_address)
+                elif each_address.startswith("BM-"):
+                    add_list_passed.append(each_address)
+    except:
+        logger.exception(1)
+        status['status_message'].append(
+            "Error parsing additional addresses. "
+            "Must only be comma-separated addresses without spaces.")
+    return status, add_list_failed, add_list_passed

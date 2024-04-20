@@ -161,6 +161,9 @@
                       {% if not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and not settings.kiosk_disable_bm_attach) %}
                         <option value="bitmessage"{% if "upload" in form_populate and form_populate["upload"] == "bitmessage" %} selected{% endif %}>Bitmessage (most secure, ~250KB)</option>
                       {% endif %}
+                      {% if not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and not settings.kiosk_disable_i2p_torrent_attach) %}
+                        <option value="i2p_torrent"{% if "upload" in form_populate and form_populate["upload"] == "i2p_torrent" %} selected{% endif %}>I2P Torrent (second most secure, any size)</option>
+                      {% endif %}
                       {% for each_server in upload_sites.query.all() if each_server.enabled or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) %}
                         <option value="{{each_server.id}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.id|string %} selected{% endif %}>{{each_server.form_name}}</option>
                       {% endfor %}
@@ -185,7 +188,7 @@
           <td colspan="3">
         {% if settings.enable_captcha %}
             {{captcha(page_id=page_id, img_id="post_captcha")}}
-            <input type="text" name="captcha">
+            <input type="text" id="popup_captcha" name="captcha">
         {% endif %}
             <div style="float: right;">
               <input class="postbutton" type="submit" id="btn_reply_submit" name="submit_post" value="Post"/>

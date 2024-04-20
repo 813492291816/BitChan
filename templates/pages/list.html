@@ -153,7 +153,7 @@ List
                                 <span style="font-family: monospace">{{board['current_chan'].address}}</span> <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyToClipboard('{{board['current_chan'].address}}')">&#128203;</button>
                             </div>
 
-                            {% if settings.hide_all_board_list_passphrases %}
+                            {% if board['current_chan'].hide_passphrase %}
                             <div class="themed" style="padding-bottom: 0.5em">
                                 The current configuration does not permit list passphrases to be shown
                             </div>

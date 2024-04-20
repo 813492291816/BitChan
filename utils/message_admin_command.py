@@ -13,6 +13,7 @@ import config
 from bitchan_client import DaemonCom
 from database.models import Chan
 from database.models import Command
+from database.models import GlobalSettings
 from database.models import Messages
 from database.models import Threads
 from database.utils import session_scope
@@ -30,8 +31,6 @@ from utils.shared import get_access
 from utils.shared import is_access_same_as_db
 from utils.shared import regenerate_card_popup_post_html
 
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
-
 logger = logging.getLogger('bitchan.admin_command')
 daemon_com = DaemonCom()
 
@@ -41,7 +40,7 @@ def send_commands():
     try:
         run_id = get_random_alphanumeric_string(
             6, with_punctuation=False, with_spaces=False)
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             admin_cmds = new_session.query(Command).filter(
                 Command.do_not_send.is_(False)).all()
             for each_cmd in admin_cmds:
@@ -232,7 +231,7 @@ def admin_set_options(msg_dict, admin_dict):
         daemon_com.trash_message(msg_dict["msgid"])
         return
 
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         chan = new_session.query(Chan).filter(
             Chan.address == msg_dict['toAddress']).first()
         admin_cmd = new_session.query(Command).filter(and_(
@@ -438,12 +437,12 @@ def admin_set_options(msg_dict, admin_dict):
             # Set CSS
             if "css" in admin_dict["options"]:
                 do_log = False
-                chan.allow_css = False
                 new_session.commit()
-                if "css_timestamp_utc" in options:
+                if "css_timestamp_utc" in options:  # CSS currently set, merely update timestamp (and possibly CSS)
                     if admin_dict["timestamp_utc"] > options["css_timestamp_utc"]:
-                        if options["css"] != admin_dict["options"]["css"]:
+                        if options["css"] != admin_dict["options"]["css"]:  # Received CSS different than currenty set
                             add_mod_log = True
+                            chan.allow_css = False  # CSS changed, require user to manually allow CSS
                         options["css"] = admin_dict["options"]["css"]
                         options["css_timestamp_utc"] = admin_dict["timestamp_utc"]
                         do_log = "Update"
@@ -452,6 +451,7 @@ def admin_set_options(msg_dict, admin_dict):
                     options["css_timestamp_utc"] = admin_dict["timestamp_utc"]
                     do_log = "Set"
                     add_mod_log = True
+                    chan.allow_css = False
                 if do_log:
                     log_description_list.append("Custom CSS: {}".format(do_log))
 
@@ -616,7 +616,7 @@ def admin_set_thread_options(msg_dict, admin_dict):
 
     add_mod_log = False
 
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         admin_cmd = new_session.query(Command).filter(and_(
             Command.chan_address == msg_dict['toAddress'],
             Command.thread_id == admin_dict['thread_id'],
@@ -770,160 +770,163 @@ def admin_delete_from_board(msg_dict, admin_dict):
     """ Admin command to remotely delete a thread or post from a board """
     local_override = False
 
-    lf = LF()
-    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-        try:
-            logger.error("{}: Admin message contains delete request".format(
+    logger.error("{}: Admin message contains delete request".format(
+        msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+    with session_scope(config.DB_PATH) as new_session:
+        settings = new_session.query(GlobalSettings).first()
+        if settings.remote_delete_action == "hide":
+            hide = True
+        else:
+            hide = False
+
+        # Check if command already exists
+        commands = new_session.query(Command).filter(
+            and_(Command.chan_address == msg_dict['toAddress'],
+                 Command.action == "delete",
+                 or_(Command.action_type == "delete_post",
+                     Command.action_type == "delete_thread"))).all()
+        command_exists = False
+        for each_cmd in commands:
+            try:
+                options = json.loads(each_cmd.options)
+            except:
+                options = {}
+            if (
+                    ("delete_post" in options and
+                     "message_id" in options["delete_post"] and
+                     "options" in admin_dict and
+                     "delete_post" in admin_dict["options"] and
+                     "message_id" in admin_dict["options"]["delete_post"] and
+                     options["delete_post"]["message_id"] == admin_dict["options"]["delete_post"]["message_id"])
+
+                    or
+
+                    ("delete_thread" in options and
+                     "thread_id" in options["delete_thread"] and
+                     "options" in admin_dict and
+                     "delete_thread" in admin_dict["options"] and
+                     "thread_id" in admin_dict["options"]["delete_thread"] and
+                     options["delete_thread"]["thread_id"] == admin_dict["options"]["delete_thread"]["thread_id"])
+            ):
+                command_exists = True
+                if "delete_thread" in options:
+                    options["delete_thread_timestamp_utc"] = daemon_com.get_utc()
+                elif "delete_post" in options:
+                    options["delete_post_timestamp_utc"] = daemon_com.get_utc()
+                each_cmd.options = json.dumps(options)
+                logger.error("{}: Admin command already exists. Updating.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                if each_cmd.locally_restored or each_cmd.locally_deleted:
+                    local_override = True
+                break
+
+        if not command_exists:
+            new_admin = Command()
+            new_admin.action = admin_dict["action"]
+            new_admin.action_type = admin_dict["action_type"]
+
+            if (admin_dict["action_type"] == "delete_post" and
+                    "delete_post" in admin_dict["options"] and
+                    "message_id" in admin_dict["options"]["delete_post"]):
+                new_admin.chan_address = msg_dict['toAddress']
+                new_admin.options = json.dumps({
+                    "delete_post": {
+                        "message_id": admin_dict["options"]["delete_post"]["message_id"]
+                    },
+                    "delete_post_timestamp_utc": daemon_com.get_utc()
+                })
+            elif (admin_dict["action_type"] == "delete_thread" and
+                  "delete_thread" in admin_dict["options"] and
+                  "thread_id" in admin_dict["options"]["delete_thread"]):
+                new_admin.chan_address = msg_dict['toAddress']
+                new_admin.options = json.dumps({
+                    "delete_thread": {
+                        "thread_id": admin_dict["options"]["delete_thread"]["thread_id"]
+                    },
+                    "delete_thread_timestamp_utc": daemon_com.get_utc()
+                })
+            else:
+                logger.error("{}: Unknown admin action type: {}".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper(), admin_dict["action_type"]))
+                daemon_com.trash_message(msg_dict["msgid"])
+                return
+            new_session.add(new_admin)
+            new_session.commit()
+
+    if local_override:
+        logger.info("{}: Admin cannot delete post/thread due to local override".format(
+            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+
+    # Find if thread/post exist and delete
+    elif msg_dict['toAddress']:
+        admin_chan = new_session.query(Chan).filter(
+            Chan.address == msg_dict['toAddress']).first()
+        if not admin_chan:
+            logger.error("{}: Unknown board in Admin message. Discarding.".format(
                 msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-            with session_scope(DB_PATH) as new_session:
-                # Check if command already exists
-                commands = new_session.query(Command).filter(
-                    and_(Command.chan_address == msg_dict['toAddress'],
-                         Command.action == "delete",
-                         or_(Command.action_type == "delete_post",
-                             Command.action_type == "delete_thread"))).all()
-                command_exists = False
-                for each_cmd in commands:
-                    try:
-                        options = json.loads(each_cmd.options)
-                    except:
-                        options = {}
-                    if (
-                            ("delete_post" in options and
-                             "message_id" in options["delete_post"] and
-                             "options" in admin_dict and
-                             "delete_post" in admin_dict["options"] and
-                             "message_id" in admin_dict["options"]["delete_post"] and
-                             options["delete_post"]["message_id"] == admin_dict["options"]["delete_post"]["message_id"])
+            daemon_com.trash_message(msg_dict["msgid"])
+            return
 
-                            or
+        logger.error("{}: Admin message board found".format(msg_dict["msgid"][-config.ID_LENGTH:].upper()))
 
-                            ("delete_thread" in options and
-                             "thread_id" in options["delete_thread"] and
-                             "options" in admin_dict and
-                             "delete_thread" in admin_dict["options"] and
-                             "thread_id" in admin_dict["options"]["delete_thread"] and
-                             options["delete_thread"]["thread_id"] == admin_dict["options"]["delete_thread"]["thread_id"])
-                    ):
-                        command_exists = True
-                        if "delete_thread" in options:
-                            options["delete_thread_timestamp_utc"] = daemon_com.get_utc()
-                        elif "delete_post" in options:
-                            options["delete_post_timestamp_utc"] = daemon_com.get_utc()
-                        each_cmd.options = json.dumps(options)
-                        logger.error("{}: Admin command already exists. Updating.".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-                        if each_cmd.locally_restored or each_cmd.locally_deleted:
-                            local_override = True
-                        break
+        # Admin: Delete post
+        if (admin_dict["action_type"] == "delete_post" and
+                "delete_post" in admin_dict["options"] and
+                "message_id" in admin_dict["options"]["delete_post"]):
+            logger.error("{}: Admin message to delete post {} (hide={}).".format(
+                msg_dict["msgid"][-config.ID_LENGTH:].upper(),
+                admin_dict["options"]["delete_post"]["message_id"],
+                hide))
+            delete_post(admin_dict["options"]["delete_post"]["message_id"], only_hide=hide)
 
-                if not command_exists:
-                    new_admin = Command()
-                    new_admin.action = admin_dict["action"]
-                    new_admin.action_type = admin_dict["action_type"]
+            with session_scope(config.DB_PATH) as new_session:
+                message = new_session.query(Messages).filter(
+                    Messages.message_id == admin_dict["options"]["delete_post"]["message_id"]).first()
+                thread_hash = None
+                if message and message.thread:
+                    thread_hash = message.thread.thread_hash
 
-                    if (admin_dict["action_type"] == "delete_post" and
-                            "delete_post" in admin_dict["options"] and
-                            "message_id" in admin_dict["options"]["delete_post"]):
-                        new_admin.chan_address = msg_dict['toAddress']
-                        new_admin.options = json.dumps({
-                            "delete_post": {
-                                "message_id": admin_dict["options"]["delete_post"]["message_id"]
-                            },
-                            "delete_post_timestamp_utc": daemon_com.get_utc()
-                        })
-                    elif (admin_dict["action_type"] == "delete_thread" and
-                          "delete_thread" in admin_dict["options"] and
-                          "thread_id" in admin_dict["options"]["delete_thread"]):
-                        new_admin.chan_address = msg_dict['toAddress']
-                        new_admin.options = json.dumps({
-                            "delete_thread": {
-                                "thread_id": admin_dict["options"]["delete_thread"]["thread_id"]
-                            },
-                            "delete_thread_timestamp_utc": daemon_com.get_utc()
-                        })
-                    else:
-                        logger.error("{}: Unknown admin action type: {}".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper(), admin_dict["action_type"]))
-                        daemon_com.trash_message(msg_dict["msgid"])
-                        return
-                    new_session.add(new_admin)
-                    new_session.commit()
+                add_mod_log_entry(
+                    f"Remote delete post (hide={hide})",
+                    message_id=admin_dict["options"]["delete_post"]["message_id"],
+                    user_from=msg_dict['fromAddress'],
+                    board_address=msg_dict['toAddress'],
+                    thread_hash=thread_hash,
+                    hidden=True)
 
-            if local_override:
-                logger.info("{}: Admin cannot delete post/thread due to local override".format(
+        # Admin: Delete thread
+        elif (admin_dict["action_type"] == "delete_thread" and
+              "delete_thread" in admin_dict["options"] and
+              "thread_id" in admin_dict["options"]["delete_thread"]):
+            logger.error("{}: Admin message to delete thread {} (hide={})".format(
+                msg_dict["msgid"][-config.ID_LENGTH:].upper(),
+                admin_dict["options"]["delete_thread"]["thread_id"],
+                hide))
+            # Delete all messages in thread
+            messages = new_session.query(Messages).filter(
+                Messages.thread_id == admin_dict["options"]["delete_thread"]["thread_id"]).all()
+            for message in messages:
+                delete_post(message.message_id, only_hide=hide)
+
+            thread = new_session.query(Threads).filter(
+                Threads.thread_hash == admin_dict["options"]["delete_thread"]["thread_id"]).first()
+            if thread:
+                log_description = 'Remote delete thread "{}" (hide={})'.format(thread.subject, hide)
+
+                add_mod_log_entry(
+                    log_description,
+                    user_from=msg_dict['fromAddress'],
+                    board_address=msg_dict['toAddress'],
+                    thread_hash=admin_dict["options"]["delete_thread"]["thread_id"],
+                    hidden=True)
+
+                # Delete the thread
+                delete_thread(admin_dict["options"]["delete_thread"]["thread_id"], only_hide=hide)
+            else:
+                logger.error("{}: Cannot delete thread that doesn't exist".format(
                     msg_dict["msgid"][-config.ID_LENGTH:].upper()))
 
-            # Find if thread/post exist and delete
-            elif msg_dict['toAddress']:
-                with session_scope(DB_PATH) as new_session:
-                    admin_chan = new_session.query(Chan).filter(
-                        Chan.address == msg_dict['toAddress']).first()
-                    if not admin_chan:
-                        logger.error("{}: Unknown board in Admin message. Discarding.".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-                        daemon_com.trash_message(msg_dict["msgid"])
-                        return
-
-                logger.error("{}: Admin message board found".format(msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-
-                # Admin: Delete post
-                if (admin_dict["action_type"] == "delete_post" and
-                        "delete_post" in admin_dict["options"] and
-                        "message_id" in admin_dict["options"]["delete_post"]):
-                    logger.error("{}: Admin message to delete post {}".format(
-                        msg_dict["msgid"][-config.ID_LENGTH:].upper(),
-                        admin_dict["options"]["delete_post"]["message_id"]))
-                    delete_post(admin_dict["options"]["delete_post"]["message_id"], only_hide=True)
-
-                    with session_scope(DB_PATH) as new_session:
-                        message = new_session.query(Messages).filter(
-                            Messages.message_id == admin_dict["options"]["delete_post"]["message_id"]).first()
-                        thread_hash = None
-                        if message and message.thread:
-                            thread_hash = message.thread.thread_hash
-
-                        add_mod_log_entry(
-                            "Remotely delete post (locally hidden)",
-                            message_id=admin_dict["options"]["delete_post"]["message_id"],
-                            user_from=msg_dict['fromAddress'],
-                            board_address=msg_dict['toAddress'],
-                            thread_hash=thread_hash,
-                            hidden=True)
-
-                # Admin: Delete thread
-                elif (admin_dict["action_type"] == "delete_thread" and
-                      "delete_thread" in admin_dict["options"] and
-                      "thread_id" in admin_dict["options"]["delete_thread"]):
-                    logger.error("{}: Admin message to delete thread {}".format(
-                        msg_dict["msgid"][-config.ID_LENGTH:].upper(),
-                        admin_dict["options"]["delete_thread"]["thread_id"]))
-                    # Delete all messages in thread
-                    messages = new_session.query(Messages).filter(
-                        Messages.thread_id == admin_dict["options"]["delete_thread"]["thread_id"]).all()
-                    for message in messages:
-                        delete_post(message.message_id, only_hide=True)
-
-                    thread = new_session.query(Threads).filter(
-                        Threads.thread_hash == admin_dict["options"]["delete_thread"]["thread_id"]).first()
-                    if thread:
-                        log_description = 'Remotely deleted thread: "{}" (locally hidden)'.format(thread.subject)
-
-                        add_mod_log_entry(
-                            log_description,
-                            user_from=msg_dict['fromAddress'],
-                            board_address=msg_dict['toAddress'],
-                            thread_hash=admin_dict["options"]["delete_thread"]["thread_id"],
-                            hidden=True)
-
-                        # Delete the thread
-                        delete_thread(admin_dict["options"]["delete_thread"]["thread_id"], only_hide=True)
-                    logger.error("{}: Cannot delete thread that doesn't exist".format(
-                        msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-
-                daemon_com.trash_message(msg_dict["msgid"])
-        finally:
-            lf.lock_release(config.LOCKFILE_MSG_PROC)
+        daemon_com.trash_message(msg_dict["msgid"])
 
 
 def admin_delete_from_board_with_comment(msg_dict, admin_dict):
@@ -933,7 +936,7 @@ def admin_delete_from_board_with_comment(msg_dict, admin_dict):
     try:
         logger.info("{}: Admin message contains delete with comment request".format(
             msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-        with session_scope(DB_PATH) as new_session:
+        with session_scope(config.DB_PATH) as new_session:
             # Find if thread/post exist and delete
             admin_chan = new_session.query(Chan).filter(
                 Chan.address == msg_dict['toAddress']).first()
@@ -1018,65 +1021,61 @@ def admin_ban_address_from_board(msg_dict, admin_dict):
         daemon_com.trash_message(msg_dict["msgid"])
         return
 
-    lf = LF()
-    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-        try:
-            logger.error("{}: Admin message contains ban request".format(
-                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-            with session_scope(DB_PATH) as new_session:
-                # Check if admin entry already exists
-                command_exists = False
-                commands = new_session.query(Command).filter(and_(
-                    Command.action == admin_dict["action"],
-                    Command.action_type == admin_dict["action_type"],
-                    Command.chan_address == admin_dict["chan_address"])).all()
-                for each_cmd in commands:
-                    try:
-                        options = json.loads(each_cmd.options)
-                    except:
-                        options = {}
-                    if ("ban_address" in options and
-                            admin_dict["options"]["ban_address"] == options["ban_address"]):
-                        logger.error("{}: Ban already exists in database. Updating".format(
-                            msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-                        options["ban_address_timestamp_utc"] = admin_dict["timestamp_utc"]
-                        each_cmd.options = json.dumps(options)
-                        command_exists = True
+    logger.error("{}: Admin message contains ban request".format(
+        msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+    with session_scope(config.DB_PATH) as new_session:
+        # Check if admin entry already exists
+        command_exists = False
+        commands = new_session.query(Command).filter(and_(
+            Command.action == admin_dict["action"],
+            Command.action_type == admin_dict["action_type"],
+            Command.chan_address == admin_dict["chan_address"])).all()
+        for each_cmd in commands:
+            try:
+                options = json.loads(each_cmd.options)
+            except:
+                options = {}
+            if ("ban_address" in options and
+                    admin_dict["options"]["ban_address"] == options["ban_address"]):
+                logger.error("{}: Ban already exists in database. Updating".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                options["ban_address_timestamp_utc"] = admin_dict["timestamp_utc"]
+                each_cmd.options = json.dumps(options)
+                command_exists = True
 
-                if not command_exists:
-                    logger.error("{}: Adding ban to database".format(msg_dict["msgid"][-config.ID_LENGTH:].upper()))
-                    new_admin = Command()
-                    new_admin.action = admin_dict["action"]
-                    new_admin.action_type = admin_dict["action_type"]
-                    new_admin.chan_address = admin_dict["chan_address"]
-                    options = {
-                        "ban_address": admin_dict["options"]["ban_address"],
-                        "ban_address_timestamp_utc": daemon_com.get_utc()
-                    }
-                    if "reason" in admin_dict and admin_dict["reason"]:
-                        options["reason"] = admin_dict["reason"]
-                    new_admin.options = json.dumps(options)
-                    new_session.add(new_admin)
-                    new_session.commit()
+        if not command_exists:
+            logger.error("{}: Adding ban to database".format(msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            new_admin = Command()
+            new_admin.action = admin_dict["action"]
+            new_admin.action_type = admin_dict["action_type"]
+            new_admin.chan_address = admin_dict["chan_address"]
+            options = {
+                "ban_address": admin_dict["options"]["ban_address"],
+                "ban_address_timestamp_utc": daemon_com.get_utc()
+            }
+            if "reason" in admin_dict and admin_dict["reason"]:
+                options["reason"] = admin_dict["reason"]
+            new_admin.options = json.dumps(options)
+            new_session.add(new_admin)
+            new_session.commit()
 
-                if admin_dict["action"] == "board_ban_public":
-                    log_description = "Refresh Ban {}".format(admin_dict["options"]["ban_address"])
-                    if "reason" in admin_dict and admin_dict["reason"]:
-                        log_description += ": Reason: {}".format(admin_dict["reason"])
-                    add_mod_log_entry(
-                        log_description,
-                        user_from=msg_dict["fromAddress"],
-                        board_address=admin_dict["chan_address"])
+        if admin_dict["action"] == "board_ban_public":
+            log_description = "Refresh Ban {}".format(admin_dict["options"]["ban_address"])
+            if "reason" in admin_dict and admin_dict["reason"]:
+                log_description += ": Reason: {}".format(admin_dict["reason"])
+            add_mod_log_entry(
+                log_description,
+                user_from=msg_dict["fromAddress"],
+                board_address=admin_dict["chan_address"])
 
-            # Find messages and delete
-            with session_scope(DB_PATH) as new_session:
-                messages = new_session.query(Messages).filter(
-                    Messages.address_from == admin_dict["options"]["ban_address"]).all()
-                if messages:
-                    # Admin: Delete post
-                    for each_message in messages:
-                        if each_message.thread.chan.address == admin_dict["chan_address"]:
-                            delete_post(each_message.message_id)
-            daemon_com.trash_message(msg_dict["msgid"])
-        finally:
-            lf.lock_release(config.LOCKFILE_MSG_PROC)
+    # Find messages and delete
+    with session_scope(config.DB_PATH) as new_session:
+        messages = new_session.query(Messages).filter(
+            Messages.address_from == admin_dict["options"]["ban_address"]).all()
+        if messages:
+            # Admin: Delete post
+            for each_message in messages:
+                if each_message.thread.chan.address == admin_dict["chan_address"]:
+                    delete_post(each_message.message_id)
+
+    daemon_com.trash_message(msg_dict["msgid"])

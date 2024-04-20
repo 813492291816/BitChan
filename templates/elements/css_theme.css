@@ -538,17 +538,3 @@ div.catalogitem {
     padding-right: 10px;
     text-align: center;
 }
-
-.navbar {
-  z-index: 1;
-  background-color: {{theme.navbg}};
-  padding: 0.1em 0;
-  border-width: 1px;
-  border-style: solid;
-  border-color: {{theme.divborder}};
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  width: 100%;
-}

@@ -18,7 +18,7 @@
 {% elif post.file_currently_downloading and post.file_progress %}
         <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; margin-right: 1em">
             {% include '/elements/board/post_filenames_only.html' %}
-            Processing attachment(s): {{post.file_progress}}. <br/>Please wait.
+            Attachment Status: {{post.file_progress}}. <br/>Please wait.
         </div>
 {% elif not post.file_currently_downloading and
     post.file_progress and
@@ -65,23 +65,24 @@
                 </table>
             </div>
 
+        {% set file_attributes = [] %}
+
         {%- if attach[file_name]["size"] -%}
-            {{"(%s" % (human_readable_size(attach[file_name]["size"]))}}
+            {{file_attributes.append(human_readable_size(attach[file_name]["size"])) or ""}}
         {%- endif -%}
 
         {%- if attach[file_name]["width"] and attach[file_name]["height"] -%}
-            {%- if attach[file_name]["size"] -%}
-            {{", "}}
-            {%- else -%}
-            {{"("}}
-            {%- endif -%}
-            {{"%dx%d" % (attach[file_name]["width"], attach[file_name]["height"])}}
+            {{file_attributes.append("%dx%d" % (attach[file_name]["width"], attach[file_name]["height"])) or ""}}
         {%- endif -%}
 
-        {%- if attach[file_name]["size"] is not none or
-               (attach[file_name]["width"] and attach[file_name]["height"]) -%}
-            {{")<br>"|safe}}
-        {%- endif %}
+        {%- if "exif" in attach[file_name] -%}
+            {%- set exif_str = '<span style="font-size: 0.8em;" title="' + attach[file_name]['exif']|join('&#10;') + '">EXIF</span>' -%}
+            {{file_attributes.append(exif_str|safe) or ""}}
+        {%- endif -%}
+
+        {%- if file_attributes -%}
+            ({{file_attributes|join(', ')}})<br>
+        {%- endif -%}
 
             <a class="link" title="{{file_name|safe}}" href="/files/file/{{post.message_id}}/{{quote(file_name)}}">
         {%- if file_name|safe|length > 25 -%}
@@ -99,7 +100,7 @@
 
         {% if not post.file_currently_downloading and
               not post.file_do_not_download and
-              (post.file_decoded or (post.file_url and post.file_download_successful)) and
+              (post.file_decoded or ((post.file_url or post.file_torrent_file_hash) and post.file_download_successful)) and
               (attach[file_name]["extension"] in config.FILE_EXTENSIONS_IMAGE +
                                                  config.FILE_EXTENSIONS_VIDEO +
                                                  config.FILE_EXTENSIONS_AUDIO) %}

@@ -8,12 +8,10 @@ from utils.download import process_attachments
 
 logger = logging.getLogger('bitchan.hashing')
 
-DB_PATH = 'sqlite:///' + config.DATABASE_BITCHAN
-
 
 def regen_all_hashes():
     list_ids = []
-    with session_scope(DB_PATH) as new_session:
+    with session_scope(config.DB_PATH) as new_session:
         for each_message in new_session.query(Messages).all():
             list_ids.append(each_message.message_id)
 
@@ -22,7 +20,7 @@ def regen_all_hashes():
             extract_path = f"{config.FILE_DIRECTORY}/{message_id}"
             errors_files, media_info, message_steg = process_attachments(
                 message_id, extract_path, progress=False)
-            with session_scope(DB_PATH) as new_session:
+            with session_scope(config.DB_PATH) as new_session:
                 message = new_session.query(Messages).filter(
                     Messages.message_id == message_id).first()
                 if message:

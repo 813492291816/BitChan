@@ -4,6 +4,7 @@ import time
 
 import config
 from .alembic import Alembic
+from .auth import Auth
 from .chans import AddressBook
 from .chans import AdminMessageStore
 from .chans import BanedHashes
@@ -27,7 +28,9 @@ from .maintenance import PostDeletePasswordHashes
 from .maintenance import SessionInfo
 from .settings import Flags
 from .settings import GlobalSettings
+from .settings import RateLimit
 from .settings import UploadSites
+from .settings import UploadTorrents
 
 logger = logging.getLogger('bitchan.db_models')
 

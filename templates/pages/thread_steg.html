@@ -255,13 +255,13 @@ Board
     {% set message_op_steg = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
-           .filter(board["messages"].message_steg.isnot("{}"))
+           .filter(board["messages"].message_steg != "{}")
            .first() %}
 
     {% set message_replies_steg = board["messages"].query
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
-           .filter(board["messages"].message_steg.isnot("{}"))
+           .filter(board["messages"].message_steg != "{}")
            .order_by(board["messages"].timestamp_sent.asc()) %}
 
     {% if message_op %}

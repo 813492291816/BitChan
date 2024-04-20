@@ -16,7 +16,9 @@ from threading import Thread
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pytz
 from PIL import Image
+from feedgen.feed import FeedGenerator
 from flask import current_app
 from flask import make_response
 from flask import redirect
@@ -37,6 +39,8 @@ from werkzeug.wrappers import Response
 import config
 from bitchan_client import DaemonCom
 from database.models import AddressBook
+from database.models import Alembic
+from database.models import Auth
 from database.models import Chan
 from database.models import Command
 from database.models import EndpointCount
@@ -70,7 +74,9 @@ from utils.routes import allowed_access
 from utils.routes import get_logged_in_user_name
 from utils.routes import get_onion_info
 from utils.routes import page_dict
+from utils.routes import rate_limit_check
 from utils.shared import add_mod_log_entry
+from utils.shared import check_tld_i2p
 from utils.shared import regenerate_card_popup_post_html
 
 logger = logging.getLogger('bitchan.routes_main')
@@ -89,6 +95,11 @@ def global_var():
 
 @blueprint.before_request
 def before_view():
+    try:  # Don't require login for RSS feed
+        if request.url_rule.rule.startswith("/rss/"):
+            return
+    except:
+        pass
     if not is_verified():
         full_path_b64 = "0"
         if request.method == "GET":
@@ -119,6 +130,8 @@ def index():
     allowed, allow_msg = allowed_access("can_view")
     if not allowed:
         return allow_msg
+
+    global_admin, _ = allowed_access("is_global_admin")
 
     status_msg = {"status_message": []}
     settings = GlobalSettings.query.first()
@@ -154,14 +167,22 @@ def index():
         board_order = Chan.timestamp_received.desc()
         thread_order_desc = Threads.timestamp_received.desc()
 
-    boards = Chan.query.filter(
-        Chan.type == "board",
-        Chan.unlisted.is_(False)).order_by(board_order)
+    if global_admin:
+        boards = Chan.query.filter(
+            Chan.type == "board").order_by(board_order)
 
-    lists = Chan.query.filter(
-        Chan.type == "list",
-        Chan.unlisted.is_(False)).order_by(
-            Chan.list_timestamp_changed.desc())
+        lists = Chan.query.filter(
+            Chan.type == "list").order_by(Chan.list_timestamp_changed.desc())
+    else:
+        boards = Chan.query.filter(
+            Chan.type == "board",
+            Chan.unlisted.is_(False),
+            Chan.restricted.is_(False)).order_by(board_order)
+
+        lists = Chan.query.filter(
+            Chan.type == "list",
+            Chan.unlisted.is_(False),
+            Chan.restricted.is_(False)).order_by(Chan.list_timestamp_changed.desc())
 
     count = 0
     for each_board in boards.all():
@@ -279,6 +300,144 @@ def index():
                            status_msg=status_msg)
 
 
+@blueprint.route('/rss/<url>/<board_address>/<thread_id>')
+@count_views
+def rss(url, board_address, thread_id):
+    """Generate RSS feed"""
+    settings = GlobalSettings.query.first()
+    if ((url == "tor" and not settings.rss_enable) or  # Check if enabled
+            (url == "i2p" and not settings.rss_enable_i2p)):
+        return "DISABLED"
+
+    if url == "tor":
+        url_domain = settings.rss_url
+    elif url == "i2p":
+        url_domain = settings.rss_url_i2p
+    else:
+        return "PAGE NOT FOUND"
+
+    # Check rate limit
+    if rate_limit_check(settings.rss_rate_limit_number_requests, settings.rss_rate_limit_period_sec, "RSS"):
+        return "RATE LIMITED"
+
+    if board_address != "0":
+        # Check if board/thread exists
+        chan = Chan.query.filter(Chan.address == board_address).first()
+        if not chan:
+            return "BOARD NOT FOUND"
+
+    if thread_id != "0":
+        if len(thread_id) == 12:
+            thread = Threads.query.filter(Threads.thread_hash_short == thread_id).first()
+        else:
+            thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
+        if not thread:
+            return "THREAD NOT FOUND"
+
+    # Don't allow posts from restricted boards or hidden threads/posts to be returned
+    posts = Messages.query.join(Threads).join(Chan).filter(and_(
+        Chan.unlisted.is_(False),
+        Chan.restricted.is_(False),
+        Threads.hide.is_(False),
+        Messages.hide.is_(False)))
+
+    fg = FeedGenerator()
+
+    # Generate the RSS file name, feed title and link, and select proper posts (for board or thread)
+    if thread_id != "0" and thread:
+        fg.description(f'Board Description: {chan.description}')
+        fn = f"bitchan_{chan.label}_thread_{thread.subject}.rss"
+        fg.title(f'/{chan.label}/ Thread Posts: {thread.subject}')
+        fg.link(href=f'{url_domain}/thread/{board_address}/{thread.thread_hash_short}')
+        posts = posts.filter(Threads.thread_hash == thread.thread_hash)
+    elif board_address != "0" and chan:
+        fg.description(f'Board Description: {chan.description}')
+        fn = f"bitchan_{chan.label}.rss"
+        fg.title(f'/{chan.label}/ Board Posts')
+        fg.link(href=f'{url_domain}/board/{board_address}/1')
+        posts = posts.filter(Chan.address == board_address)
+    elif board_address == "0" and thread_id == "0":
+        fg.description(f'BitChan')
+        fn = f"bitchan.rss"
+        fg.title(f'All Posts')
+        fg.link(href=f'{url_domain}')
+    else:
+        return "INVALID RSS REQUEST"
+
+    # Use the correct timestamp for post selection/sorting
+    if settings.post_timestamp == 'received':
+        posts = posts.order_by(Messages.timestamp_received.desc())
+    else:
+        posts = posts.order_by(Messages.timestamp_sent.desc())
+
+    # Limit number of posts in feed
+    try:
+        last = int(request.args.get('last'))
+    except:
+        last = 0
+    if 0 < last < settings.rss_number_posts:
+        posts = posts.limit(last)
+    else:
+        posts = posts.limit(settings.rss_number_posts)
+
+    for post in posts.all():
+        content = ""
+
+        # Check for attachments
+        try:
+            file_list = []
+            file_order = json.loads(post.file_order)
+            for file in file_order:
+                if file:
+                    file_list.append(file)
+            if file_list:
+                content += f"[Attachments: {', '.join(file_list)}]<br/><br/>"
+        except:
+            pass
+
+        try:
+            fe = fg.add_entry()
+            fe.link(href=f"{url_domain}/thread/{post.thread.chan.address}/{post.thread.thread_hash_short}#{post.post_id.upper()}")
+            fe.guid(post.post_id, permalink=True)
+            fe.author(name=post.address_from)
+
+            # Use the correct timestamp for each post
+            if settings.post_timestamp == 'received':
+                fe.pubDate(datetime.datetime.fromtimestamp(
+                    post.timestamp_received, tz=pytz.timezone(settings.post_timestamp_timezone)))
+            else:
+                fe.pubDate(datetime.datetime.fromtimestamp(
+                    post.timestamp_sent, tz=pytz.timezone(settings.post_timestamp_timezone)))
+
+            # Indicate if post is OP or Reply
+            if post.is_op:
+                fe.title(f"{post.thread.subject} (OP)")
+            else:
+                fe.title(f"{post.thread.subject} (Reply)")
+
+            # Determine if content will be plain text or include HTML formatting
+            if settings.rss_use_html_posts and post.popup_html:
+                # HTML content doesn't get to choose truncation length, uses whichever the popup HTML generator has set
+                content += post.popup_html
+                fe.content(content=content, type='CDATA')
+            else:
+                if len(post.message) > settings.rss_char_length:
+                    is_truncated, str_trunc = truncate(post.message, settings.rss_char_length)
+                    content += f'{str_trunc}...'
+                    fe.description(content)
+                else:
+                    content += post.message
+                    fe.description(content)
+        except:
+            logger.exception(f"Exception adding post {post.post_id.upper()} to RSS")
+
+    response = make_response(fg.rss_str())
+    response.headers.set('Content-Type', 'application/rss+xml')
+    response.headers.set('Content-Disposition', f'attachment; filename={fn}')
+
+    return response
+
+
 @blueprint.route('/options_save', methods=('GET', 'POST'))
 @count_views
 @rate_limit
@@ -368,6 +527,13 @@ def overboard(address, current_page):
     if not allowed:
         return allow_msg
 
+    chan = Chan.query.filter(Chan.address == address).first()
+    global_admin, _ = allowed_access("is_global_admin")
+
+    if address != '0' and (not chan or (not global_admin and chan.restricted)):
+        return render_template("pages/404-board.html",
+                               board_address=address)
+
     settings = GlobalSettings.query.first()
     status_msg = {"status_message": []}
     now = time.time()
@@ -394,6 +560,7 @@ def overboard(address, current_page):
         if chan:
             overboard_info["single_board"] = True
             overboard_info["unlisted"] = chan.unlisted
+            overboard_info["restricted"] = chan.restricted
             overboard_info["board_label"] = chan.label
             overboard_info["board_description"] = chan.description
             overboard_info["board_address"] = chan.address
@@ -473,8 +640,12 @@ def overboard(address, current_page):
         post_start = (current_page - 1) * per_page
         post_end = (current_page * per_page) - 1
 
-        threads = Threads.query.join(Chan).filter(
-            Chan.unlisted.is_(False)).order_by(thread_order_desc)
+        if global_admin:
+            threads = Threads.query.join(Chan).order_by(thread_order_desc)
+        else:
+            threads = Threads.query.join(Chan).filter(and_(
+                Chan.unlisted.is_(False),
+                Chan.restricted.is_(False))).order_by(thread_order_desc)
         overboard_info["thread_count"] = threads.count()
 
         for i, each_thread in enumerate(threads.all()):
@@ -541,6 +712,20 @@ def unlisted():
                            status_msg=status_msg)
 
 
+@blueprint.route('/restricted')
+@count_views
+@rate_limit
+def restricted():
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    if not global_admin:
+        return allow_msg
+
+    status_msg = {"status_message": []}
+
+    return render_template("pages/restricted.html",
+                           status_msg=status_msg)
+
+
 def delete_posts_threads(message_ids, user_from=None):
     thread_hashes = []
     board_addresses = []
@@ -599,6 +784,13 @@ def recent_posts(address, current_page):
     if not allowed:
         return allow_msg
 
+    chan = Chan.query.filter(Chan.address == address).first()
+    global_admin, _ = allowed_access("is_global_admin")
+
+    if address != '0' and (not chan or (not global_admin and chan.restricted)):
+        return render_template("pages/404-board.html",
+                               board_address=address)
+
     form_recent = forms_board.Recent()
 
     settings = GlobalSettings.query.first()
@@ -645,21 +837,18 @@ def recent_posts(address, current_page):
                     if each_input.startswith("selectbulk_"):
                         delete_bulk_message_ids.append(each_input.split("_")[1])
 
-                lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-                    try:
-                        user_from = None
-                        if janitor:
-                            user_from = get_logged_in_user_name()
+                try:
+                    user_from = None
+                    if janitor:
+                        user_from = get_logged_in_user_name()
 
-                        delete_posts_threads(delete_bulk_message_ids, user_from=user_from)
-                        status_msg['status_message'].append("Deleted posts/threads")
-                        status_msg['status_title'] = "Success"
-                    except Exception as err:
-                        logger.error("Exception while deleting posts/threads: {}".format(err))
-                    finally:
-                        daemon_com.signal_generate_post_numbers()
-                        lf.lock_release(config.LOCKFILE_MSG_PROC)
+                    delete_posts_threads(delete_bulk_message_ids, user_from=user_from)
+                    status_msg['status_message'].append("Deleted posts/threads")
+                    status_msg['status_title'] = "Success"
+                except Exception as err:
+                    logger.error("Exception while deleting posts/threads: {}".format(err))
+                finally:
+                    daemon_com.signal_generate_post_numbers()
             except:
                 logger.exception("deleting posts/threads")
 
@@ -692,8 +881,12 @@ def recent_posts(address, current_page):
                     recent_results.append(result)
                 msg_total += 1
     else:
-        messages = Messages.query.join(Threads).join(Chan).filter(
-            Chan.unlisted.is_(False)).order_by(post_order_desc)
+        if global_admin:
+            messages = Messages.query.order_by(post_order_desc)
+        else:
+            messages = Messages.query.join(Threads).join(Chan).filter(and_(
+                Chan.unlisted.is_(False),
+                Chan.restricted.is_(False))).order_by(post_order_desc)
         msg_count = messages.count()
         for i, result in enumerate(messages.all()):
             if i > post_end:
@@ -717,6 +910,8 @@ def search(search_b64, current_page):
     allowed, allow_msg = allowed_access("can_view")
     if not allowed:
         return allow_msg
+
+    global_admin, _ = allowed_access("is_global_admin")
 
     settings = GlobalSettings.query.first()
     status_msg = {"status_message": []}
@@ -742,7 +937,7 @@ def search(search_b64, current_page):
                 search_string_b64 = base64.urlsafe_b64encode(search_string.encode()).decode()
                 if not search_string_b64:
                     search_string_b64 = "0"
-                status_msg['status_title'] = "Success"
+                status_msg['status_title'] = "Success_Silent"
 
         elif form_search.bulk_delete.data:
             global_admin, allow_msg = allowed_access("is_global_admin")
@@ -756,21 +951,18 @@ def search(search_b64, current_page):
                     if each_input.startswith("selectbulk_"):
                         delete_bulk_message_ids.append(each_input.split("_")[1])
 
-                lf = LF()
-                if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-                    try:
-                        user_from = None
-                        if janitor:
-                            user_from = get_logged_in_user_name()
+                try:
+                    user_from = None
+                    if janitor:
+                        user_from = get_logged_in_user_name()
 
-                        delete_posts_threads(delete_bulk_message_ids, user_from=user_from)
-                        status_msg['status_message'].append("Deleted posts/threads")
-                        status_msg['status_title'] = "Success"
-                    except Exception as err:
-                        logger.error("Exception while deleting posts/threads: {}".format(err))
-                    finally:
-                        daemon_com.signal_generate_post_numbers()
-                        lf.lock_release(config.LOCKFILE_MSG_PROC)
+                    delete_posts_threads(delete_bulk_message_ids, user_from=user_from)
+                    status_msg['status_message'].append("Deleted posts/threads")
+                    status_msg['status_title'] = "Success"
+                except Exception as err:
+                    logger.error("Exception while deleting posts/threads: {}".format(err))
+                finally:
+                    daemon_com.signal_generate_post_numbers()
             except:
                 logger.exception("deleting posts/threads")
 
@@ -780,10 +972,15 @@ def search(search_b64, current_page):
     arg_filter_hidden = request.args.get('fh', default=False, type=bool)
     arg_filter_op = request.args.get('fo', default=False, type=bool)
     arg_search_type = request.args.get('st', default="posts", type=str)
+    arg_search_boards = request.args.get('sb', default="all", type=str)
 
     search_type = arg_search_type
+    search_boards = arg_search_boards
+
     if form_search.search_type.data:
         search_type = form_search.search_type.data
+    if form_search.search_boards.data:
+        search_boards = form_search.search_boards.data
 
     filter_hidden = False
     filter_op = False
@@ -796,6 +993,12 @@ def search(search_b64, current_page):
     search_threads = Threads.query
     search_msgs = Messages.query
 
+    if search_boards != 'all':
+        if search_type == "posts":
+            search_msgs = search_msgs.join(Threads).join(Chan).filter(Chan.address == search_boards)
+        elif search_type == "threads":
+            search_threads = search_threads.join(Chan).filter(Chan.address == search_boards)
+
     if search_string and len(search_string) > 2:
         if search_type == "posts":
             search_msgs = search_msgs.filter(or_(
@@ -805,7 +1008,7 @@ def search(search_b64, current_page):
                      Messages.is_op.is_(True))
             ))
         elif search_type == "threads":
-            search_threads = Threads.query.join(Messages).filter(and_(
+            search_threads = search_threads.join(Messages).filter(and_(
                 Messages.is_op.is_(True),
                 or_(Messages.message.contains(search_string),
                     Messages.message_id.contains(search_string.lower()),
@@ -837,8 +1040,12 @@ def search(search_b64, current_page):
         if settings.post_timestamp == 'received':
             post_order_desc = Messages.timestamp_received.desc()
 
-        search_msgs = search_msgs.join(Threads).join(Chan).filter(
-            Chan.unlisted.is_(False)).order_by(post_order_desc)
+        if global_admin:
+            search_msgs = search_msgs.order_by(post_order_desc)
+        else:
+            search_msgs = search_msgs.join(Threads).join(Chan).filter(and_(
+                Chan.unlisted.is_(False),
+                Chan.restricted.is_(False))).order_by(post_order_desc)
         result_count = search_msgs.count()
 
     elif search_type == "threads":
@@ -846,8 +1053,12 @@ def search(search_b64, current_page):
         if settings.post_timestamp == 'received':
             thread_order_desc = Threads.timestamp_received.desc()
 
-        search_threads = search_threads.join(Chan).filter(
-            Chan.unlisted.is_(False)).order_by(thread_order_desc)
+        if global_admin:
+            search_threads = search_threads.order_by(thread_order_desc)
+        else:
+            search_threads = search_threads.join(Chan).filter(and_(
+                Chan.unlisted.is_(False),
+                Chan.restricted.is_(False))).order_by(thread_order_desc)
         result_count = search_threads.count()
 
     search_start = (current_page - 1) * settings.results_per_page_search
@@ -873,6 +1084,7 @@ def search(search_b64, current_page):
                            filter_op=filter_op,
                            now=time.time(),
                            result_count=result_count,
+                           search_boards=search_boards,
                            search_results=search_results,
                            search_string=search_string,
                            search_string_b64=search_string_b64,
@@ -915,23 +1127,19 @@ def mod_log(address, current_page):
                     status_msg['status_message'].append("Must select at least one entry to delete")
 
                 if not status_msg['status_message']:
-                    lf = LF()
-                    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-                        try:
-                            for each_id in delete_bulk_mod_log_ids:
-                                mod_log_entry = ModLog.query.filter(ModLog.id == each_id).first()
-                                if mod_log_entry:
-                                    mod_log_entry.delete()
+                    try:
+                        for each_id in delete_bulk_mod_log_ids:
+                            mod_log_entry = ModLog.query.filter(ModLog.id == each_id).first()
+                            if mod_log_entry:
+                                mod_log_entry.delete()
 
-                            status_msg['status_message'].append(
-                                "Deleted {} Mod Log {}".format(
-                                    len(delete_bulk_mod_log_ids),
-                                    "entries" if len(delete_bulk_mod_log_ids) > 1 else "entry"))
-                            status_msg['status_title'] = "Success"
-                        except Exception as err:
-                            logger.error("Exception while deleting Mod Log entries: {}".format(err))
-                        finally:
-                            lf.lock_release(config.LOCKFILE_MSG_PROC)
+                        status_msg['status_message'].append(
+                            "Deleted {} Mod Log {}".format(
+                                len(delete_bulk_mod_log_ids),
+                                "entries" if len(delete_bulk_mod_log_ids) > 1 else "entry"))
+                        status_msg['status_title'] = "Success"
+                    except Exception as err:
+                        logger.error("Exception while deleting Mod Log entries: {}".format(err))
             except:
                 logger.exception("deleting Mod Log entries")
 
@@ -947,46 +1155,42 @@ def mod_log(address, current_page):
                     status_msg['status_message'].append("Must select at least one entry to delete")
 
                 if not status_msg['status_message']:
-                    lf = LF()
-                    if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-                        try:
-                            for each_id in delete_bulk_mod_log_ids:
-                                mod_log_entry = ModLog.query.filter(ModLog.id == each_id).first()
-                                if mod_log_entry:
-                                    log_description = ""
-                                    if form_modlog.bulk_restore_thread_mod_log.data and mod_log_entry.thread_hash:
-                                        # Restore thread
-                                        thread = Threads.query.filter(
-                                            Threads.thread_hash == mod_log_entry.thread_hash).first()
-                                        if thread:
-                                            log_description = 'Restore thread "{}"'.format(thread.subject)
-                                            restore_thread(mod_log_entry.thread_hash)
-                                    elif form_modlog.bulk_restore_post_mod_log.data and mod_log_entry.message_id:
-                                        # Restore post
-                                        message = Messages.query.filter(
-                                            Messages.message_id == mod_log_entry.message_id).first()
-                                        if message:
-                                            log_description = 'Restore post'
-                                            restore_post(mod_log_entry.message_id)
+                    try:
+                        for each_id in delete_bulk_mod_log_ids:
+                            mod_log_entry = ModLog.query.filter(ModLog.id == each_id).first()
+                            if mod_log_entry:
+                                log_description = ""
+                                if form_modlog.bulk_restore_thread_mod_log.data and mod_log_entry.thread_hash:
+                                    # Restore thread
+                                    thread = Threads.query.filter(
+                                        Threads.thread_hash == mod_log_entry.thread_hash).first()
+                                    if thread:
+                                        log_description = 'Restore thread "{}"'.format(thread.subject)
+                                        restore_thread(mod_log_entry.thread_hash)
+                                elif form_modlog.bulk_restore_post_mod_log.data and mod_log_entry.message_id:
+                                    # Restore post
+                                    message = Messages.query.filter(
+                                        Messages.message_id == mod_log_entry.message_id).first()
+                                    if message:
+                                        log_description = 'Restore post'
+                                        restore_post(mod_log_entry.message_id)
 
-                                    user_from_tmp = get_logged_in_user_name()
-                                    user_from = user_from_tmp if user_from_tmp else None
+                                user_from_tmp = get_logged_in_user_name()
+                                user_from = user_from_tmp if user_from_tmp else None
 
-                                    if log_description:
-                                        add_mod_log_entry(
-                                            log_description,
-                                            message_id=mod_log_entry.message_id,
-                                            user_from=user_from,
-                                            board_address=mod_log_entry.board_address,
-                                            thread_hash=mod_log_entry.thread_hash)
+                                if log_description:
+                                    add_mod_log_entry(
+                                        log_description,
+                                        message_id=mod_log_entry.message_id,
+                                        user_from=user_from,
+                                        board_address=mod_log_entry.board_address,
+                                        thread_hash=mod_log_entry.thread_hash)
 
-                            status_msg['status_message'].append(
-                                "Restored post/thread from Mod Log")
-                            status_msg['status_title'] = "Success"
-                        except Exception as err:
-                            logger.error("Exception while restoring Mod Log entries: {}".format(err))
-                        finally:
-                            lf.lock_release(config.LOCKFILE_MSG_PROC)
+                        status_msg['status_message'].append(
+                            "Restored post/thread from Mod Log")
+                        status_msg['status_title'] = "Success"
+                    except Exception as err:
+                        logger.error("Exception while restoring Mod Log entries: {}".format(err))
             except:
                 logger.exception("restoring Mod Log entries")
 
@@ -1179,6 +1383,7 @@ def configure():
             if settings.post_timestamp_hour != form_settings.post_timestamp_hour.data:
                 timestamp_change = True
                 settings.post_timestamp_hour = form_settings.post_timestamp_hour.data
+            settings.title_text = form_settings.title_text.data
             settings.home_page_msg = form_settings.home_page_msg.data
             settings.html_head = form_settings.html_head.data
             settings.html_body = form_settings.html_body.data
@@ -1202,22 +1407,65 @@ def configure():
             # Security
             settings.enable_captcha = form_settings.enable_captcha.data
             settings.enable_verification = form_settings.enable_verification.data
+            settings.hide_version = form_settings.hide_version.data
             settings.enable_page_rate_limit = form_settings.enable_page_rate_limit.data
             settings.max_requests_per_period = form_settings.max_requests_per_period.data
             settings.rate_limit_period_seconds = form_settings.rate_limit_period_seconds.data
-            settings.hide_all_board_list_passphrases = form_settings.hide_all_board_list_passphrases.data
+            settings.remote_delete_action = form_settings.remote_delete_action.data
+            settings.disable_downloading_upload_site = form_settings.disable_downloading_upload_site.data
+            settings.disable_downloading_i2p_torrent = form_settings.disable_downloading_i2p_torrent.data
+            if (form_settings.ttl_seed_i2p_torrent_op_days.data <= 0 or
+                    form_settings.ttl_seed_i2p_torrent_reply_days.data <= 0):
+                status_msg['status_message'].append("I2P seeding time cannot be less than 0 days.")
+            settings.ttl_seed_i2p_torrent_op_days = form_settings.ttl_seed_i2p_torrent_op_days.data
+            settings.ttl_seed_i2p_torrent_reply_days = form_settings.ttl_seed_i2p_torrent_reply_days.data
+
+            # RSS
+            settings.rss_enable = form_settings.rss_enable.data
+            settings.rss_enable_i2p = form_settings.rss_enable_i2p.data
+            settings.rss_url = form_settings.rss_url.data
+            settings.rss_url_i2p = form_settings.rss_url_i2p.data
+            settings.rss_number_posts = form_settings.rss_number_posts.data
+            settings.rss_char_length = form_settings.rss_char_length.data
+            settings.rss_use_html_posts = form_settings.rss_use_html_posts.data
+            settings.rss_rate_limit_number_requests = form_settings.rss_rate_limit_number_requests.data
+            settings.rss_rate_limit_period_sec = form_settings.rss_rate_limit_period_sec.data
 
             # Kiosk mode
+            if not settings.enable_kiosk_mode and form_settings.enable_kiosk_mode.data:
+                # Enabling kiosk mode
+                # Check if an admin user exists
+                count_admins = Auth.query.filter(Auth.global_admin.is_(True)).count()
+                if not count_admins:
+                    status_msg['status_message'].append(
+                        f"Cannot enable Kiosk Mode when no Kiosk Global Admins exist. "
+                        f"If you do this, you will not be able to log in to the Kiosk. "
+                        f"Go to the Kiosk User Management page and add a Global Admin user.")
             settings.enable_kiosk_mode = form_settings.enable_kiosk_mode.data
             settings.kiosk_login_to_view = form_settings.kiosk_login_to_view.data
             settings.kiosk_allow_posting = form_settings.kiosk_allow_posting.data
             settings.kiosk_allow_gpg = form_settings.kiosk_allow_gpg.data
+            settings.kiosk_disable_i2p_torrent_attach = form_settings.kiosk_disable_i2p_torrent_attach.data
+            settings.kiosk_disable_torrent_file_download = form_settings.kiosk_disable_torrent_file_download.data
             settings.kiosk_disable_bm_attach = form_settings.kiosk_disable_bm_attach.data
             settings.kiosk_allow_download = form_settings.kiosk_allow_download.data
             settings.kiosk_post_rate_limit = form_settings.kiosk_post_rate_limit.data
             settings.kiosk_attempts_login = form_settings.kiosk_attempts_login.data
             settings.kiosk_ban_login_sec = form_settings.kiosk_ban_login_sec.data
             settings.kiosk_only_admin_access_mod_log = form_settings.kiosk_only_admin_access_mod_log.data
+
+            try:
+                list_i2p_trackers = form_settings.i2p_trackers.data.replace(" ", "").split("\n")
+
+                # Ensure all trackers have i2p TLD
+                non_i2p_urls = check_tld_i2p(list_i2p_trackers)
+                if non_i2p_urls:
+                    status_msg['status_message'].append(
+                        "Improper I2P Tracker format. Must be I2P URLs separated by commas.")
+                else:
+                    settings.i2p_trackers = json.dumps(list_i2p_trackers)
+            except:
+                status_msg['status_message'].append("Improper I2P Tracker format. Must be I2P URLs separated by commas.")
 
             if (form_settings.kiosk_max_post_size_bytes.data < 0 or
                     form_settings.kiosk_max_post_size_bytes.data > config.BM_PAYLOAD_MAX_SIZE):
@@ -1241,11 +1489,10 @@ def configure():
                 status_msg['status_title'] = "Success"
                 status_msg['status_message'].append("Settings saved without errors.")
             else:
-                status_msg['status_message'].append("Settings saved (except those with errors).")
-
-            settings.save()
+                status_msg['status_title'] = "Error"
 
             if status_msg['status_title'] == "Success":
+                settings.save()
                 if update_bm_settings:
                     change_bm_settings = Thread(
                         target=daemon_com.bm_change_connection_settings)
@@ -1338,7 +1585,7 @@ def configure():
             return response
 
         elif form_settings.export_address_book.data:
-            def export_address_book(address_book):
+            def export_address_book(add_book):
                 data = StringIO()
                 w = csv.writer(data)
 
@@ -1347,7 +1594,7 @@ def configure():
                 data.seek(0)
                 data.truncate(0)
 
-                for each_ab in address_book:
+                for each_ab in add_book:
                     w.writerow((
                         each_ab.label,
                         each_ab.address
@@ -1435,23 +1682,59 @@ def configure():
                 "Generating a new bitmessage onion address.")
 
         elif form_settings.save_chan_options.data:
+            # Get submitted unlisted and restricted addresses
             chans_unlisted = []
+            chans_restricted = []
+            chans_hide_passphrase = []
             for each_input in request.form:
                 if each_input.startswith("option_unlisted_"):
                     chans_unlisted.append(each_input.split("_")[2])
+                if each_input.startswith("option_restricted_"):
+                    chans_restricted.append(each_input.split("_")[2])
+                if each_input.startswith("option_hide_passphrase_"):
+                    chans_hide_passphrase.append(each_input.split("_")[3])
+
             chans = Chan.query.all()
             for each_chan in chans:
-                options_changed = False
+                # Change unlisted status
+                unlisted_changed = False
                 if each_chan.address in chans_unlisted:
                     if not each_chan.unlisted:
-                        options_changed = True
+                        unlisted_changed = True
                     each_chan.unlisted = True
                 else:
                     if each_chan.unlisted:
-                        options_changed = True
+                        unlisted_changed = True
                     each_chan.unlisted = False
-                if options_changed:
+                if unlisted_changed:
                     each_chan.save()
+
+                # Change restricted status
+                restricted_changed = False
+                if each_chan.address in chans_restricted:
+                    if not each_chan.restricted:
+                        restricted_changed = True
+                    each_chan.restricted = True
+                else:
+                    if each_chan.restricted:
+                        restricted_changed = True
+                    each_chan.restricted = False
+                if restricted_changed:
+                    each_chan.save()
+
+                # Change hide_passphrase status
+                hide_passphrase_changed = False
+                if each_chan.address in chans_hide_passphrase:
+                    if not each_chan.hide_passphrase:
+                        hide_passphrase_changed = True
+                    each_chan.hide_passphrase = True
+                else:
+                    if each_chan.hide_passphrase:
+                        hide_passphrase_changed = True
+                    each_chan.hide_passphrase = False
+                if hide_passphrase_changed:
+                    each_chan.save()
+
             status_msg['status_title'] = "Success"
             status_msg['status_message'].append("Set chan options.")
 
@@ -1466,8 +1749,15 @@ def configure():
      tor_enabled_rand, tor_address_rand,
      tor_enabled_cus, tor_address_cus) = get_onion_info()
 
+    settings = GlobalSettings.query.first()
+    try:
+        i2p_trackers = "\n".join(json.loads(settings.i2p_trackers))
+    except:
+        i2p_trackers = ""
+
     return render_template("pages/configure.html",
                            form_settings=form_settings,
+                           i2p_trackers=i2p_trackers,
                            status_msg=status_msg,
                            tor_address_bm=tor_address_bm,
                            tor_enabled_bm=tor_enabled_bm,
@@ -1644,6 +1934,7 @@ def generate_charts(past_minutes=(60 * 24)):
     x_axis_ts = []
     y_wait = []
     y_test = []
+    y_success = []
     ts_day_last = None
     last_epoch = None
     charts = {}
@@ -1672,10 +1963,17 @@ def generate_charts(past_minutes=(60 * 24)):
                 data[entry.timestamp_epoch]["thread"][entry.thread_hash] = {}
             if entry.new_posts:
                 data[entry.timestamp_epoch]["thread"][entry.thread_hash]["new_posts"] = entry.new_posts
+            if entry.rss:
+                data[entry.timestamp_epoch]["thread"][entry.thread_hash]["rss"] = entry.rss
             if entry.requests:
                 data[entry.timestamp_epoch]["thread"][entry.thread_hash]["requests"] = entry.requests
         if entry.chan_address:
-            data[entry.timestamp_epoch]["chan"][entry.chan_address] = entry.requests
+            if entry.chan_address not in data[entry.timestamp_epoch]["chan"]:
+                data[entry.timestamp_epoch]["chan"][entry.chan_address] = {}
+            if entry.rss:
+                data[entry.timestamp_epoch]["chan"][entry.chan_address]["rss"] = entry.rss
+            if entry.requests:
+                data[entry.timestamp_epoch]["chan"][entry.chan_address]["requests"] = entry.requests
         if entry.endpoint and not entry.thread_hash and not entry.chan_address:
             data[entry.timestamp_epoch]["endpoint"][entry.endpoint] = entry.requests
 
@@ -1731,12 +2029,25 @@ def generate_charts(past_minutes=(60 * 24)):
                         else:
                             verify_data[last_epoch]["verify_test"] += data[ts]["endpoint"][endpoint]
 
+                if endpoint == "verify_success":
+                    if past_minutes <= 1440:
+                        if ts not in verify_data:
+                            verify_data[ts] = {}
+                        verify_data[ts]["verify_success"] = data[ts]["endpoint"][endpoint]
+                    else:
+                        if last_epoch not in verify_data:
+                            verify_data[last_epoch] = {}
+                        if "verify_success" not in verify_data[last_epoch]:
+                            verify_data[last_epoch]["verify_success"] = data[ts]["endpoint"][endpoint]
+                        else:
+                            verify_data[last_epoch]["verify_success"] += data[ts]["endpoint"][endpoint]
+
                 if ts_day != ts_day_last:
                     ts_day_last = ts_day
                     last_epoch = ts_epoch
 
     for ts in verify_data:
-        if "verify_wait" in verify_data[ts] or "verify_test" in verify_data[ts]:
+        if "verify_wait" in verify_data[ts] or "verify_test" in verify_data[ts] or "verify_success" in verify_data[ts]:
             if past_minutes <= 1440:
                 x_axis_ts.append(datetime.datetime.fromtimestamp(int(ts)).strftime('%Y-%m-%d %H:%M'))
             else:
@@ -1749,6 +2060,10 @@ def generate_charts(past_minutes=(60 * 24)):
                 y_test.append(verify_data[ts]["verify_test"])
             else:
                 y_test.append(0)
+            if "verify_success" in verify_data[ts]:
+                y_success.append(verify_data[ts]["verify_success"])
+            else:
+                y_success.append(0)
 
     if x_axis_ts:
         x_axis = np.arange(len(x_axis_ts))
@@ -1761,8 +2076,9 @@ def generate_charts(past_minutes=(60 * 24)):
             time_start.strftime('%Y-%m-%d %H:%M'),
             time_end.strftime('%Y-%m-%d %H:%M')))
         plt.ylabel('Requests')
-        plt.bar(x_axis - 0.2, y_wait, 0.4, label='Wait')
-        plt.bar(x_axis + 0.2, y_test, 0.4, label='Test')
+        plt.bar(x_axis - 0.25, y_wait, 0.25, label='Wait')
+        plt.bar(x_axis, y_test, 0.25, label='Test')
+        plt.bar(x_axis + 0.25, y_success, 0.25, label='Success')
         plt.xticks(x_axis, x_axis_ts, rotation=90)
         plt.tight_layout()
         plt.legend()
@@ -1774,10 +2090,17 @@ def generate_charts(past_minutes=(60 * 24)):
 
     for ts in data:
         if "chan" in data[ts] and data[ts]["chan"]:
-            for address, value in data[ts]["chan"].items():
-                if address not in boards:
-                    boards[address] = 0
-                boards[address] += value
+            for address, categories in data[ts]["chan"].items():
+                for category, value in categories.items():
+                    if address not in boards:
+                        boards[address] = {'requests': 0, 'rss': 0, 'total': 0}
+
+                    if category == "rss":
+                        boards[address]['rss'] += value
+                    elif category == "requests":
+                        boards[address]['requests'] += value
+                    boards[address]['total'] += value
+
 
     # Combine thread hashes and sum counts
     for ts in data:
@@ -1794,9 +2117,11 @@ def generate_charts(past_minutes=(60 * 24)):
                         save_hash = thread_hash
 
                     if save_hash not in threads:
-                        threads[save_hash] = {'requests': 0, 'requests_update': 0, 'total': 0}
+                        threads[save_hash] = {'requests': 0, 'requests_update': 0, 'rss': 0, 'total': 0}
 
-                    if category == "new_posts":
+                    if category == "rss":
+                        threads[save_hash]['rss'] += value
+                    elif category == "new_posts":
                         threads[save_hash]['requests_update'] += value
                     elif category == "requests":
                         threads[save_hash]['requests'] += value
@@ -1806,7 +2131,11 @@ def generate_charts(past_minutes=(60 * 24)):
     threads_sorted = {}
     for each_key in threads_sorted_keys:
         threads_sorted[each_key] = threads[each_key]
-    boards_sorted = dict(sorted(boards.items(), key=lambda item: item[1], reverse=True))
+
+    boards_sorted_keys = sorted(boards, key=lambda x: (boards[x]['total']), reverse=True)
+    boards_sorted = {}
+    for each_key in boards_sorted_keys:
+        boards_sorted[each_key] = boards[each_key]
 
     dict_stats = {
         'boards': boards_sorted,
@@ -1953,12 +2282,17 @@ def status():
         if config.DOCKER:
             tor_version = subprocess.check_output(
                 'docker exec -i bitchan_tor tor --version --quiet', shell=True, text=True)
+            tor_modules = subprocess.check_output(
+                'docker exec -i bitchan_tor tor --list-modules', shell=True, text=True)
         else:
             tor_version = subprocess.check_output(
                 'tor --version --quiet', shell=True, text=True)
+            tor_modules = subprocess.check_output(
+                'tor --list-modules', shell=True, text=True)
     except:
         logger.exception("getting tor version")
         tor_version = "Error getting tor version"
+        tor_modules = "Error getting tor modules"
 
     try:
         if config.DOCKER:
@@ -2025,6 +2359,8 @@ def status():
     except:
         logger.exception("BitChan environment information")
 
+    db_version = Alembic.query.first().version_num
+
     return render_template("pages/status.html",
                            attachment_size=attachment_size,
                            bc_env=bc_env,
@@ -2033,6 +2369,7 @@ def status():
                            bm_messages_size=bm_messages_size,
                            bm_status=bm_status,
                            bm_sync_complete=bm_sync_complete,
+                           db_version=db_version,
                            df=df,
                            form_status=form_status,
                            i2pd_version=i2pd_version,
@@ -2045,6 +2382,7 @@ def status():
                            tor_enabled_cus=tor_enabled_cus,
                            tor_address_rand=tor_address_rand,
                            tor_enabled_rand=tor_enabled_rand,
+                           tor_modules=tor_modules,
                            tor_status=tor_status,
                            tor_version=tor_version,
                            upload_progress=UploadProgress.query.all())

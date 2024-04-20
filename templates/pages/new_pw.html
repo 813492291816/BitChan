@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+
+{% block title %}Change Password - {% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    {% if not logged_in -%}
+    <div class="container">
+        <form method="post" enctype="multipart/form-data" autocomplete="off" action="/login">
+            <div class="themed">
+
+            </div>
+            <div class="themed">
+                Current Password<br/>
+                <input type="password" name="current_password"/>
+            </div>
+            <div class="themed">
+                New Password<br/>
+                <input type="password" name="new_password"/>
+            </div>
+            <div class="themed">
+                New Password Repeat<br/>
+                <input type="password" name="new_password_repeat"/>
+            </div>
+            <div style="padding-top: 1em; text-align: center;">
+                <input type="submit" name="new_pw" value="Submit"/>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    {% if logged_in or
+          (not logged_in and not settings.kiosk_login_to_view) %}
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% endif %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

@@ -19,6 +19,7 @@ from flask import session
 from flask import url_for
 from flask.blueprints import Blueprint
 from sqlalchemy import and_
+from sqlalchemy.sql import func
 
 import config
 from bitchan_client import DaemonCom
@@ -52,6 +53,7 @@ from utils.routes import get_chan_passphrase
 from utils.routes import get_theme
 from utils.routes import get_threads_from_page
 from utils.routes import page_dict
+from utils.shared import can_address_create_thread
 
 logger = logging.getLogger('bitchan.routes_board')
 daemon_com = DaemonCom()
@@ -115,17 +117,18 @@ def board(current_chan, current_page):
     if not allowed:
         return allow_msg
 
-    form_post = forms_board.Post()
-    form_set = forms_board.SetChan()
-
-    settings = GlobalSettings.query.first()
     chan = Chan.query.filter(Chan.address == current_chan).first()
+    global_admin, _ = allowed_access("is_global_admin")
 
-    if not chan:
+    if not chan or (not global_admin and chan.restricted):
         return render_template("pages/404-board.html",
                                board_address=current_chan)
 
+    form_post = forms_board.Post()
+    form_set = forms_board.SetChan()
     post_order_desc = Threads.timestamp_sent.desc()
+    settings = GlobalSettings.query.first()
+
     if settings.post_timestamp == 'received':
         post_order_desc = Threads.timestamp_received.desc()
 
@@ -258,10 +261,18 @@ def board(current_chan, current_page):
                 status_msg['status_title'] = "Error"
                 status_msg['status_message'].append("Invalid Captcha")
 
+            # Check if allowed to post
             can_post, allow_msg = allowed_access("can_post")
             board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=current_chan)
             if not can_post and not board_list_admin:
                 return allow_msg
+
+            # Check if allowed to create new thread
+            if form_post.is_op.data == "yes":
+                if not can_address_create_thread(form_post.from_address.data, current_chan):
+                    status_msg['status_title'] = "Error"
+                    status_msg['status_message'].append(
+                        f"Address {form_post.from_address.data} is not permitted to create new threads on this board")
 
             if form_post.default_from_address.data:
                 chan.default_from_address = form_post.from_address.data
@@ -633,6 +644,36 @@ def thread_steg(current_chan, thread_id):
                            upload_sites=UploadSites)
 
 
+@blueprint.route('/random_post')
+@count_views
+@rate_limit
+def random_post():
+    can_view, allow_msg = allowed_access("can_view")
+    if not can_view:
+        return allow_msg
+
+    global_admin, _ = allowed_access("is_global_admin")
+
+    timer = time.time()
+    while time.time() - timer < 5:  # Search for a post for max 5 seconds
+        try:
+            if global_admin:
+                message = Messages.query.join(Threads).filter(and_(
+                    Threads.hide.is_(False),
+                    Messages.hide.is_(False))).order_by(func.random()).first()
+            else:
+                message = Messages.query.join(Threads).join(Chan).filter(and_(
+                    Chan.unlisted.is_(False),
+                    Chan.restricted.is_(False),
+                    Threads.hide.is_(False),
+                    Messages.hide.is_(False))).order_by(func.random()).first()
+            if message and message.thread and message.thread.chan:
+                return redirect(f"/thread/{message.thread.chan.address}/{message.thread.thread_hash_short}#{message.post_id}")
+        except:
+            logger.exception("Finding random post")
+    return "Error"
+
+
 @blueprint.route('/icon/<address>')
 def icon_image(address):
     can_view, allow_msg = allowed_access("can_view")
@@ -685,11 +726,15 @@ def banner_image(chan_address):
     theme = get_theme()
 
     can_view, allow_msg = allowed_access("can_view")
-    if not can_view:
-        if theme in config.THEMES_DARK:
+    if not can_view or chan_address in ['light', 'dark']:
+        if chan_address == 'light':
+            file_path = f"{config.BITCHAN_DIR}/static/banner_light.png"
+        elif chan_address == 'dark':
             file_path = f"{config.BITCHAN_DIR}/static/banner_dark.png"
         elif theme in config.THEMES_LIGHT:
             file_path = f"{config.BITCHAN_DIR}/static/banner_light.png"
+        elif theme in config.THEMES_DARK:
+            file_path = f"{config.BITCHAN_DIR}/static/banner_dark.png"
         if file_path:
             return send_file(file_path, mimetype='image/png', max_age=1440)
         else:
@@ -859,6 +904,31 @@ def files(message_id, file_type, filename):
     return "File not found"
 
 
+@blueprint.route('/torrent/<torrent_file>')
+def torrent(torrent_file):
+    can_view, allow_msg = allowed_access("can_view")
+    if not can_view:
+        return allow_msg
+
+    settings = GlobalSettings.query.first()
+    if settings.kiosk_disable_torrent_file_download:
+        return "User access to torrent is disabled"
+
+    try:
+        torrent_type = torrent_file.split(".")[1]
+        post = Messages.query.filter(Messages.post_id == torrent_file.split(".")[0]).first()
+        if not post:
+            return "Post not found"
+        elif torrent_type == "torrent" and post.file_torrent_decoded:
+            return send_file(BytesIO(post.file_torrent_decoded), mimetype="applications/x-bittorrent")
+        elif torrent_type == "magnet" and post.file_torrent_magnet:
+            return post.file_torrent_magnet
+        else:
+            return "No torrent information found"
+    except:
+        return "Invalid Post"
+
+
 @blueprint.route('/dl/<message_id>/<filename>')
 def download(message_id, filename):
     can_view, allow_msg = allowed_access("can_view")
@@ -920,21 +990,17 @@ def block_address(chan_address, block_address, block_type):
                     return allow_msg
                 list_delete_message_ids.append(message.message_id)
 
-        lf = LF()
-        if lf.lock_acquire(config.LOCKFILE_MSG_PROC, to=60):
-            try:
-                # First, delete messages from database
-                if list_delete_message_ids:
-                    for each_id in list_delete_message_ids:
-                        delete_post(each_id)
-                    daemon_com.signal_generate_post_numbers()
+        try:
+            # First, delete messages from database
+            if list_delete_message_ids:
+                for each_id in list_delete_message_ids:
+                    delete_post(each_id)
+                daemon_com.signal_generate_post_numbers()
 
-                # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
-                time.sleep(1)
-            except Exception as err:
-                logger.error("Exception while deleting messages: {}".format(err))
-            finally:
-                lf.lock_release(config.LOCKFILE_MSG_PROC)
+            # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
+            time.sleep(1)
+        except Exception as err:
+            logger.error("Exception while deleting messages: {}".format(err))
 
         new_cmd = Command()
         new_cmd.do_not_send = True

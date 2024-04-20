@@ -19,13 +19,27 @@
             {%- if filter_remote_moderate -%}&frm=1{%- endif -%}
         ">&lt;</a>&nbsp;&nbsp;
     {% endif %}
+
+    {%- set break_tracker = namespace(pre_elipse = False) -%}
+    {%- set break_tracker = namespace(post_elipse = False) -%}
     {% for page in pages %}
-        {% if page == mod_log_page %}
-        <span class="page-nav" style="font-weight: bold">[{{page}}]</span>{% else %}<a class="link page-nav" href="/mod_log/{{address}}/{{page}}?
-            {%- if filter_failed_attempts -%}&ffa=1{%- endif -%}
-            {%- if filter_remote_moderate -%}&frm=1{%- endif -%}
-        ">[{{page}}]</a>{% endif %}{% if not loop.last or mod_log_page < pages|length %}&nbsp;&nbsp;{% endif %}
+        {% if mod_log_page < page and page - mod_log_page > 25 %}
+            {% if not break_tracker.pre_elipse %}...&nbsp;&nbsp;{% endif %}
+            {%- set break_tracker.pre_elipse = True -%}
+        {% elif mod_log_page > page and mod_log_page - page > 25 %}
+            {% if not break_tracker.post_elipse %}...&nbsp;&nbsp;{% endif %}
+            {%- set break_tracker.post_elipse = True -%}
+        {% else %}
+            {% if page == mod_log_page %}
+            <span class="page-nav" style="font-weight: bold">[{{page}}]</span>{% else %}<a class="link page-nav" href="/mod_log/{{address}}/{{page}}?
+                {%- if filter_failed_attempts -%}&ffa=1{%- endif -%}
+                {%- if filter_remote_moderate -%}&frm=1{%- endif -%}
+            ">[{{page}}]</a>
+            {% endif %}
+            {% if not loop.last or mod_log_page < pages|length %}&nbsp;&nbsp;{% endif %}
+        {% endif %}
     {% endfor %}
+
     {% if mod_log_page < pages|length %}
         <a class="link page-nav" href="/mod_log/{{address}}/{{mod_log_page + 1}}?
             {%- if filter_failed_attempts -%}&ffa=1{%- endif -%}

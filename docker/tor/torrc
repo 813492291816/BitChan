@@ -1,9 +1,20 @@
 SocksPort 172.28.1.2:9050
 ControlPort 172.28.1.2:9051
 
+AccountingStart day 0:00
+AccountingMax 5 GBytes
+RelayBandwidthRate 64 KBytes
+RelayBandwidthBurst 128 KBytes # allow higher bursts but maintain average
+
 # Hidden service for Bitmessage
 HiddenServiceDir /usr/local/tor/bm
 HiddenServicePort 8444 172.28.1.3:8444
+HiddenServiceEnableIntroDoSDefense 1
+HiddenServiceEnableIntroDoSRatePerSec 25
+HiddenServiceEnableIntroDoSBurstPerSec 200
+HiddenServicePoWDefensesEnabled 1
+HiddenServicePoWQueueRate 3
+HiddenServicePoWQueueBurst 10
 
 # Random address (do not edit, enabled/disabled by BitChan)
 # These can be manually uncommented before building for the first time to start a hidden service
@@ -11,6 +22,9 @@ HiddenServicePort 8444 172.28.1.3:8444
 # Random Hidden Service Start
 #HiddenServiceDir /usr/local/tor/rand
 #HiddenServicePort 80 unix:/run/nginx.sock
+#HiddenServiceEnableIntroDoSDefense 1
+#HiddenServiceEnableIntroDoSRatePerSec 25
+#HiddenServiceEnableIntroDoSBurstPerSec 200
 #HiddenServicePoWDefensesEnabled 1
 #HiddenServicePoWQueueRate 3
 #HiddenServicePoWQueueBurst 10
@@ -20,6 +34,9 @@ HiddenServicePort 8444 172.28.1.3:8444
 # Custom Hidden Service Start
 #HiddenServiceDir /usr/local/tor/cus
 #HiddenServicePort 80 unix:/run/nginx.sock
+#HiddenServiceEnableIntroDoSDefense 1
+#HiddenServiceEnableIntroDoSRatePerSec 25
+#HiddenServiceEnableIntroDoSBurstPerSec 200
 #HiddenServicePoWDefensesEnabled 1
 #HiddenServicePoWQueueRate 3
 #HiddenServicePoWQueueBurst 10

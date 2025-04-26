@@ -1,3 +1,4 @@
+import html
 import json
 import logging
 import os
@@ -257,9 +258,6 @@ def generate_popup_post_header(message, external_thread=False):
         str_return += "&nbsp;{}&nbsp;<span class='link'>{}</span>".format(
             timestamp_to_date(message.timestamp_sent), message.post_id)
 
-        if message.post_number:
-            str_return += "&nbsp;/&nbsp;{}".format(message.post_number)
-
         # Sage
         if message.sage:
             str_return += '&nbsp;<img style="position: relative; height: 15px" title="Sage" src="/static/leaf.png">'
@@ -404,16 +402,30 @@ def generate_popup_post_body_message(message, moderating=False):
                 remove_script.extract()
             str_return = str(soup)
     except Exception as err:
-        logger.exception("Error in generate_popup_post_body_message(): {}".format(err))
-        str_return = "Error: Could not parse post body"
+        logger.exception("{}: Error in generate_popup_post_body_message(): {}".format(
+            message.message_id[-config.ID_LENGTH:].upper(), err))
+
+        try:
+            is_truncated, truncated_str = truncate(
+                message.original_message,
+                900,
+                target_lines=config.BOARD_MAX_LINES)
+            str_return = '<blockquote class="post">{}'.format(
+                truncated_str.rstrip().replace('\n', ' '))
+            if is_truncated:
+                if len(msg_gen) > 900:
+                    str_return += f'<br/>... [message truncated]'
+                else:
+                    str_return += f'<br/>...'
+            str_return += '</blockquote>'
+        except:
+            self.logger.exception("Error attempting to generate popup of original message")
+            str_return = "Error: Could not parse original message"
 
     return str_return
 
 
 def attachment_info(message_id):
-    if not os.path.exists("{}/{}".format(config.FILE_DIRECTORY, message_id)):
-        return [], {}, 0
-
     attach_info = {}
     with session_scope(config.DB_PATH) as new_session:
         number_files = 0
@@ -435,6 +447,14 @@ def attachment_info(message_id):
         if not file_order:
             file_order = []
 
+        if not os.path.exists("{}/{}".format(config.FILE_DIRECTORY, message_id)):
+            # Files haven't been downloaded, only return file names and count
+            file_count = 0
+            for filename in file_order:
+                if filename:
+                    file_count += 1
+            return file_order, {}, file_count
+
         for i, each_file in enumerate(file_order, start=1):
             number_files += 1
             if each_file in media_info:
@@ -449,6 +469,16 @@ def attachment_info(message_id):
                     media_info[each_file]["spoiler"] = message.image4_spoiler
 
                 attach_info[each_file] = media_info[each_file]
+
+                # escape any exif data
+                if 'exif' in attach_info[each_file]:
+                    new_list = []
+                    for each_exif in attach_info[each_file]['exif']:
+                        try:
+                            new_list.append(html.escape(each_exif))
+                        except:
+                            logger.exception(f"Couldn't escape string: {each_exif}")
+                    attach_info[each_file]['exif'] = new_list
 
                 # Calculate width and height percentages to determine thumbnail dimensions
                 if "thumb_percent_height" not in attach_info[each_file]:

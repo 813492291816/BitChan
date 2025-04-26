@@ -202,10 +202,40 @@ def process_passphrase(passphrase):
                 else:
                     key = html.escape(each_key)
 
+                # Sanity-check require_attachment
+                if each_key == "require_attachment":
+                    if not isinstance(each_value, bool):
+                        errors.append("require_attachment not boolean")
+                        continue
+                    else:
+                        value = each_value
+
+                # Sanity-check require_pow_to_post
+                elif each_key == "require_pow_to_post":
+                    if not isinstance(each_value, dict):
+                        errors.append("require_pow_to_post not dict")
+                        continue
+                    elif "pow_method" not in each_value:
+                        errors.append("pow_method not in require_pow_to_post")
+                        continue
+                    elif not isinstance(each_value["pow_method"], str):
+                        errors.append("pow_method not string")
+                        continue
+                    else:
+                        value = each_value
+
                 # Sanity-check require_identity_to_post
-                if each_key == "require_identity_to_post":
+                elif each_key == "require_identity_to_post":
                     if not isinstance(each_value, bool):
                         errors.append("require_identity_to_post not boolean")
+                        continue
+                    else:
+                        value = each_value
+
+                # Sanity-check disallow_attachments
+                elif each_key == "disallow_attachments":
+                    if not isinstance(each_value, bool):
+                        errors.append("disallow_attachments not boolean")
                         continue
                     else:
                         value = each_value

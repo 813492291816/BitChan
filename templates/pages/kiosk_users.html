@@ -98,7 +98,7 @@
                 <td><input type="password" name="retype_password" value=""/></td>
             </tr>
             <tr>
-                <td>Require Changing on First Use</td>
+                <td>Require Password Change</td>
                 <td><input type="checkbox" id="require_change_pw" name="require_change_pw" value="y"/></td>
             </tr>
         </table>
@@ -197,7 +197,7 @@
                 <td><input type="password" name="retype_password" value=""/></td>
             </tr>
             <tr>
-                <td>Require Changing on First Use</td>
+                <td>Require Password Change</td>
                 <td><input type="checkbox" id="require_change_pw" name="require_change_pw" value="y" checked/></td>
             </tr>
         </table>
@@ -212,5 +212,6 @@
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

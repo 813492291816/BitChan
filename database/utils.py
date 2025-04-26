@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 @contextmanager
 def session_scope(db_uri):
     Session = sessionmaker()
-    engine = create_engine(db_uri)
+    engine = create_engine(db_uri, pool_size=10, max_overflow=10)
     Session.configure(bind=engine)
     session = Session()
     try:

@@ -346,17 +346,14 @@ def bulk_delete_thread(address):
                             list_delete_message_ids.append(message.message_id)
 
                         # First, delete messages from database
-                        if list_delete_message_ids:
-                            for each_id in list_delete_message_ids:
-                                delete_post(each_id)
+                        for each_id in list_delete_message_ids:
+                            delete_post(each_id)
 
                         # Next, delete thread from DB
                         delete_thread(each_thread_hash)
                         status_msg['status_message'].append("Thread deleted: {}".format(thread.subject))
             except Exception as err:
                 logger.error("Exception while deleting message(s): {}".format(err))
-            finally:
-                daemon_com.signal_generate_post_numbers()
 
             status_msg['status_title'] = "Success"
             status_msg['status_title'] = "Deleted Thread"
@@ -655,7 +652,6 @@ def delete(address, message_id, thread_id, delete_type):
             if list_delete_message_ids:
                 for each_id in list_delete_message_ids:
                     delete_post(each_id, only_hide=only_hide)
-                daemon_com.signal_generate_post_numbers()
 
             # If local, next delete thread
             if delete_type == "delete_thread" and thread:

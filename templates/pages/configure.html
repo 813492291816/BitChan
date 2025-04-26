@@ -103,7 +103,16 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2">Max size (MB) of extracted/decrypted post attachments. If during extraction/decryption, the size surpasses this value, extraction/decryption will be cancelled.</td>
+                <td colspan="2">Max size (MB) of uncompressed post attachments. If during extraction/decryption, the size surpasses this value, extraction/decryption will be cancelled. This setting also restricts the size of attachments when creating posts.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.always_allow_my_i2p_bittorrent_attachments.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="always_allow_my_i2p_bittorrent_attachments" name="always_allow_my_i2p_bittorrent_attachments" value="y"{% if settings.always_allow_my_i2p_bittorrent_attachments %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Always allow automatic downloading of I2P BitTorrent attachments originating from this BitChan instance.</td>
             </tr>
             <tr>
                 <td>{{form_settings.allow_net_file_size_check.label(class_='heading-bold')}}</td>
@@ -122,15 +131,6 @@
             </tr>
             <tr>
                 <td colspan="2">Permit connecting (through tor) to get random book quotes for #stich and #godsong in posts.</td>
-            </tr>
-            <tr>
-                <td>{{form_settings.allow_net_ntp.label(class_='heading-bold')}}</td>
-                <td>
-                    <input type="checkbox" id="allow_net_ntp" name="allow_net_ntp" value="y"{% if settings.allow_net_ntp %} checked{% endif %}/>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="2">Permit connecting (not through tor) to an NTP server to ensure your time is accurate.</td>
             </tr>
             <tr>
                 <td>{{form_settings.never_auto_download_unencrypted.label(class_='heading-bold')}}</td>
@@ -330,6 +330,12 @@
                 <td>{{form_settings.bm_connections_in_out.label(class_='heading-bold')}}</td>
                 <td>
                      <select name="bm_connections_in_out">
+                         <option value="minode_ip2_only"{% if settings.bm_connections_in_out == "minode_ip2_only" %} selected{% endif %}>MiNode: I2P Only</option>
+                         <option value="minode_ip_only"{% if settings.bm_connections_in_out == "minode_ip_only" %} selected{% endif %}>MiNode: IP Only</option>
+                         <option value="minode_ip_and_i2p"{% if settings.bm_connections_in_out == "minode_ip_and_i2p" %} selected{% endif %}>MiNode: IP and I2P</option>
+                         <option value="minode_ip2_only_tor_in"{% if settings.bm_connections_in_out == "minode_ip2_only_tor_in" %} selected{% endif %}>MiNode: I2P Only, In: Tor</option>
+                         <option value="minode_ip_only_tor_in"{% if settings.bm_connections_in_out == "minode_ip_only_tor_in" %} selected{% endif %}>MiNode: IP Only, In: Tor</option>
+                         <option value="minode_ip_and_i2p_tor_in"{% if settings.bm_connections_in_out == "minode_ip_and_i2p_tor_in" %} selected{% endif %}>MiNode: IP and I2P, In: Tor</option>
                          <option value="in_clear_out_clear"{% if settings.bm_connections_in_out == "in_clear_out_clear" %} selected{% endif %}>In: Clearnet, Out: Clearnet</option>
                          <option value="in_tor+clear_out_clear"{% if settings.bm_connections_in_out == "in_tor+clear_out_clear" %} selected{% endif %}>In: Tor + Clearnet, Out: Clearnet</option>
                          <option value="in_tor_out_clear"{% if settings.bm_connections_in_out == "in_tor_out_clear" %} selected{% endif %}>In: Tor, Out: Clearnet</option>
@@ -340,7 +346,7 @@
                 </td>
             </tr>
             <tr>
-                <td colspan="2">Set how bitmessage allows incoming and outgoing connections. Keep in mind that you may need to initially set Outgoing Connections to use the clearnet to build up a list of hosts prior to setting it to use Tor, otherwise the bitmessage tor bootstrap address may take an incredibly long time to establish an initial connection.</td>
+                <td colspan="2">Set how bitmessage connects to peers. If desiring to use tor, keep in mind that you may need to initially set Outgoing Connections to use the clearnet to build up a list of hosts prior to setting it to use Tor, otherwise the bitmessage tor bootstrap address may take an incredibly long time to establish an initial connection.</td>
             </tr>
             <tr>
                 <td>{{form_settings.bitmessage_onion_services_only.label(class_='heading-bold')}}</td>
@@ -373,7 +379,6 @@
             <tr>
                 <td colspan="2">Require users to log in to access BitChan.</td>
             </tr>
-
             <tr>
                 <td>{{form_settings.kiosk_allow_posting.label(class_='heading-bold')}}</td>
                 <td>
@@ -382,6 +387,15 @@
             </tr>
             <tr>
                 <td colspan="2">Allow users to post on boards. Turn the kiosk into read-only by disabling this setting.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_allow_pow.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="kiosk_allow_pow" name="kiosk_allow_pow" value="y"{% if settings.kiosk_allow_pow %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Allow users to perform additional proof of work (POW) for posts. Warning, this can allow DOS attacks on a kiosk.</td>
             </tr>
             <tr>
                 <td>{{form_settings.kiosk_allow_gpg.label(class_='heading-bold')}}</td>
@@ -496,6 +510,15 @@
             </tr>
             <tr>
                 <td colspan="2">When kiosk mode is enabled, only Admins can view the Mod Log.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.kiosk_only_admin_access_search.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="checkbox" id="kiosk_only_admin_access_search" name="kiosk_only_admin_access_search" value="y"{% if settings.kiosk_only_admin_access_search %} checked{% endif %}/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">When kiosk mode is enabled, only Admins can use the Search.</td>
             </tr>
             <tr></tr>
             <tr style="background-color: initial">
@@ -691,13 +714,29 @@
         </table>
 
         <div style="padding-top: 1em">
-            <input type="submit" name="save" value="Save"/>
+            <input type="submit" name="save" value="Save Settings"/>
         </div>
         </form>
     </div>
 
-    <div class="heading-2 head-center themed">Export</div>
 
+    <div class="heading-2 head-center themed">Kiosk Users</div>
+    <div class="head-center themed">Kiosk users can log in when Kiosk Mode is enabled and gain additional privileges.</div>
+
+    <div class='outer' style="padding: 1.5em 0 3em 0">
+        <a class="link" href="/kiosk_users">Kiosk User Management</a>
+    </div>
+
+
+    <div class="heading-2 head-center themed">Pages</div>
+    <div class="head-center themed">Pages are static HTML pages that are linked under the lists of Boards and Lists.</div>
+
+    <div class='outer' style="padding: 1.5em 0 3em 0">
+        <a class="link" href="/manage_pages">Page Management</a>
+    </div>
+
+
+    <div class="heading-2 head-center themed">Export</div>
     <div class="head-center themed">Useful for backing up addresses and passphrases in order to add addresses or join boards/lists at a later time.</div>
 
     <div class='outer' style="padding: 1.5em 0 3em 0">
@@ -819,9 +858,9 @@
     </div>
     </form>
 
-    <div class="heading-2 head-center themed">Board/List Options</div>
+    <div class="heading-2 head-center themed">Board and List Options</div>
 
-    <a class="head-center themed" href="/unlisted">Unlisted Page</a> / <a class="head-center themed" href="/restricted">Restricted Page</a>
+    <span class="themed"><a class="head-center themed" href="/unlisted">Unlisted Page</a> / <a class="head-center themed" href="/restricted">Restricted Page</a></span>
 
     <form method="post" enctype="multipart/form-data">
     <div class='outer' style="padding-bottom: 3em;">
@@ -830,9 +869,10 @@
                 <td>Address</td>
                 <td>Type</td>
                 <td>Name</td>
-                <td style="writing-mode: sideways-lr;">Unlist</td>
-                <td style="writing-mode: sideways-lr;">Restrict</td>
-                <td style="writing-mode: sideways-lr;">Hide Passphrase</td>
+                <td title="Prevent boards/lists from being publicly listed (but can still be accessed)" style="writing-mode: sideways-lr;">Unlisted</td>
+                <td title="Prevent boards/lists from being accessed if not Global Admin" style="writing-mode: sideways-lr;">Restricted</td>
+                <td title="Prevent passphrases from being visible in Board/List Information" style="writing-mode: sideways-lr;">Hide Passphrases</td>
+                <td title="Prevent posting to boards or manipulating lists if not Board/List/Global Admin" style="writing-mode: sideways-lr;">Read Only</td>
             </tr>
         {% for each_type in [chans_board_info, chans_list_info] %}
             {% for each_address in each_type %}
@@ -849,18 +889,20 @@
                 <td><input type="checkbox" id="option_unlisted_{{each_address}}" name="option_unlisted_{{each_address}}" value="y"{% if each_type[each_address]["db"].unlisted %} checked{% endif %}/></td>
                 <td><input type="checkbox" id="option_restricted_{{each_address}}" name="option_restricted_{{each_address}}" value="y"{% if each_type[each_address]["db"].restricted %} checked{% endif %}/></td>
                 <td><input type="checkbox" id="option_hide_passphrase_{{each_address}}" name="option_hide_passphrase_{{each_address}}" value="y"{% if each_type[each_address]["db"].hide_passphrase %} checked{% endif %}/></td>
+                <td><input type="checkbox" id="option_read_only_{{each_address}}" name="option_read_only_{{each_address}}" value="y"{% if each_type[each_address]["db"].read_only %} checked{% endif %}/></td>
             </tr>
             {% endfor %}
         {% endfor %}
         </table>
         <div style="padding-top: 1em;">
-            <input type="submit" name="save_chan_options" value="Save Options"/>
+            <input type="submit" name="save_chan_options" value="Save Board and List Options"/>
         </div>
     </div>
     </form>
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
     <div style="padding-top: 1em"></div>
 </div>
 {% endblock %}

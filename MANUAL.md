@@ -21,11 +21,11 @@
   - [Catalogs](#catalogs){.link}
 - [Recent](#recent){.link}
 - [Board and List Creation](#board-and-list-creation){.link}
-  - [Rules](#rules){.link}
   - [Creating Public Boards and Lists](#creating-public-boards-and-lists){.link}
   - [Creating Private Boards and Lists](#creating-private-boards-and-lists){.link}
   - [Board and List Information](#board-and-list-information){.link}
-- [Owner Options](#owner-options){.link}
+  - [Owner Options](#owner-options){.link}
+- [Rules](#rules){.link}
 - [Identities](#identities){.link}
   - [Mailboxes](#mailboxes){.link}
 - [Address Book](#address-book){.link}
@@ -40,6 +40,7 @@
   - [Custom Flags](#custom-flags){.link}
   - [Hidden Tor Onion Service](#hidden-onion-service){.link}
   - [Hidden I2P Service](#hidden-i2p-service){.link}
+  - [Board and List Options](#board-and-list-options){.link}
 - [Kiosk Mode](#kiosk-mode){.link}
 - [Status](#status){.link}
 - [Stats](#stats){.link}
@@ -193,7 +194,7 @@ Select the desired file transfer method. There are three different upload method
 
 Bitmessage is the most secure method of attaching a file, but only message (subject + comment + attachments + metadata) sizes of ~300 KB or less are permitted due to the size limitation of Bitmessage messages. Additionally, there is a drawback for sending large file sizes due to the required proof of work for sending Bitmessage messages. Sending large Bitmessage messages significantly increases how long it takes to send. External upload sites are supported, and additional measures have been taken to ensure the privacy of your file when uploaded to these sites. First, the attachment or attachments are zipped and encrypted with a random file name and extension. Then, the beginning and ends of the file, along with several randomly-sized segments at randomly-chosen locations in the file are removed, then uploaded to the external site. The random file parts are then sent with the message that's transmitted over Bitmessage. Once a user receives the post, the file is downloaded, the parts are inserted back into the file, then it's decrypted and unzipped. Additionally, and like all Bitmessage communication, all uploads and downloads are routed through tor.
 
-I2P BitTorrent attachments are seeded over the I2P-only BitTorrent client XD to other BitChan instances that receive the post. Those BitChan instances also begin seeding the attachment data after fully downloading it, contributing to the data distribution. After 28 days (the longest amount of time a message can exist on the Bitmessage network before being pruned), seeding stops and the torrent is deleted. The same encryption and obfuscation method is used, as described in the Bitmessage section, above.
+I2P BitTorrent attachments are seeded over the I2P-only BitTorrent client qBittorrent to other BitChan instances that receive the post. Those BitChan instances also begin seeding the attachment data after fully downloading it, contributing to the data distribution. After a user-configured period of time, seeding stops and the torrent is deleted. Because OP healing is possible, by default, attachments are seeded longer for OPs than replies. The same encryption and obfuscation method is used, as described in the Bitmessage section, above.
 
 The last upload method is using a 3rd party upload site. There are many upload sites on tor hidden onions and i2p eepsites that share a common API. These can only be accessed via tor and i2p, increasing security, but these should be considered the least secure of the three. You should assume many or all of these 3rd party upload sites are honeypots, making them the least secure of the three upload methods. The same encryption and obfuscation method is used, as described in the Bitmessage section, above.
 
@@ -432,30 +433,6 @@ Only available for public boards and public lists, restricted addresses are prev
 
 Since passphrases are used to create boards and lists, it's crucial to use a unique passphrase to ensure the board or list you're creating is unique. Furthermore, since passphrases are generated based on the parameters of the board or list (label, description, addresses, etc.), it's possible for two users to generate the same passphrase, resulting in the same board or list. Therefore, in order to increase the likelihood of generating a unique passphrases, a user can add extra characters to the end of their passphrase.
 
-## Rules
-
-Rules are certain requirements of a board or list that are set by the Owner.
-
-### Automatic Wipe
-
-Set a start time (epoch timestamp) and interval for when all content on the board or list is deleted for all users.
-
-### Require Identity to Post
-
-Require that all posts originate from an address that is not the board or list address. This doesn't necessarily mean you need an identity to post, as other boards and list addresses can be used as long as they are not on the restricted list. Board owners can add restricted addresses even after board creation occurs, however this does not change the board passphrase.
-
-### Restrict Thread Creation to Owners, Admins, and Thread Creation Users
-
-Only the addresses added as an Owner, Admin, or Thread Creation Users to the Public or Private Board are permitted to create threads on the board. Regular users will still be able to post replies to a thread on the board (unless restricted elsewhere), but will not be able to create new threads.
-
-### Thread Creation Users
-
-When Restrict Thread Creation is enabled, te only users of the board that will be able to create new threads will be Owners, Admins, and any additional addresses added to this list. The list should be addresses separated by commas.
-
-### Allow Lists to Store PGP Passphrases
-
-When enabled, any board or list added to this list will also send the currently-set PGP passphrases (Message PGP passphrase for Lists and Message, Attachment, and Steg PGP passphrases for Boards). This allows a list to contain boards/lists with non-default PGP passphrases set and easily share them without having to supply the PGP passphrases separately from the list. When the user clicks Join from the list, the custom PGP passphrases (when the board/list was added to the list) are populated for that board/list on the following join page. If a list Owner wants to change the PGP passphrases associated with a board/list already on the list, just remove the board/list from the list, change the board/list PGP passphrases, and add the board/list again and the list will now contain the board/list with the new PSP passphrases. 
-
 ## Creating Public Boards and Lists
 
 Public boards are the closest to an unmoderated board you can get. Any address except those on the restricted address list can create threads and posts. Addresses can be restricted after board creation by the owner, but because of the freedom afforded by Bitmessage to create an arbitrary number of unique addresses, if your address is restricted, you can simply make another one.
@@ -528,33 +505,75 @@ Here you can allow or disallow custom CSS set by the board/list Owner. **Be very
 
 This allows you to leave the current board or list. You can always rejoin by entering the passphrase again or selecting **Join** from a list. Keep in mind that when leaving a board, all posts are deleted. Therefore, if you rejoin the board, you will not be able to retrieve any posts who's TTL has expired.
 
-# Owner Options
+## Owner Options
 
 If you are an Owner of a board or list, this dropdown menu will appear. It allows the Owner to change parameters of the board/list.
 
-## Addresses
+### Addresses
 
 Here you can set the Admin, User, and Restricted addresses after the board/list creation, separated by commas.
 
-## Custom Banner Image
+### Custom Banner Image
 
-Here you can upload a custom banner image with a maximum size of 650 px width and 400 px height.
+Here you can upload a custom banner image with a maximum size of 1200 px width and 400 px height.
 
-## Custom Spoiler Image
+### Custom Spoiler Image
 
 Here you can upload a custom spoiler image with a maximum size of 250 px width and 250 px height.
 
-## Long Description
+### Long Description
 
 Here you can set a longer description that can also include text formatting and functions.
 
-## Word Replacements
+### Word Replacements
 
 Here words can be set that will be replaced when a user makes a post.
 
-## Custom CSS
+### Custom CSS
 
 Here custom CSS can be set that will affect all users. Due to the ability of CSS to pose a security risk, each user must allow any custom CSS the Owner sets.
+
+# Rules
+
+Rules are certain requirements of a board or list that are set by the Owner, or of a thread that are set by the poster.
+
+## Board/List Rules
+
+### Require Proof of Work (POW) to Post
+
+Additional POW can be required to post to a board. This makes spamming more unlikely, as it becomes very costly to send a lot of messages. For Hashcash, to solve the POW challenge with a mid/high range CPU, it may take ~5 seconds at a difficulty of 20, ~15 sec at 21, and ~30 sec at 22. Repetitions can also be used to make POW times between users more consistent. This will solve multiple POW challenges at the specified difficulty. You can check the frontend log after making a post to see when POW completes and how long it took.
+
+The difficulty and repetitions can be used to calculate a single value that can be used to compare post POW. (2^Difficulty)*Repetitions will yield a single value that is used to determine if the minimum amount of POW has been completed and for sorting posts by POW. For instance, POW with a difficulty of 18 and 2 repetitions is equivalent to POW with a difficulty of 19 and 1 repetition. Therefore, if a Board or Thread requires posts to complete a minimum POW with a difficulty of 18 and 2 repetitions, the difficulty and repetition combination must meet or exceed that specified minimum.
+
+### Automatic Wipe
+
+Set a start time (epoch timestamp) and interval for when all content on the board or list is deleted for all users.
+
+### Require Identity to Post
+
+Require that all posts originate from an address that is not the board or list address. This doesn't necessarily mean you need an identity to post, as other boards and list addresses can be used as long as they are not on the restricted list. Board owners can add restricted addresses even after board creation occurs, however this does not change the board passphrase.
+
+### Restrict Thread Creation to Owners, Admins, and Thread Creation Users
+
+Only the addresses added as an Owner, Admin, or Thread Creation Users to the Public or Private Board are permitted to create threads on the board. Regular users will still be able to post replies to a thread on the board (unless restricted elsewhere), but will not be able to create new threads.
+
+### Thread Creation Users
+
+When Restrict Thread Creation is enabled, te only users of the board that will be able to create new threads will be Owners, Admins, and any additional addresses added to this list. The list should be addresses separated by commas.
+
+### Allow Lists to Store PGP Passphrases
+
+When enabled, any board or list added to this list will also send the currently-set PGP passphrases (Message PGP passphrase for Lists and Message, Attachment, and Steg PGP passphrases for Boards). This allows a list to contain boards/lists with non-default PGP passphrases set and easily share them without having to supply the PGP passphrases separately from the list. When the user clicks Join from the list, the custom PGP passphrases (when the board/list was added to the list) are populated for that board/list on the following join page. If a list Owner wants to change the PGP passphrases associated with a board/list already on the list, just remove the board/list from the list, change the board/list PGP passphrases, and add the board/list again and the list will now contain the board/list with the new PSP passphrases. 
+
+## Thread Rules
+
+### Sort Replies by POW
+
+Instead of replies being sorted by timestamp, the amount of POW will determine the reply position, with a post that conducted a greater amount of POW appearing closer to the OP.
+
+### Require Proof of Work (POW) to Reply
+
+Similar to the Board Rule Require Proof of Work (POW) to Post, this rule requires replies conduct a minimum amount of POW to post a reply to a thread. If I post doesn't meet the minimum, it will not appear on the thread.
 
 # Identities
 
@@ -605,7 +624,11 @@ When a post is made with an attachment that has been uploaded to an external upl
 
 ### Attachment Extraction Max Size (MB)
 
-Because compressed/encrypted files can be of a size significantly less than the decompressed/decrypted file size, this option prevents an exploit whereby a very large post attachment can be made. For example, a 100 GB file containing a repeating "0" character is a mere ~200 KB when compressed/encrypted. If this 100 GB file were to be added as a post attachment, the header of the file to be downloaded would only return ~200 KB. Only upon decompressing/decrypting will the true file size be revealed. This option sets a limit for how large the decompressed/decrypted post attachment file size can be.
+Because compressed/encrypted files can be of a size significantly less than the decompressed/decrypted file size, this option prevents an exploit whereby a very large post attachment can be made. For example, a 100 GB file containing a repeating "0" character is a mere ~200 KB when compressed/encrypted. If this 100 GB file were to be added as a post attachment, the header of the file to be downloaded would only return ~200 KB. Only upon decompressing/decrypting will the true file size be revealed. This option sets a limit for how large the decompressed/decrypted post attachment file size can be. This setting also restricts the size of attachments when creating posts, which can be useful if running a public kiosk to limit the total attachment size.
+
+### Automatically Start I2P BitTorrent Downloads for My Posts
+
+When enabled, posts created with your BitChan instance will have I2P BitTorrent attachments automatically downloaded. This will automatically start your torrent seeding and display attachments for the post as soon as the post is received. When disabled, you must manually select Allow Download before the torrent starts seeding. Keep in mind that for others to get the attachments for your post, you must seed, therefore it is recommended to keep this enabled. If you're running a public kiosk, it is recommended to disable this option and set Attachment Auto-Download Max Size to manage automatic downloads.
 
 ### Allow connecting to upload site to verify post attachment size
 
@@ -616,10 +639,6 @@ If you suspect that someone might want to log your tor IP by forcing you to requ
 ### Allow connecting to get book quotes
 
 Permit connecting (through tor) to get random book quotes for #stich and #godsong in posts. The #stitch and #godsong functions require connecting to websites and thus go outside the Bitmessage network. Disable this option to prevent connecting to the websites associated with these functions. If disabled, posts which contain these functions will not be populated with the formatted material, and instead will simply show "#stitch" or "#godsong".
-
-### Allow connecting to NTP to sync time
-
-Permit connecting (not through tor) to an NTP server to ensure your time is accurate. To get an accurate time BC requires that you either set your system time manually or use the automated NTP query. Querying the NTP must be done **not over tor** and thus users may want to prevent BC from making such a connection. NB: Bitmessage will only connect to nodes whose reported time is within 3 hours of its own, so if you're time is too far off you simply won't be able to use BitChan.
 
 ### Never allow auto-download of unencrypted attachments
 
@@ -685,9 +704,9 @@ This is HTML that will be inserted into the template's \<BODY\>. Useful for appl
 
 Bitmessage can be partly configured from BitChan. If these settings change, bitmessage will be restarted for the changes to take effect.
 
-### Incoming and Outgoing Connections
+### Bitmessage Connections
 
-Set how bitmessage allows incoming and outgoing connections. Keep in mind that you may need to initially set Outgoing Connections to use the clearnet to build up a list of hosts prior to setting it to use Tor, otherwise the bitmessage tor bootstrap address may take an incredibly long time to establish an initial connection.
+Set how bitmessage connects to peers. If desiring to use tor, keep in mind that you may need to initially set Outgoing Connections to use the clearnet to build up a list of hosts prior to setting it to use Tor, otherwise the bitmessage tor bootstrap address may take an incredibly long time to establish an initial connection.
 
 The installation procedure provides a version of knownnodes.dat that has aggregated many reliable hosts to make an initial connection to the bitmessage network. Alternatively, you can copy the contents of your own knownnodes.dat with your own bitmessage to BitChan's /usr/local/bitchan/bitmessage/knownnodes.dat (especially if bootstraping is not occurring in a timely manner).
 
@@ -700,6 +719,8 @@ socksproxytype = none<br/>onionhostname = none | socksproxytype = none<br/>onion
 In: Clearnet<br/>Out: Tor | In: Tor + Clearnet<br/>Out: Tor | In: Tor<br/>Out: Tor
 ---|---|---
 socksproxytype = SOCKS5<br/>onionhostname = none<br/>sockslisten = True | socksproxytype = SOCKS5<br/>onionhostname = abcdefgh.onion<br/>onionport = 8444<br/>sockslisten = True | socksproxytype = SOCKS5<br/>onionhostname = abcdefgh.onion<br/>onionbindip = 127.0.0.1<br/>onionport = 8444<br/>sockslisten = False |
+
+If MiNode is selected, MiNode will act as a bridge between Bitmessage and peers. This is how Bitmessage can communicate over I2P.
 
 ### Only Allow Bitmessage to Connect to Onion Services
 
@@ -715,11 +736,15 @@ Toggle kiosk mode on or off.
 
 ### Require Users to Log In
 
-Enabling this setting forces kiosk users to log in to use the service. The operator can add credentials in the user configuration file credentials.py. Ensure you have at least one Admin user defined before enabling this option, otherwise you may lose access. If kiosk mode is enabled and you are unable to access the UI, merely edit credentials.py to add an Admin user and restart the frontend.
+Enabling this setting forces kiosk users to log in to use the service. The operator can add credentials on the /configure page, next to "Enable Kiosk Mode", using the link "Kiosk User Management"  Ensure you have at least one Admin user defined before enabling this option, otherwise you may lose access. If kiosk mode is enabled and you are unable to access the UI, see the Kiosk Recovery User section at the top of config.py to fix your issue.
 
 ### Allow Users to Post
 
 Allow users to post on boards. Turn the kiosk into read-only by enabling this setting.
+
+### Allow Users to Perform Additional Proof of Work for Posts
+
+Allow users to perform additional proof of work (POW)  to be performed for posts. Warning, this can allow DOS attacks on a kiosk.
 
 ### Allow Users to Encrypt PGP Messages in Posts
 
@@ -900,6 +925,26 @@ Follow these instructions to set up an I2P tunnel to allow access to your BitCha
 Additionally, you can use 172.28.1.6:4444 as an HTTP proxy in your browser to connect to I2P sites and port 4447 as an i2p SOCKS proxy.
 
 Warning: If your server IP address is publicly-accessible, be sure to change the default credentials in i2pd.conf and/or comment the i2pd port 7070 in docker-compose.yaml and rebuild the containers, to prevent potential unauthorized access.
+
+## Board and List Options
+
+Individual boards and lists can have additional attributes set, including: Unlisted, Restricted, Hide Passphrases, and Read Only. These settings are only really useful when Kiosk Mode is enabled, and allow for certain restrictions to be placed on boards and lists that enable control over who can view and interact with them. Note that Global Admins can always bypass these restrictions.
+
+### Unlisted
+
+Unlisted boards/lists will not appear on any public page but are still accessible, if you know the URL to access it.
+
+### Restricted
+
+Restricted boards/lists will not appear on any public page but will not be able to be accessed, even if the URL is known, unless you are a Board, List, or Global Admin. Note that this restriction is different from a Board/List Restricted User, which is a user that is prevented from posting or altering a list.
+
+### Hide Passphrases
+
+When enabled, the board or list will not show passphrases in the Board or List Information. This is useful if you want to allow access a board or list but don't want others to be able to join the board/list in another BitChan instance.
+
+### Read Only
+
+Read Only boards and lists can only be viewed, unless you are a Board, List, or Global Admin.
 
 # Kiosk Mode
 

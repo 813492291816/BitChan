@@ -21,6 +21,10 @@ $(function() {
         let img_width = document.getElementById("width_" + post_id + "_" + index).value;
         let img_height = document.getElementById("height_" + post_id + "_" + index).value;
         let src_thumb = document.getElementById("src_thumb_" + post_id + "_" + index).value;
+        let thumb_width = "";
+        let thumb_height = "";
+        if (document.getElementById("thumb_width_" + post_id + "_" + index) != null) thumb_width = document.getElementById("thumb_width_" + post_id + "_" + index).value;
+        if (document.getElementById("thumb_height_" + post_id + "_" + index) != null) thumb_height = document.getElementById("thumb_height_" + post_id + "_" + index).value;
         let spoiler = document.getElementById("spoiler_" + post_id + "_" + index).value;
         let newline = document.getElementById("newline_" + post_id);
         let num_files = parseInt(document.getElementById("num_files_" + post_id).value);
@@ -33,15 +37,24 @@ $(function() {
             if (type === "op") {
                 new_height = "200px";
                 new_width = "200px";
+                $(this).animate({'max-width': new_width}, 0);
+                $(this).animate({'max-height': new_height}, 0);
             }
             else if (type === "reply") {
-                new_height = "130px";
-                new_width = "130px";
+                if (thumb_width && thumb_height) {
+                    $(this).animate({'width': thumb_width}, 0);
+                    $(this).animate({'height': thumb_height}, 0);
+                }
+                else {
+                    new_height = "130px";
+                    new_width = "130px";
+                    $(this).animate({'max-width': new_width}, 0);
+                    $(this).animate({'max-height': new_height}, 0);
+                }
             }
             expanded_files[post_id] = expanded_files[post_id].filter(e => e !== post_id + "_" + index);
             if (expanded_files[post_id].length == 0 && num_files < 3 && truncate === "0") newline.style.display = "none";
-            $(this).animate({'max-width': new_width}, 0);
-            $(this).animate({'max-height': new_height}, 0);
+
         }
         else if ($(this).attr('src') == src_thumb) {
             img.style.height = null;
@@ -60,6 +73,8 @@ $(function() {
             newline.style.display = "block";
             $(this).animate({'max-width': new_width}, 0);
             $(this).animate({'max-height': new_height}, 0);
+            $(this).width('auto');
+            $(this).height('auto');
         }
     });
 });

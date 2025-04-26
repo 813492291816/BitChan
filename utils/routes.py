@@ -31,6 +31,7 @@ from database.models import Flags
 from database.models import GlobalSettings
 from database.models import Identity
 from database.models import Messages
+from database.models import Pages
 from database.models import Threads
 from flask_routes import flask_session_login
 from forms.nations import nations
@@ -716,6 +717,11 @@ def get_thread_options(thread_hash):
             thread_options["anchor"] = True
             thread_options["anchor_local"] = True
 
+    try:
+        thread_options["rules"] = json.loads(thread.rules)
+    except:
+        thread_options["rules"] = {}
+
     return thread_options
 
 
@@ -959,6 +965,7 @@ def page_dict():
     user_options = {
         "options_css": request.cookies.get('options_css', default=""),
         "options_js": request.cookies.get('options_js', default=""),
+        "options_max_height": request.cookies.get('options_max_height'),
         "options_post_horizontal": request.cookies.get('options_post_horizontal'),
         "options_hide_authors": request.cookies.get('options_hide_authors')
     }
@@ -1063,6 +1070,7 @@ def page_dict():
                 settings=GlobalSettings.query.first(),
                 table_boards=Chan,
                 table_messages=Messages,
+                table_pages=Pages,
                 table_thread=Threads,
                 get_theme=get_theme,
                 themes=themes.themes,

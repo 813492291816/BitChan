@@ -1,5 +1,6 @@
 import base64
 import datetime
+import html
 import json
 import logging
 import os
@@ -28,6 +29,7 @@ from database.models import BanedHashes
 from database.models import BanedWords
 from database.models import Captcha
 from database.models import Chan
+from database.models import Command
 from database.models import DeletedMessages
 from database.models import Games
 from database.models import GlobalSettings
@@ -46,6 +48,7 @@ from forms import forms_board
 from forms import forms_settings
 from utils import themes
 from utils.download import process_attachments
+from utils.encryption_decrypt import decrypt_safe_size
 from utils.files import LF
 from utils.files import delete_file
 from utils.files import delete_files_recursive
@@ -58,6 +61,7 @@ from utils.posts import process_message_replies
 from utils.posts import update_board_timestamp
 from utils.posts import update_thread_timestamp
 from utils.replacements import process_replacements
+from utils.replacements import replace_dict_keys_with_values
 from utils.replacements import replace_lt_gt
 from utils.routes import allowed_access
 from utils.routes import ban_and_delete
@@ -786,7 +790,7 @@ def diag():
                     msgs = Messages.query.filter(
                         and_(or_(Messages.file_download_successful.is_(False),
                                  Messages.file_download_successful.is_(None)),
-                             Messages.file_url.is_not(None))).all()
+                             Messages.file_currently_downloading.is_(False))).all()
                     for msg in msgs:
                         logger.info(f"Starting download for post with message ID {msg.message_id}")
                         daemon_com.set_start_download(msg.message_id)
@@ -876,6 +880,31 @@ def diag():
                 else:
                     status_msg['status_message'].append("Post not found")
 
+        elif form_diag.decrypt_regenerate_post_html.data:
+            if not form_diag.decrypt_regenerate_post_id.data:
+                status_msg['status_message'].append("A Post ID is required")
+            else:
+                post_id = form_diag.decrypt_regenerate_post_id.data.replace(" ", "").upper()
+                message = Messages.query.filter(Messages.post_id == post_id).first()
+                if message and message.thread and message.thread.chan:
+                    status_msg = decrypt_and_regen_html(message, post_id, status_msg)
+                else:
+                    status_msg['status_message'].append("Post not found")
+
+        elif form_diag.decrypt_regenerate_post_all_html.data:
+            messages = Messages.query.filter(
+                or_(Messages.original_message == "",
+                    Messages.original_message.is_(None))).all()
+            for each_msg in messages:
+                if each_msg and each_msg.thread and each_msg.thread.chan:
+                    try:
+                        post_id = each_msg.post_id.upper()
+                        status_msg = decrypt_and_regen_html(each_msg, post_id, status_msg)
+                    except Exception as err:
+                        logger.error(f"{each_msg}: Error decrypting and regenerating HTML: {err}")
+            status_msg['status_title'] = "Success"
+            status_msg['status_message'].append(f"Finished running: decrypting and regenerating post HTML")
+
         elif form_diag.regenerate_thread_post_html.data:
             if not form_diag.regenerate_thread_post_id.data:
                 status_msg['status_message'].append("A Post ID is required")
@@ -957,19 +986,6 @@ def diag():
                     "Couldn't regenerate all reply post IDs: {}".format(err))
                 logger.exception("Couldn't regenerate all reply post IDs")
 
-        elif form_diag.regenerate_all_post_numbers.data:
-            try:
-                generate = Thread(
-                    target=daemon_com.generate_post_numbers, kwargs={'all_boards': True})
-                generate.daemon = True
-                generate.start()
-                status_msg['status_title'] = "Success"
-                status_msg['status_message'].append("Regenerating all post numbers in new thread")
-            except Exception as err:
-                status_msg['status_message'].append(
-                    "Couldn't regenerate all post numbers: {}".format(err))
-                logger.exception("Couldn't regenerate all post numbers")
-
         elif form_diag.regenerate_upload_sites.data:
             try:
                 for site in UploadSites.query.all():
@@ -982,71 +998,6 @@ def diag():
                 status_msg['status_message'].append(
                     "Couldn't regenerate all upload sites: {}".format(err))
                 logger.exception("Couldn't regenerate all upload sites")
-
-        elif form_diag.download_backup.data:
-            dump_path = os.path.join(config.INSTALL_DIR, 'bitchan_db.sql')
-
-            # Clean up
-            delete_file(dump_path)
-            delete_files_recursive(os.path.join(config.CODE_DIR, 'venv'))
-
-            try:
-                logger.info("Starting backup archive generation")
-                zs = ZipStream(compress_type=ZIP_DEFLATED, compress_level=9)
-
-                # First, delete invalid symlinks
-                for p, d, f in os.walk(config.FILE_DIRECTORY):
-                    for file in f:
-                        fp = f"{p}/{file}"
-                        if os.path.islink(fp) and not os.path.exists(fp):
-                            logger.info(f"Bad symlink, unlinking: {fp}")
-                            try:
-                                os.unlink(fp)
-                            except:
-                                logger.exception(1)
-
-                # Dump the MySQL database
-                dump_cmd = f"docker exec -i bitchan_mysql /usr/bin/bash -c '/usr/bin/mysqldump -uroot -p{config.DB_PW} {config.DB_NAME} > {dump_path}'"
-                p = subprocess.Popen(dump_cmd, shell=True, stdout=subprocess.PIPE)
-                out, err = p.communicate()
-                logger.info(f"MySQL dump Output: {out}, Error: {err}")
-
-                if os.path.isfile(dump_path):
-                    zs.add_path(dump_path, "bitchan_db.sql")
-                if os.path.exists(config.CODE_DIR):
-                    zs.add_path(config.CODE_DIR, "BitChan")
-                if os.path.exists(config.BM_PATH):
-                    zs.add_path(config.BM_PATH, "bitmessage")
-                if os.path.exists(config.FILE_DIRECTORY):
-                    zs.add_path(config.FILE_DIRECTORY, "downloaded_files")
-                if os.path.exists(config.BAN_THUMB_DIRECTORY):
-                    zs.add_path(config.BAN_THUMB_DIRECTORY, "banned_thumbs")
-                if os.path.exists(config.GPG_DIR):
-                    zs.add_path(config.GPG_DIR, "gnupg")
-                if os.path.exists(config.LOG_DIRECTORY):
-                    zs.add_path(config.LOG_DIRECTORY, "log")
-                if os.path.exists(config.TOR_PATH):
-                    zs.add_path(config.TOR_PATH, "tor")
-                if os.path.exists(config.I2PD_PATH):
-                    zs.add_path(config.I2PD_PATH, "i2pd")
-                if os.path.exists(config.I2PD_DATA_PATH):
-                    zs.add_path(config.I2PD_DATA_PATH, "i2pd_data")
-
-                fn = f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_bitchan_backup.zip"
-
-                return Response(
-                    zs,
-                    mimetype="application/zip",
-                    headers={
-                        "Content-Disposition": f"attachment; filename={fn}",
-                        "Last-Modified": zs.last_modified,
-                    }
-                )
-            except Exception as err:
-                status_msg['status_message'].append(
-                    "Couldn't generate backup archive: {}".format(err))
-                logger.exception("Couldn't generate backup archive")
-                logger.exception("Couldn't generate backup archive")
 
         elif form_diag.recheck_attachments.data:
             msg_ids = []
@@ -1146,67 +1097,6 @@ def diag():
 
             logger.info(f"Deleted all torrents and DB entries")
 
-        elif form_diag.restore_backup_file.data:
-            try:
-                # save_path = '/tmp/bitchan-backup_to_restore.tar'
-                # delete_file(save_path)
-                # form_diag.restore_backup_file.data.save(save_path)
-                #
-                # cmd = 'tar -xvf {} -C /'.format(save_path)
-                # output = subprocess.check_output(cmd, shell=True, text=True)
-                # logger.debug("Command: {}, Output: {}".format(cmd, output))
-                #
-                # cmd = 'tar -xvf /home/bitchan/bitchan_backup-usr_bitchan.tar -C /'
-                # output = subprocess.check_output(cmd, shell=True, text=True)
-                # logger.debug("Command: {}, Output: {}".format(cmd, output))
-                #
-                # cmd = 'tar -xvf /home/bitchan/bitchan_backup-usr_bitmessage.tar -C /'
-                # output = subprocess.check_output(cmd, shell=True, text=True)
-                # logger.debug("Command: {}, Output: {}".format(cmd, output))
-                #
-                # cmd = 'tar -xvf /home/bitchan/bitchan_backup-i2p -C /'
-                # output = subprocess.check_output(cmd, shell=True, text=True)
-                # logger.debug("Command: {}, Output: {}".format(cmd, output))
-                #
-                # def delete_backup_files():
-                #     delete_files = [
-                #         save_path,
-                #         '/home/bitchan/bitchan_backup-usr_bitchan.tar',
-                #         '/home/bitchan/bitchan_backup-usr_bitmessage.tar'
-                #         '/home/bitchan/bitchan_backup-i2p.tar'
-                #     ]
-                #     for each_file in delete_files:
-                #         delete_file(each_file)
-                #
-                # if config.DOCKER:
-                #     subprocess.Popen('docker stop -t 15 bitchan_daemon 2>&1', shell=True)
-                #     time.sleep(15)
-                #     subprocess.Popen('docker start bitchan_daemon 2>&1', shell=True)
-                #
-                #     subprocess.Popen('docker stop -t 15 bitchan_bitmessage 2>&1', shell=True)
-                #     time.sleep(15)
-                #     subprocess.Popen('docker start bitchan_bitmessage 2>&1', shell=True)
-                #
-                #     subprocess.Popen('docker stop -t 15 bitchan_i2p 2>&1', shell=True)
-                #     time.sleep(15)
-                #     subprocess.Popen('docker start bitchan_i2p 2>&1', shell=True)
-                # else:
-                #     subprocess.Popen('service bitchan_backend restart', shell=True)
-                #     subprocess.Popen('service bitchan_bitmessage restart', shell=True)
-                #     # subprocess.Popen('service i2pd restart', shell=True)
-                #
-                # thread_download = Thread(target=delete_backup_files)
-                # thread_download.start()
-                #
-                # status_msg['status_title'] = "Success"
-                # status_msg['status_message'].append("Restored backup and restarted Bitmessage and BitChan")
-
-                status_msg['status_message'].append("Restore feature is disabled until it can be built for the new backup system")
-            except Exception as err:
-                status_msg['status_message'].append(
-                    "Couldn't restore backup: {}".format(err))
-                logger.exception("Couldn't restore backup archive")
-
         elif form_diag.delete_post_id_submit.data:
             if form_diag.delete_post_id.data:
                 post_id = form_diag.delete_post_id.data.replace(" ", "").upper()
@@ -1304,8 +1194,7 @@ def bug_report():
     if request.method == 'POST':
         if form_bug.send.data and form_bug.bug_report.data:
             try:
-                # Only send from a board or list
-                # Do not send from an identity
+                # Only send from a board or list. Do not send from an identity.
                 if config.DEFAULT_CHANS[0]["address"] in daemon_com.get_all_chans():
                     address_from = config.DEFAULT_CHANS[0]["address"]
                 elif daemon_com.get_all_chans():
@@ -1316,53 +1205,64 @@ def bug_report():
                         "Join/Create a board or list and try again.")
                     address_from = None
 
-                alembic_version = Alembic.query.first().version_num
-                message_compiled = "BitChan version: {}\n".format(config.VERSION_BITCHAN)
-                message_compiled += "Database version: {} (should be {})\n\n".format(
-                    alembic_version, config.VERSION_ALEMBIC)
-                message_compiled += "Message:\n\n{}".format(form_bug.bug_report.data)
-                message_b64 = base64.b64encode(message_compiled.encode()).decode()
+                if not address_from:
+                    status_msg['status_message'].append("Missing from address")
 
-                ts = datetime.datetime.fromtimestamp(
-                    daemon_com.get_utc()).strftime('%Y-%m-%d %H:%M:%S')
-                subject = "Bug Report {} ({})".format(config.VERSION_BITCHAN, ts)
-                subject_b64 = base64.b64encode(subject.encode()).decode()
+                settings = GlobalSettings.query.first()
+                if settings.enable_kiosk_mode:
+                    now = time.time()
+                    last_post_ts = daemon_com.get_last_post_ts()
+                    if now < last_post_ts + settings.kiosk_post_rate_limit:
+                        status_msg['status_message'].append(
+                            "Posting is limited to 1 post per {} second period. Wait {:.0f} more seconds.".format(
+                                settings.kiosk_post_rate_limit,
+                                (last_post_ts + settings.kiosk_post_rate_limit) - now))
 
                 if not status_msg['status_message']:
-                    if address_from:
-                        # Don't allow a message to send while Bitmessage is restarting
-                        allow_send = False
-                        timer = time.time()
-                        while not allow_send:
-                            if daemon_com.bitmessage_restarting() is False:
-                                allow_send = True
-                            if time.time() - timer > config.BM_WAIT_DELAY:
-                                logger.error(
-                                    "Unable to send message: "
-                                    "Could not detect Bitmessage running.")
-                                return
-                            time.sleep(1)
+                    alembic_version = Alembic.query.first().version_num
+                    message_compiled = "BitChan version: {}\n".format(config.VERSION_BITCHAN)
+                    message_compiled += "Database version: {} (should be {})\n\n".format(
+                        alembic_version, config.VERSION_ALEMBIC)
+                    message_compiled += "Message:\n\n{}".format(form_bug.bug_report.data)
+                    message_b64 = base64.b64encode(message_compiled.encode()).decode()
 
-                        if allow_send:
-                            lf = LF()
-                            if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
-                                try:
-                                    return_str = api.sendMessage(
-                                        config.BITCHAN_BUG_REPORT_ADDRESS,
-                                        address_from,
-                                        subject_b64,
-                                        message_b64,
-                                        2,
-                                        get_max_ttl())
-                                    if return_str:
-                                        status_msg['status_title'] = "Success"
-                                        status_msg['status_message'].append(
-                                            "Sent. Thank you for your feedback. "
-                                            "Send returned: {}".format(return_str))
-                                finally:
-                                    time.sleep(config.API_PAUSE)
-                                    lf.lock_release(config.LOCKFILE_API)
+                    ts = datetime.datetime.fromtimestamp(
+                        daemon_com.get_utc()).strftime('%Y-%m-%d %H:%M:%S')
+                    subject = "Bug Report {} ({})".format(config.VERSION_BITCHAN, ts)
+                    subject_b64 = base64.b64encode(subject.encode()).decode()
 
+                    # Don't allow a message to send while Bitmessage is restarting
+                    allow_send = False
+                    timer = time.time()
+                    while not allow_send:
+                        if daemon_com.bitmessage_restarting() is False:
+                            allow_send = True
+                        if time.time() - timer > config.BM_WAIT_DELAY:
+                            logger.error(
+                                "Unable to send message: "
+                                "Could not detect Bitmessage running.")
+                            return
+                        time.sleep(1)
+
+                    lf = LF()
+                    if lf.lock_acquire(config.LOCKFILE_API, to=config.API_LOCK_TIMEOUT):
+                        try:
+                            return_str = api.sendMessage(
+                                config.BITCHAN_BUG_REPORT_ADDRESS,
+                                address_from,
+                                subject_b64,
+                                message_b64,
+                                2,
+                                get_max_ttl())
+                            if return_str:
+                                daemon_com.set_last_post_ts(time.time())
+                                status_msg['status_title'] = "Success"
+                                status_msg['status_message'].append(
+                                    "Sent. Thank you for your feedback. "
+                                    "Send returned: {}".format(return_str))
+                        finally:
+                            time.sleep(config.API_PAUSE)
+                            lf.lock_release(config.LOCKFILE_API)
             except Exception as err:
                 status_msg['status_message'].append("Could not send: {}".format(err))
                 logger.exception("Could not send bug report: {}".format(err))
@@ -1405,3 +1305,69 @@ def regex():
                            regex_return=regex_return,
                            status_msg=status_msg,
                            form_data=form_data)
+
+def decrypt_and_regen_html(message, post_id, status_msg):
+    try:
+        # Decode message
+        msg = base64.b64decode(message.message_original).decode()
+
+        # Check if message is an encrypted PGP message
+        if not msg.startswith("-----BEGIN PGP MESSAGE-----"):
+            status_msg['status_message'].append("{}: Message doesn't appear to be PGP message. Deleting.".format(
+                message.message_id[-config.ID_LENGTH:].upper()))
+
+        pgp_passphrase_msg = config.PGP_PASSPHRASE_MSG
+        if message.thread.chan.pgp_passphrase_msg:
+            pgp_passphrase_msg = message.thread.chan.pgp_passphrase_msg
+
+        # Decrypt the message
+        # Protect against explosive PGP message size exploit
+        msg_decrypted = decrypt_safe_size(msg, pgp_passphrase_msg, 400000)
+
+        if msg_decrypted is not None:
+            msg_decrypted_dict = json.loads(msg_decrypted)
+            if not msg_decrypted_dict["message"]:
+                return status_msg
+
+            msg_decrypted_dict["message"] = html.escape(msg_decrypted_dict["message"])
+
+            # perform admin command word replacements
+            admin_cmd = Command.query.filter(and_(
+                Command.chan_address == message.thread.chan.address,
+                Command.action == "set",
+                Command.action_type == "options")).first()
+            if admin_cmd and admin_cmd.options:
+                try:
+                    options = json.loads(admin_cmd.options)
+                except:
+                    options = {}
+                if "word_replace" in options:
+                    msg_decrypted_dict["message"] = replace_dict_keys_with_values(
+                        msg_decrypted_dict["message"], options["word_replace"])
+
+            message.original_message = msg_decrypted_dict["message"]
+            message.save()
+    except Exception as err:
+        status_msg['status_message'].append(
+            f"Couldn't decrypt post {post_id}: {err}")
+        logger.exception(f"Couldn't decrypt post {post_id}")
+
+    try:
+        regenerate_card_popup_post_html(message_id=message.message_id)
+        status_msg['status_title'] = "Success"
+        status_msg['status_message'].append(f"Decrypted and Regenerated HTML for post {post_id}.")
+    except Exception as err:
+        status_msg['status_message'].append(
+            f"Couldn't decrypt and regenerate HTML for post {post_id}: {err}")
+        logger.exception(f"Couldn't decrypt and regenerate HTML for post {post_id}")
+
+    try:
+        process_replacements(
+            message.original_message, message.message_id, message.message_id,
+            address=message.thread.chan.address, force_replacements=True)
+    except Exception as err:
+        status_msg['status_message'].append(
+            f"Couldn't process replacements for post {post_id}: {err}")
+        logger.exception(f"Couldn't process replacements for for post {post_id}")
+
+    return status_msg

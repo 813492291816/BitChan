@@ -63,6 +63,9 @@ class Diag(FlaskForm):
     regenerate_all_html = SubmitField("Regenerate All HTML")
     regenerate_post_html = SubmitField("Regenerate Post HTML")
     regenerate_post_id = StringField("Regenerate Post ID")
+    decrypt_regenerate_post_html = SubmitField("Decrypt and Regenerate Post HTML")
+    decrypt_regenerate_post_id = StringField("Decrypt and Regenerate Post ID")
+    decrypt_regenerate_post_all_html = SubmitField("Decrypt and Regenerate HTML for All Posts")
     regenerate_thread_post_id = StringField("Regenerate Thread Post ID")
     regenerate_thread_post_html = SubmitField("Regenerate all HTML of Posts of Thread")
     regenerate_popup_html = SubmitField("Regenerate Popup HTML")
@@ -80,14 +83,10 @@ class Diag(FlaskForm):
     delete_orphaned_attachments = SubmitField("Delete Orphaned Attachments")
     delete_all_torrents = SubmitField("Delete All Torrent Data and DB Entries")
     regenerate_reply_post_ids = SubmitField("Regenerate Reply Post IDs")
-    regenerate_all_post_numbers = SubmitField("Regenerate Post Numbers")
     regenerate_all_post_html = SubmitField("Regenerate Post HTML")
     regenerate_upload_sites = SubmitField("Regenerate Upload Sites")
     del_game_table = SubmitField("Delete Game Data")
     del_captcha_table = SubmitField("Delete Captcha Data")
-    download_backup = SubmitField("Download Backup Archive")
-    restore_backup = SubmitField("Restore Backup Archive")
-    restore_backup_file = FileField()
     del_sending_msg = SubmitField("Cancel Send")
     delete_post_id = StringField("Post ID to Delete")
     delete_post_id_submit = SubmitField("Delete post with ID")
@@ -158,9 +157,9 @@ class Settings(FlaskForm):
     chan_update_display_number = IntegerField("Max Home Page Updates")
     max_download_size = DecimalField("Attachment Auto-Download Max Size (MB)")
     max_extract_size = DecimalField("Attachment Extraction Max Size (MB)")
+    always_allow_my_i2p_bittorrent_attachments = BooleanField("Automatically Start I2P BitTorrent Downloads for My Posts")
     allow_net_file_size_check = BooleanField("Allow connecting to upload site to verify post attachment size")
     allow_net_book_quote = BooleanField("Allow connecting to get book quotes")
-    allow_net_ntp = BooleanField("Allow connecting to NTP to sync time")
     never_auto_download_unencrypted = BooleanField("Never allow auto-download of unencrypted attachments")
     allow_unencrypted_encryption_option = BooleanField("Allow unencrypted as attachment option")
     auto_dl_from_unknown_upload_sites = BooleanField("Automatically download from unknown upload sites")
@@ -194,7 +193,7 @@ class Settings(FlaskForm):
     save_chan_options = SubmitField("Save Options")
 
     # Bitmessage
-    bm_connections_in_out = StringField("Incoming and Outgoing Connections")
+    bm_connections_in_out = StringField("Bitmessage Connections")
     bitmessage_onion_services_only = BooleanField("Only Allow Bitmessage to Connect to Onion Services")
 
     # Security
@@ -226,6 +225,7 @@ class Settings(FlaskForm):
     kiosk_login_to_view = BooleanField("Require Users to Log In")
     kiosk_allow_posting = BooleanField("Allow Users to Post")
     kiosk_allow_gpg = BooleanField("Allow Users to Encrypt PGP Messages in Posts")
+    kiosk_allow_pow = BooleanField("Allow Users to Perform Additional Proof of Work for Posts")
     kiosk_disable_bm_attach = BooleanField("Disable Bitmessage as a Post Upload Method")
     kiosk_disable_i2p_torrent_attach = BooleanField("Disable I2P Torrent as a Post Upload Method")
     kiosk_disable_torrent_file_download = BooleanField("Disable Downloading Torrent File from Post Header")
@@ -237,6 +237,7 @@ class Settings(FlaskForm):
     kiosk_attempts_login = IntegerField("Maximum Login Attempts")
     kiosk_ban_login_sec = IntegerField("Login Ban Length (seconds)")
     kiosk_only_admin_access_mod_log = BooleanField("Only Kiosk Admins Can View Mod Log")
+    kiosk_only_admin_access_search = BooleanField("Only Kiosk Admins Can Access Search")
 
 
 class Status(FlaskForm):

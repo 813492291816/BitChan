@@ -1,10 +1,9 @@
 import logging
 import signal
 import sys
-from logging import handlers
-
 from flask import Flask
 from flask_session import Session
+from logging import handlers
 
 import config
 from database.models import populate_db
@@ -49,6 +48,7 @@ from flask_routes import routes_mail
 from flask_routes import routes_main
 from flask_routes import routes_management
 from flask_routes import routes_no_verification
+from flask_routes import routes_pages
 from flask_routes import routes_pgp
 from flask_routes import routes_verify
 
@@ -62,6 +62,7 @@ app.register_blueprint(routes_mail.blueprint)
 app.register_blueprint(routes_main.blueprint)
 app.register_blueprint(routes_management.blueprint)
 app.register_blueprint(routes_no_verification.blueprint)
+app.register_blueprint(routes_pages.blueprint)
 app.register_blueprint(routes_pgp.blueprint)
 app.register_blueprint(routes_verify.blueprint)
 

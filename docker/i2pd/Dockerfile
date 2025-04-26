@@ -2,8 +2,10 @@ FROM alpine:3.19.1
 
 ARG GIT_BRANCH="master"
 ENV GIT_BRANCH=${GIT_BRANCH}
-ARG GIT_TAG="2.51.0"
+ARG GIT_TAG="tags/2.56.0"
 ENV GIT_TAG=${GIT_TAG}
+ARG GIT_COMMIT="1293e122bcbe035a1c9c5370b4f473a5bb66719a"
+ENV GIT_COMMIT=${GIT_COMMIT}
 ARG REPO_URL="https://github.com/PurpleI2P/i2pd.git"
 ENV REPO_URL=${REPO_URL}
 
@@ -17,9 +19,9 @@ RUN mkdir -p "$I2PD_HOME" \
 RUN apk update \
     && apk --no-cache --virtual build-dependendencies add make gcc g++ libtool zlib-dev boost-dev build-base openssl-dev openssl miniupnpc-dev git \
     && mkdir -p /tmp/build \
-    && cd /tmp/build && git clone -b ${GIT_BRANCH} ${REPO_URL} \
+    && cd /tmp/build && git clone --progress --verbose -b ${GIT_BRANCH} ${REPO_URL} \
     && cd i2pd \
-    && if [ -n "${GIT_TAG}" ]; then git checkout tags/${GIT_TAG}; fi \
+    && git checkout ${GIT_TAG} \
     && make -j$(nproc) USE_UPNP=yes \
     && cp -R contrib/certificates /i2pd_certificates \
     && mkdir -p /usr/local/bin \

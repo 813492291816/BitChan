@@ -1,21 +1,22 @@
 {% extends "layout.html" %}
 
-{% set is_private = board['current_chan'].access == "private" %}
+{%- set is_private = board['current_chan'].access == "private" -%}
 
-{% set rules = chans_board_info[board['current_chan'].address]["rules"] %}
+{%- set rules = chans_board_info[board['current_chan'].address]["rules"] -%}
+{%- set require_identity_to_post = "require_identity_to_post" in rules and rules["require_identity_to_post"] -%}
+{%- set disallow_attachments = "disallow_attachments" in rules and rules["disallow_attachments"] -%}
 
-{% set require_identity_to_post = "require_identity_to_post" in rules and
-	                              rules["require_identity_to_post"] %}
+{%- set primary_addresses = chans_board_info[board['current_chan'].address]["primary_addresses"] -%}
+{%- set secondary_addresses = chans_board_info[board['current_chan'].address]["secondary_addresses"] -%}
+{%- set tertiary_addresses = chans_board_info[board['current_chan'].address]["tertiary_addresses"] -%}
+{%- set restricted_addresses = chans_board_info[board['current_chan'].address]["restricted_addresses"] -%}
 
-{% set primary_addresses = chans_board_info[board['current_chan'].address]["primary_addresses"] %}
-{% set secondary_addresses = chans_board_info[board['current_chan'].address]["secondary_addresses"] %}
-{% set tertiary_addresses = chans_board_info[board['current_chan'].address]["tertiary_addresses"] %}
-{% set restricted_addresses = chans_board_info[board['current_chan'].address]["restricted_addresses"] %}
-
-{% set primary_access = [] %}
-{% set secondary_access = [] %}
-{% set tertiary_access = [] %}
-{% set on_any_access_list = [] %}
+{%- set primary_access = [] -%}
+{%- set secondary_access = [] -%}
+{%- set tertiary_access = [] -%}
+{%- set on_any_access_list = [] -%}
+{% set is_admin = [] %}
+{% set can_post = [] %}
 
 {% for id_type in [identities, all_chans] %}
     {% for address in id_type if id_type[address]['enabled'] %}
@@ -35,7 +36,13 @@
     {%- do on_any_access_list.append(1) %}
 {% endif %}
 
-{% set is_private = board['current_chan'].access == "private" %}
+{% if (settings.enable_kiosk_mode and logged_in and (has_permission("is_global_admin") or has_permission("is_board_list_admin"))) or not settings.enable_kiosk_mode %}
+    {%- do is_admin.append(1) %}
+{% endif %}
+
+{% if not is_admin and (not is_private or (is_private and not on_any_access_list)) and board['current_chan'].read_only  %}
+    {%- do can_post.append(1) %}
+{% endif %}
 
 {% block title -%}
 {{chans_board_info[board['current_chan'].address]["label"]|safe}} -
@@ -48,10 +55,19 @@ Board
  - {% endblock %}
 
 {% block head %}
+
+    {% include '/elements/js_post_paste_attachment.html' %}
+
     <script>
         function checkForm(form) {
             form.submit_post.disabled = true;
             form.submit_post.value = "Please wait...";
+        }
+
+        function renameFile(originalFile, newName) {
+            return new File([originalFile], newName, {
+                type: originalFile.type
+            });
         }
 
         $(document).ready(function() {
@@ -93,6 +109,7 @@ Board
 {% block body %}
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
     {% include '/elements/banner.html' %}
     <br/>
 
@@ -109,9 +126,13 @@ Board
     {% endif %}
             Board <span style="font-size: 0.7em">[<a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a>
             / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a>
+        {% if not settings.enable_kiosk_mode or
+                  (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_search and logged_in and has_permission("is_global_admin")) or
+                  (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_search) -%}
             / <a class="link" title="Search" href="/search/0/1?sb={{board['current_chan'].address}}">Search</a>
+        {% endif %}
             {% if settings.rss_enable %}/ <a class="link" title="RSS via Tor" href="/rss/tor/{{board['current_chan'].address}}/0">RSS-tor</a>{% endif %}
-            {% if settings.rss_enable_i2p %}/ <a class="link" title="RSS via I2P" href="/rss/i2p/{{board['current_chan'].address}}/0">RSS-i2p</a>{% endif %}]]</span>
+            {% if settings.rss_enable_i2p %}/ <a class="link" title="RSS via I2P" href="/rss/i2p/{{board['current_chan'].address}}/0">RSS-i2p</a>{% endif %}]</span>
         </span>
     </center>
     <br/>
@@ -130,170 +151,174 @@ Board
     {% endif %}
 
     {% if rules and "automatic_wipe" in rules %}
-    <center>
-        <div class="themed" style="padding-top: 0.5em">
-            Content Wipe in <span id="clear_content_countdown">{{wipe_time_left(rules["automatic_wipe"]["wipe_epoch"])}}</span>
-        </div>
-    </center>
+    <div class="themed" style="text-align: center; padding-top: 0.5em">
+        Content Wipe in <span id="clear_content_countdown">{{wipe_time_left(rules["automatic_wipe"]["wipe_epoch"])}}</span>
+    </div>
     {% endif %}
+
+    {%- if board['current_chan'].read_only -%}
+    <div style="padding-top: 1em">
+        <center>
+            <span class="title themed bold god-text" style="text-decoration: none;">Read-Only Mode</span>
+        </center>
+    </div>
+    {%- endif -%}
 
     <hr/>
 
     {% if settings.debug_posts %}
         {% set debug_board_columns, debug_board_data = debug_info_board(board['current_chan'].address) %}
         {% if debug_board_columns and not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) -%}
-            <div style="padding-top: 1em">
-                <center>
-                    {% include '/elements/board/debug_info_board.html' %}
-                </center>
+            <div style="text-align: center;padding-top: 1em">
+                {% include '/elements/board/debug_info_board.html' %}
             </div>
         {% endif %}
     {% endif %}
 
     <center>
-        <div style="max-width: 500px; padding-bottom: 1em">
-            <section>
-                <details>
-                    <summary>Board Information</summary>
-                        <div style="padding: 1em">
-                            <div style="padding-bottom: 0.5em">
-                                <img src="/icon/{{board['current_chan'].address}}" style="width: 40px; height: 40px">
-                            </div>
+    <div style="text-align: center; max-width: 500px; padding-bottom: 1em">
+        <section>
+            <details>
+                <summary>Board Information</summary>
+                    <div style="padding: 1em">
+                        <div style="padding-bottom: 0.5em">
+                            <img src="/icon/{{board['current_chan'].address}}" style="width: 40px; height: 40px">
+                        </div>
 
-                            <span class="themed">Address</span>
-                            <div style="padding-bottom: 0.5em">
-                                <span class="themed" style="font-family: monospace">{{board['current_chan'].address}}</span> <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyToClipboard('{{board['current_chan'].address}}')">&#128203;</button>
-                            </div>
+                        <span class="themed">Address</span>
+                        <div style="padding-bottom: 0.5em">
+                            <span class="themed" style="font-family: monospace">{{board['current_chan'].address}}</span> <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyToClipboard('{{board['current_chan'].address}}')">&#128203;</button>
+                        </div>
 
-                            {% if board['current_chan'].hide_passphrase and not (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) %}
-                            <div class="themed" style="padding-bottom: 0.5em">
-                                The current configuration does not permit board passphrases to be shown
-                            </div>
-                            {% else %}
+                        {% if board['current_chan'].hide_passphrase and not (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) %}
+                        <div class="themed" style="padding-bottom: 0.5em">
+                            The current configuration does not permit board passphrases to be shown
+                        </div>
+                        {% else %}
 
-                                {% set passphrase_base64_escaped = html.escape(passphrase_base64) %}
-                                {% set passphrase_base64_with_pgp_escaped = html.escape(passphrase_base64_with_pgp) %}
+                            {% set passphrase_base64_escaped = html.escape(passphrase_base64) %}
+                            {% set passphrase_base64_with_pgp_escaped = html.escape(passphrase_base64_with_pgp) %}
 
-                            <span class="themed">Board Join Link{% if passphrase_base64 != passphrase_base64_with_pgp %}s{% endif %}:</span>
-                            <div style="padding-bottom: 0.5em">
-                                <a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64_escaped}}">Link</a>
-                                {%- if passphrase_base64 != passphrase_base64_with_pgp -%}
-                                , <a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64_with_pgp_escaped}}">Link With PGP Passphrases</a>
-                                {% endif %}
-                            </div>
-
-                            <span class="themed">BitChan Board Passphrase</span>
-                            <div style="padding-bottom: 0.5em">
-                                <input type="text" id="passphrase" value="{{board['current_chan'].passphrase}}"> <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyElemID('passphrase')">&#128203;</button>
-                            </div>
-
-                            <span class="themed">Message PGP Passphrase (max {{config.PGP_PASSPHRASE_LENGTH}})</span>
-                            <div style="padding-bottom: 0.5em">
-                                <form method="post" style="display: inline-block;" enctype="multipart/form-data">
-                                    <input type="text" id="pgp_passphrase_msg" name="pgp_passphrase_msg" value="{{board['current_chan'].pgp_passphrase_msg}}">
-                                    <input type="submit" name="set_pgp_passphrase_msg" value="Set"/>
-                                </form>
-                                <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_msg')">&#128203;</button>
-                            </div>
-
-                            <span class="themed">Attachment PGP Passphrase (max {{config.PGP_PASSPHRASE_LENGTH}})</span>
-                            <div style="padding-bottom: 0.5em">
-                                <form method="post" style="display: inline-block;" enctype="multipart/form-data">
-                                    <input type="text" id="pgp_passphrase_attach" name="pgp_passphrase_attach" value="{{board['current_chan'].pgp_passphrase_attach}}">
-                                    <input type="submit" name="set_pgp_passphrase_attach" value="Set"/>
-                                </form>
-                                <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_attach')">&#128203;</button>
-                            </div>
-
-                            <span class="themed">Steg PGP Passphrase (max {{config.PGP_PASSPHRASE_LENGTH}})</span>
-                            <div style="padding-bottom: 0.5em">
-                                <form method="post" style="display: inline-block;" enctype="multipart/form-data">
-                                    <input type="text" id="pgp_passphrase_steg" name="pgp_passphrase_steg" value="{{board['current_chan'].pgp_passphrase_steg}}">
-                                    <input type="submit" name="set_pgp_passphrase_steg" value="Set"/>
-                                </form>
-                                <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_steg')">&#128203;</button>
-                            </div>
+                        <span class="themed">Board Join Link{% if passphrase_base64 != passphrase_base64_with_pgp %}s{% endif %}:</span>
+                        <div style="padding-bottom: 0.5em">
+                            <a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64_escaped}}">Link</a>
+                            {%- if passphrase_base64 != passphrase_base64_with_pgp -%}
+                            , <a class="link" href="http://172.28.1.1:8000/join_base64/{{passphrase_base64_with_pgp_escaped}}">Link With PGP Passphrases</a>
                             {% endif %}
+                        </div>
 
-                            {% if rules %}
-                            <span class="themed">Rules:</span>
-                            {% include '/elements/rules.html' %}
-                            {% endif %}
+                        <span class="themed">BitChan Board Passphrase</span>
+                        <div style="padding-bottom: 0.5em">
+                            <input type="text" id="passphrase" value="{{board['current_chan'].passphrase}}"> <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyElemID('passphrase')">&#128203;</button>
+                        </div>
 
-                            <div class="themed" style="padding-bottom: 0.5em">
-                                {% include '/elements/accordion_access.html' %}
-                            </div>
+                        <span class="themed">Message PGP Passphrase (max {{config.PGP_PASSPHRASE_LENGTH}})</span>
+                        <div style="padding-bottom: 0.5em">
+                            <form method="post" style="display: inline-block;" enctype="multipart/form-data">
+                                <input type="text" id="pgp_passphrase_msg" name="pgp_passphrase_msg" value="{{board['current_chan'].pgp_passphrase_msg}}">
+                                <input type="submit" name="set_pgp_passphrase_msg" value="Set"/>
+                            </form>
+                            <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_msg')">&#128203;</button>
+                        </div>
 
-                            <span class="themed">Options:</span>
-                            <form method="post" action="/set_info_options/{{board['current_chan'].address}}" enctype="multipart/form-data">
-                            {%- if board['current_chan'].address in command_options and
-                                   "css" in command_options[board['current_chan'].address] -%}
-                            <div class="themed" style="padding-top: 0.5em">
-                                Custom CSS (Status: {% if board['current_chan'].allow_css %}Allowed{% else %}Disallowed{% endif %})&nbsp;
-                                {%- if board['current_chan'].allow_css -%}
-                                    <input type="submit" name="disallow_css" value="Disallow CSS"/>
-                                {%- else -%}
-                                    <input type="submit" name="allow_css" value="Allow CSS"/>
-                                {%- endif -%}
-                            </div>
-                            <div style="padding-bottom: 0.5em">
-                                <textarea rows="6" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="css_disabled" name="css_disabled" disabled>{{command_options[board['current_chan'].address]["css"]}}</textarea>
-                            </div>
+                        <span class="themed">Attachment PGP Passphrase (max {{config.PGP_PASSPHRASE_LENGTH}})</span>
+                        <div style="padding-bottom: 0.5em">
+                            <form method="post" style="display: inline-block;" enctype="multipart/form-data">
+                                <input type="text" id="pgp_passphrase_attach" name="pgp_passphrase_attach" value="{{board['current_chan'].pgp_passphrase_attach}}">
+                                <input type="submit" name="set_pgp_passphrase_attach" value="Set"/>
+                            </form>
+                            <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_attach')">&#128203;</button>
+                        </div>
+
+                        <span class="themed">Steg PGP Passphrase (max {{config.PGP_PASSPHRASE_LENGTH}})</span>
+                        <div style="padding-bottom: 0.5em">
+                            <form method="post" style="display: inline-block;" enctype="multipart/form-data">
+                                <input type="text" id="pgp_passphrase_steg" name="pgp_passphrase_steg" value="{{board['current_chan'].pgp_passphrase_steg}}">
+                                <input type="submit" name="set_pgp_passphrase_steg" value="Set"/>
+                            </form>
+                            <button type="button" class="btn" title="Copy to Clipboard" onclick="CopyElemID('pgp_passphrase_steg')">&#128203;</button>
+                        </div>
+                        {% endif %}
+
+                        {% if rules %}
+                        <span class="themed">Rules:</span>
+                        {% include '/elements/rules.html' %}
+                        {% endif %}
+
+                        <div class="themed" style="padding-bottom: 0.5em">
+                            {% include '/elements/accordion_access.html' %}
+                        </div>
+
+                        <span class="themed">Options:</span>
+                        <form method="post" action="/set_info_options/{{board['current_chan'].address}}" enctype="multipart/form-data">
+                        {%- if board['current_chan'].address in command_options and
+                               "css" in command_options[board['current_chan'].address] -%}
+                        <div class="themed" style="padding-top: 0.5em">
+                            Custom CSS (Status: {% if board['current_chan'].allow_css %}Allowed{% else %}Disallowed{% endif %})&nbsp;
+                            {%- if board['current_chan'].allow_css -%}
+                                <input type="submit" name="disallow_css" value="Disallow CSS"/>
+                            {%- else -%}
+                                <input type="submit" name="allow_css" value="Allow CSS"/>
                             {%- endif -%}
-                            </form>
-                            {% if not settings.enable_kiosk_mode or
-                                  (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_mod_log and logged_in and has_permission("is_global_admin")) or
-                                  (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_mod_log) -%}
-                            <div>
-                                <a class="link" href="/mod_log/{{board['current_chan'].address}}/1">This Board's Mod Log</a>
-                            </div>
-                            {% endif %}
-                            <div>
-                                <a class="link" href="/leave/{{board['current_chan'].address}}">Leave Board</a>
-                            </div>
                         </div>
-                </details>
-            </section>
-        </div>
-
-        {% if primary_access %}
-        <div style="max-width: 500px; padding-bottom: 1em">
-            <section>
-                <details>
-                    <summary>Owner Options</summary>
-                        <div class="themed" style="padding: 1em">
-                            <form method="post" action="/set_owner_options/{{board['current_chan'].address}}" enctype="multipart/form-data">
-                            {% include '/elements/set_owner_options.html' %}
-                            <div style="padding-top: 1em">
-                                <input type="submit" name="set_options" value="Set Options"/>
-                            </div>
-                            </form>
+                        <div style="padding-bottom: 0.5em">
+                            <textarea rows="6" maxlength="246250" class="form" style="width: 100%; box-sizing: border-box;" id="css_disabled" name="css_disabled" disabled>{{command_options[board['current_chan'].address]["css"]}}</textarea>
                         </div>
-                </details>
-            </section>
-        </div>
-        {% endif %}
-
-        {% if secondary_access %}
-        <div style="max-width: 500px; padding-bottom: 1em">
-            <section>
-                <details>
-                    <summary>Admin Options</summary>
-                        <div class="themed" style="padding: 1em">
-                            ...
+                        {%- endif -%}
+                        </form>
+                        {% if not settings.enable_kiosk_mode or
+                              (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_mod_log and logged_in and has_permission("is_global_admin")) or
+                              (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_mod_log) -%}
+                        <div>
+                            <a class="link" href="/mod_log/{{board['current_chan'].address}}/1">This Board's Mod Log</a>
                         </div>
-                </details>
-            </section>
-        </div>
-        {% endif %}
+                        {% endif %}
+                        <div>
+                            <a class="link" href="/leave/{{board['current_chan'].address}}">Leave Board</a>
+                        </div>
+                    </div>
+            </details>
+        </section>
+    </div>
 
+    {% if primary_access %}
+    <div style="text-align: center; max-width: 500px; padding-bottom: 1em">
+        <section>
+            <details>
+                <summary>Owner Options</summary>
+                    <div class="themed" style="padding: 1em">
+                        <form method="post" action="/set_owner_options/{{board['current_chan'].address}}" enctype="multipart/form-data">
+                        {% include '/elements/set_owner_options.html' %}
+                        <div style="padding-top: 1em">
+                            <input type="submit" name="set_options" value="Set Options"/>
+                        </div>
+                        </form>
+                    </div>
+            </details>
+        </section>
+    </div>
+    {% endif %}
+
+    {% if secondary_access %}
+    <div style="text-align: center; max-width: 500px; padding-bottom: 1em">
+        <section>
+            <details>
+                <summary>Admin Options</summary>
+                    <div class="themed" style="padding: 1em">
+                        ...
+                    </div>
+            </details>
+        </section>
+    </div>
+    {% endif %}
+
+    {% if not can_post %}
         {% if settings.enable_kiosk_mode and settings.kiosk_post_rate_limit %}
-        <div class="themed" title="Time To Post: the number of seconds until you can post (updated every 20 seconds)" style="max-width: 500px; padding-bottom: 1em">
-            <span id="post-timer">TTP: ... s</span>
-        </div>
+    <div class="themed" title="Time To Post: the number of seconds until you can post (updated every 20 seconds)" style="text-align: center; max-width: 500px; padding-bottom: 1em">
+        <span id="post-timer">TTP: ... s</span>
+    </div>
         {% endif %}
 
-    {% if not is_private or (is_private and on_any_access_list) %}
         {% include '/elements/board/post_form.html' %}
     {% else %}
         <span class="themed">Insufficient permissions to post</span>
@@ -301,17 +326,11 @@ Board
     </center>
     <hr/>
 
-    {% set threads = get_threads_from_page(board['current_chan'].address, board["current_page"]) %}
-    {% for thread in threads %}
-
-        {% set message_op = board["messages"].query
-           .filter(board["messages"].thread_id == thread.id)
-           .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash).first() %}
-
-        {% if message_op %}
-            {% set post = message_op %}
-            {% set text = post.message %}
-        {% endif %}
+    {% for results in dict_threads %}
+        {% set thread = results[0] %}
+        {% set post_op = results[1] %}
+        {% set message_replies = results[2] %}
+        {% set message_reply_all_count = results[3] %}
 
         {% if thread.hide %}
 
@@ -320,58 +339,35 @@ Board
     </div>
 
         {% else %}
-            {% set post_order_asc = board["messages"].timestamp_sent.asc() %}
-            {% if settings.post_timestamp == 'received' %}
-                {% set post_order_asc = board["messages"].timestamp_received.asc() %}
-            {% endif %}
-
-            {% set steg_found = board["messages"].query
-               .filter(board["messages"].thread_id == thread.id)
-               .filter(board["messages"].message_steg != "{}").count() %}
-
-            {% set message_replies = board["messages"].query
-               .filter(board["messages"].thread_id == thread.id)
-               .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
-               .order_by(post_order_asc) %}
 
     <div class="thread" style="padding-bottom: 1em">
-            {% if message_op %}
-                {{generate_post_html(post.message_id, board_view=True)|safe}}
+            {% if post_op %}
+                {{generate_post_html(post_op.message_id, board_view=True)|safe}}
             {% else %}
                 {% include '/elements/board/op_missing.html' %}
             {% endif %}
 
-            {% if message_replies.count() > 5 %}
+
+            {% if message_reply_all_count > 5 %}
         <br>
         <span class="expand">
             <br/>
-            {{message_replies.count() - 5}} posts truncated.
-            View <a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}" class="link">all posts</a>
-                {%- if message_replies.count() > 100 %}
+            {{message_reply_all_count - 5}} posts truncated.
+            View <a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}">all posts</a>
+                {%- if message_reply_all_count > 100 %}
             or <a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}?last=100">last 100 posts</a>
                 {%- endif -%}
             .
         </span>
-                {% for post in message_replies.all()[-5:] %}
-                    {% set text = post.message %}
-                    {% set reply_steg = board["messages"].query
-                       .filter(board["messages"].message_id == post.message_id)
-                       .filter(board["messages"].message_steg != "{}").count() %}
-        <div class="post plaque" id="{{post.post_id}}">
-            {{generate_post_html(post.message_id, board_view=True)|safe}}
-        </div>
-                {% endfor %}
-            {% else %}
-                {% for post in message_replies %}
-                    {% set text = post.message %}
-                    {% set reply_steg = board["messages"].query
-                       .filter(board["messages"].message_id == post.message_id)
-                       .filter(board["messages"].message_steg != "{}").count() %}
-        <div class="post plaque" id="{{post.post_id}}">
-            {{generate_post_html(post.message_id, board_view=True)|safe}}
-        </div>
-                {% endfor %}
+
             {% endif %}
+
+            {% for each_message in message_replies.all() %}
+        <div class="post plaque" id="{{each_message.post_id}}">
+            {{generate_post_html(each_message.message_id, board_view=True)|safe}}
+        </div>
+            {% endfor %}
+
     </div>
 
         {% endif %}
@@ -384,7 +380,11 @@ Board
     <div class="themed" style="text-align: right; padding-right: 1.5em;">
         <a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a>
         / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a>
+    {% if not settings.enable_kiosk_mode or
+              (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_search and logged_in and has_permission("is_global_admin")) or
+              (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_search) -%}
         / <a class="link" title="Search" href="/search/0/1?sb={{board['current_chan'].address}}">Search</a>
+    {% endif %}
         {% if settings.rss_enable %}/ <a class="link" title="RSS via Tor" href="/rss/tor/{{board['current_chan'].address}}/0">RSS-tor</a>{% endif %}
         {% if settings.rss_enable_i2p %}/ <a class="link" title="RSS via I2P" href="/rss/i2p/{{board['current_chan'].address}}/0">RSS-i2p</a>{% endif %}
     </div>
@@ -392,5 +392,6 @@ Board
     {% include '/elements/footer_board.html' %}
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

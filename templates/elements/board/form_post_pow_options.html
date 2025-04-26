@@ -1,0 +1,52 @@
+<section>
+  <details>
+    <summary>Proof of Work (POW)</summary>
+    <table style="width: 100%;">
+      <tbody>
+        <tr>
+          <td class="form themed bold">
+            <label for="pow_method">POW Method</label>
+          </td>
+          <td colspan="2">
+            <select id="pow_method" name="pow_method">
+              <option value=""></option>
+              <option value="hashcash"
+            {%- if "pow_method" in form_populate and form_populate["pow_method"] == "hashcash" %} selected
+            {%- elif "require_pow_to_post" in rules and
+                     "pow_method" in rules["require_pow_to_post"] and
+                     rules["require_pow_to_post"]["pow_method"] == "hashcash" %} selected
+            {%- endif -%}>
+              Hashcash</option>
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold"><label for="pow_difficulty">POW Difficulty (integer)</label></td>
+          <td colspan="2">
+            <input type="number" id="pow_difficulty" name="pow_difficulty"
+            {%- if "pow_difficulty" in form_populate and form_populate["pow_difficulty"] -%}
+              value="{{form_populate['pow_difficulty']}}"
+            {%- elif "require_pow_to_post" in rules and
+                     "pow_difficulty" in rules["require_pow_to_post"] and
+                     rules["require_pow_to_post"]["pow_difficulty"] -%}
+              value="{{rules["require_pow_to_post"]["pow_difficulty"]}}"
+            {%- endif -%}>
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold"><label for="pow_repetitions">POW Repetitions (integer)</label></td>
+          <td colspan="2">
+            <input type="number" id="pow_repetitions" name="pow_repetitions"
+            {%- if "pow_repetitions" in form_populate and form_populate["pow_repetitions"] -%}
+              value="{{form_populate['pow_repetitions']}}"
+            {%- elif "require_pow_to_post" in rules and
+                     "pow_repetitions" in rules["require_pow_to_post"] and
+                     rules["require_pow_to_post"]["pow_repetitions"] -%}
+              value="{{rules["require_pow_to_post"]["pow_repetitions"]}}"
+            {%- endif -%}>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </details>
+</section>

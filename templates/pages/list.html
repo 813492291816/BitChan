@@ -13,6 +13,8 @@
 {% set secondary_access = [] %}
 {% set tertiary_access = [] %}
 {% set on_any_access_list = [] %}
+{% set is_admin = [] %}
+{% set read_only = [] %}
 
 {% for id_type in [identities, all_chans] %}
     {% for address in id_type if id_type[address]['enabled'] %}
@@ -30,6 +32,14 @@
 
 {% if primary_access or secondary_access or tertiary_access %}
     {%- do on_any_access_list.append(1) %}
+{% endif %}
+
+{% if (settings.enable_kiosk_mode and logged_in and (has_permission("is_global_admin") or has_permission("is_board_list_admin"))) or not settings.enable_kiosk_mode %}
+    {%- do is_admin.append(1) %}
+{% endif %}
+
+{% if not is_admin and (not is_private or (is_private and not on_any_access_list)) and board['current_chan'].read_only  %}
+    {%- do read_only.append(1) %}
 {% endif %}
 
 {% block head %}
@@ -92,6 +102,7 @@ List
 {% block body %}
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
     {% include '/elements/banner.html' %}
     <br/>
 
@@ -135,6 +146,14 @@ List
         </div>
     </center>
     {% endif %}
+
+    {%- if board['current_chan'].read_only -%}
+    <div style="padding-top: 1em">
+        <center>
+            <span class="title themed bold god-text" style="text-decoration: none;">Read-Only Mode</span>
+        </center>
+    </div>
+    {%- endif -%}
 
     <hr/>
     <center>
@@ -255,7 +274,7 @@ List
 
     </center>
 
-    {% if primary_access or secondary_access or tertiary_access or not is_private %}
+    {% if not read_only %}
     <div class="themed" style="padding-top: 1em">
         <center>
             <form action="/list/{{board['current_chan'].address}}" method="post">
@@ -311,7 +330,7 @@ List
         <form action="/list/{{board['current_chan'].address}}" method="post">
         <table class="list themed" style="max-width: 1050px">
             <tr>
-                <td><input type="checkbox" onClick="toggle(this)"/></td>
+                {% if not read_only %}<td><input type="checkbox" onClick="toggle(this)"/></td>{% endif %}
                 <td></td>
                 <td>Address</td>
                 <td>Type</td>
@@ -335,11 +354,13 @@ List
                 {% endif %}
 
             <tr>
+                {% if not read_only %}
                 <td style="border-top: 1px solid black;">
-                {% if address not in chans_board_info and address not in chans_list_info %}
+                    {% if address not in chans_board_info and address not in chans_list_info %}
                     <input type="checkbox" id="joinbulk_{{address}}" name="joinbulk_{{address}}" value="y">
-                {% endif %}
+                    {% endif %}
                 </td>
+                {% endif %}
                 <td style="border-top: 1px solid black;">
                     <img style="width: 25px; height: 25px" src="/icon/{{address}}">
                 </td>
@@ -380,8 +401,9 @@ List
                 <td colspan="5" style="padding: 0 0.8em 0.8em 0.8em;">
                 {% endif %}
 
-                {% if (address not in chans_board_info and address not in chans_list_info) or
-                      (primary_access or secondary_access) %}
+                {% if ((address not in chans_board_info and address not in chans_list_info) or
+                       (primary_access or secondary_access)) and
+                            not read_only %}
                     <div style="padding: 0.2em 0">
                     {% if address not in chans_board_info and address not in chans_list_info %}
                         <input type="submit" name="join_{{address}}" id="join_{{address}}" value="Join"/>
@@ -518,7 +540,10 @@ List
 
             {% endfor %}
         </table>
+
+        {% if not read_only %}
         <input type="submit" name="joinbulk" id="joinbulk" value="Join All Checked"/>
+        {% endif %}
         </form>
     {% else %}
         <div class="themed" style="padding-top: 1em">
@@ -530,5 +555,6 @@ List
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
     <div style="padding-top: 1em"></div>
 {% endblock %}

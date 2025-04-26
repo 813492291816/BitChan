@@ -26,8 +26,18 @@
       </td>
     </tr>
     <tr>
-        <td class="form themed bold"><label for="delete_password">Password to Delete <span title="Max 512 characters. Use unique passwords for different posts and record them somewhere (see manual for more info).">&#9432;</span></label></td>
+        <td class="form themed bold">
+            <label for="delete_password">Password to Delete <span title="Max 512 characters. Use unique passwords for different posts and record them somewhere (see manual for more info).">&#9432;</span></label>
+        </td>
         <td>
             <input class="form" style="width: 100%; box-sizing: border-box;" type="password" maxlength="512" id="delete_password" name="delete_password" value="{% if 'delete_password' in form_populate and form_populate['delete_password'] %}{{form_populate['delete_password']}}{% endif %}"/>
-      </td>
+        </td>
+    </tr>
+    <tr>
+        <td class="form themed bold">
+            <label for="schedule_post_epoch">Schedule to Post after Epoch <span title="If epoch is in the future, the post will be scheduled to be posted after the epoch. Use an epoch converter.">&#9432;</span></label>
+        </td>
+        <td>
+            <input class="form" style="width: 100%; box-sizing: border-box;" type="number" step="1" id="schedule_post_epoch" name="schedule_post_epoch" value="{% if 'schedule_post_epoch' in form_populate and form_populate['schedule_post_epoch'] %}{{form_populate['schedule_post_epoch']}}{% else %}{{time.time()|int}}{% endif %}"/>
+        </td>
     </tr>

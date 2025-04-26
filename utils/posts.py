@@ -13,6 +13,7 @@ from database.models import DeletedThreads
 from database.models import Games
 from database.models import Messages
 from database.models import PostCards
+from database.models import PostDeletePasswordHashes
 from database.models import Threads
 from database.models import UploadTorrents
 from database.utils import session_scope
@@ -51,6 +52,15 @@ def delete_message_replies(message_id):
         new_session.commit()
 
 
+def delete_post_delete_password(message_id):
+    """Delete the entry that stores the password hash that's used to delete a post using a password"""
+    with session_scope(config.DB_PATH) as new_session:
+        hash_delete = new_session.query(PostDeletePasswordHashes).filter(
+            PostDeletePasswordHashes.message_id == message_id).first()
+        if hash_delete:
+            new_session.delete(hash_delete)
+
+
 def delete_message_torrent(message_id):
     with session_scope(config.DB_PATH) as new_session:
         torrent = new_session.query(UploadTorrents).filter(
@@ -66,8 +76,8 @@ def delete_message_torrent(message_id):
             qbt_client.auth_log_in()
             with qbittorrentapi.Client(**conn_info) as qbt_client:
                 qbt_client.torrents_delete(delete_files=True, torrent_hashes=torrent.torrent_hash)
-        except Exception as err:
-            logger.error(f"Error deleting torrent: {err}")
+        except Exception:
+            logger.exception(f"Error deleting torrent")
 
         # For good measure, attempt to delete where data and torrent file (if qbittorrent api failed ot delete)
         path_data = os.path.join('/i2p_qb/Downloads/', torrent.file_hash)
@@ -121,6 +131,9 @@ def delete_post(message_id, only_hide=False):
     if message:
         # Delete all files associated with message
         delete_message_files(message_id)
+
+        # Delete password hash entry for post deletion
+        delete_post_delete_password(message_id)
 
         # Delete reply entry and references to post ID
         delete_message_replies(message_id)
@@ -259,7 +272,7 @@ def restore_thread(thread_id):
 
 def update_board_timestamp(address):
     """ Update board timestamp """
-    logger.info(f"Updating board {address} timestamps")
+    logger.debug(f"Updating board {address} timestamps")
     with session_scope(config.DB_PATH) as new_session:
         chan = new_session.query(Chan).filter(
             Chan.address == address).first()
@@ -268,7 +281,8 @@ def update_board_timestamp(address):
                 Threads.chan_id == chan.id).order_by(
                     Threads.timestamp_sent.desc()).first()
             if thread and thread.timestamp_sent:
-                logger.info(f"Updating chan {address} timestamp_sent to {thread.timestamp_sent} (from thread {thread.thread_hash})")
+                logger.debug(f"Updating chan {address} timestamp_sent to "
+                             f"{thread.timestamp_sent} (from thread {thread.thread_hash})")
                 chan.timestamp_sent = thread.timestamp_sent
                 new_session.commit()
 
@@ -276,14 +290,15 @@ def update_board_timestamp(address):
                 Threads.chan_id == chan.id).order_by(
                 Threads.timestamp_received.desc()).first()
             if thread and thread.timestamp_received:
-                logger.info(f"Updating chan {address} timestamp_received to {thread.timestamp_sent} (from thread {thread.thread_hash})")
+                logger.debug(f"Updating chan {address} timestamp_received to "
+                             f"{thread.timestamp_sent} (from thread {thread.thread_hash})")
                 chan.timestamp_received = thread.timestamp_received
                 new_session.commit()
 
 
 def update_thread_timestamp(thread_hash):
     """ Update thread timestamp """
-    logger.info(f"Updating thread {thread_hash} timestamps")
+    logger.debug(f"Updating thread {thread_hash} timestamps")
     with session_scope(config.DB_PATH) as new_session:
         thread = new_session.query(Threads).filter(
             Threads.thread_hash == thread_hash).first()
@@ -292,7 +307,8 @@ def update_thread_timestamp(thread_hash):
                 Messages.thread_id == thread.id).order_by(
                     Messages.timestamp_sent.desc()).first()
             if message_latest and message_latest.timestamp_sent:
-                logger.info(f"Updating thread {thread.thread_hash} timestamp_sent to {message_latest.timestamp_sent} (from msg {message_latest.message_id})")
+                logger.debug(f"Updating thread {thread.thread_hash} timestamp_sent to "
+                             f"{message_latest.timestamp_sent} (from msg {message_latest.message_id})")
                 thread.timestamp_sent = message_latest.timestamp_sent
                 new_session.commit()
 
@@ -300,7 +316,8 @@ def update_thread_timestamp(thread_hash):
                 Messages.thread_id == thread.id).order_by(
                 Messages.timestamp_received.desc()).first()
             if message_latest and message_latest.timestamp_received:
-                logger.info(f"Updating thread {thread.thread_hash} timestamp_received to {message_latest.timestamp_received} (from msg {message_latest.message_id})")
+                logger.debug(f"Updating thread {thread.thread_hash} timestamp_received to "
+                             f"{message_latest.timestamp_received} (from msg {message_latest.message_id})")
                 thread.timestamp_received = message_latest.timestamp_received
                 new_session.commit()
 

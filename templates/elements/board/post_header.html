@@ -1,5 +1,6 @@
 {% set is_board_view = board['board_view'] -%}
 {%- set thread_options = get_thread_options(thread.thread_hash) -%}
+{%- set board_rules = chans_board_info[board['current_chan'].address]["rules"] -%}
 
 {%- if is_op_post -%}
     {%- if steg_found -%}
@@ -116,8 +117,32 @@
 &nbsp;<img style="position: relative; top: 3px; width: 25px; height: 15px" title="{{post.nation_name}}" src="/custom_flag_by_post_id/{{post.message_id}}">
 {%- endif %}
 
-{%- if post.timestamp_sent -%}
-&nbsp;<span title="Received {{timestamp_to_date(post.timestamp_received)}}{% if post.expires_time %}, TTL Expiration {{timestamp_to_date(post.expires_time)}}{% endif %}">{{timestamp_to_date(post.timestamp_sent)}}</span>
+{%- if is_op_post or (post.timestamp_sent and "sort_replies_by_pow" not in thread_options["rules"]) -%}
+&nbsp;<span title="Received {{timestamp_to_date(post.timestamp_received)}}
+  {%- if post.expires_time -%}
+    , TTL Expiration {{timestamp_to_date(post.expires_time)}}
+  {%- endif -%}
+  {%- if post.pow_method -%}
+    , POW {{post.pow_method}}
+    {%- if post.pow_difficulty -%}
+      /d{{post.pow_difficulty}}
+    {%- endif -%}
+    {%- if post.pow_repetitions -%}
+      /r{{post.pow_repetitions}}
+    {%- endif -%}
+  {%- endif -%}
+">{{timestamp_to_date(post.timestamp_sent)}}</span>
+{%- endif %}
+
+{%- if ("sort_replies_by_pow" in thread_options["rules"] or
+        "require_pow_to_reply" in thread_options["rules"] or
+        "require_pow_to_post" in board_rules) and
+           (post.pow_method and post.pow_difficulty and post.pow_repetitions) -%}
+&nbsp;<span title="Received {{timestamp_to_date(post.timestamp_received)}}
+  {%- if post.expires_time -%}
+    , TTL Expiration {{timestamp_to_date(post.expires_time)}}
+  {%- endif -%}
+  , POW(Method/Difficulty/Repetitions)">POW({{post.pow_method}}/{{post.pow_difficulty}}/{{post.pow_repetitions}})</span>
 {%- endif %}
 
 {%- if post.sage -%}
@@ -170,10 +195,6 @@
     {%- endif -%}
 {%- else -%}
 &nbsp;<a class="link" href="#popup_reply" title="Post ID" onclick="javascript:reply_link_to_comment('{{post.post_id}}');">{{post.post_id}}</a>
-{%- endif -%}
-
-{%- if post.post_number -%}
-&nbsp;/ <span title="Board Post Number">{{post.post_number}}</span>
 {%- endif -%}
 
 {%- set reply_dict = get_post_replies_dict(post.message_id) -%}

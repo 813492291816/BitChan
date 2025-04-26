@@ -1,23 +1,23 @@
 {% extends "layout.html" %}
 
-{% set thread = board["current_thread"] %}
+{%- set thread = board["current_thread"] -%}
+{%- set is_private = board['current_chan'].access == "private" -%}
 
-{% set is_private = board['current_chan'].access == "private" %}
+{%- set rules = chans_board_info[board['current_chan'].address]["rules"] -%}
+{%- set require_identity_to_post = "require_identity_to_post" in rules and rules["require_identity_to_post"] -%}
+{%- set disallow_attachments = "disallow_attachments" in rules and rules["disallow_attachments"] -%}
 
-{% set rules = chans_board_info[board['current_chan'].address]["rules"] %}
+{%- set primary_addresses = chans_board_info[board['current_chan'].address]["primary_addresses"] -%}
+{%- set secondary_addresses = chans_board_info[board['current_chan'].address]["secondary_addresses"] -%}
+{%- set tertiary_addresses = chans_board_info[board['current_chan'].address]["tertiary_addresses"] -%}
+{%- set restricted_addresses = chans_board_info[board['current_chan'].address]["restricted_addresses"] -%}
 
-{% set require_identity_to_post = "require_identity_to_post" in rules and
-	                              rules["require_identity_to_post"] %}
-
-{% set primary_addresses = chans_board_info[board['current_chan'].address]["primary_addresses"] %}
-{% set secondary_addresses = chans_board_info[board['current_chan'].address]["secondary_addresses"] %}
-{% set tertiary_addresses = chans_board_info[board['current_chan'].address]["tertiary_addresses"] %}
-{% set restricted_addresses = chans_board_info[board['current_chan'].address]["restricted_addresses"] %}
-
-{% set primary_access = [] %}
-{% set secondary_access = [] %}
-{% set tertiary_access = [] %}
-{% set on_any_access_list = [] %}
+{%- set primary_access = [] -%}
+{%- set secondary_access = [] -%}
+{%- set tertiary_access = [] -%}
+{%- set on_any_access_list = [] -%}
+{% set is_admin = [] %}
+{% set can_post = [] %}
 
 {% for id_type in [identities, all_chans] %}
     {% for address in id_type if id_type[address]['enabled'] %}
@@ -37,7 +37,13 @@
     {%- do on_any_access_list.append(1) %}
 {% endif %}
 
-{% set is_private = board['current_chan'].access == "private" %}
+{% if (settings.enable_kiosk_mode and logged_in and (has_permission("is_global_admin") or has_permission("is_board_list_admin"))) or not settings.enable_kiosk_mode %}
+    {%- do is_admin.append(1) %}
+{% endif %}
+
+{% if not is_admin and (not is_private or (is_private and not on_any_access_list)) and board['current_chan'].read_only  %}
+    {%- do can_post.append(1) %}
+{% endif %}
 
 {% block title %}
 (Steg) {{board["current_thread"].subject|safe}} -
@@ -51,58 +57,11 @@ Board
  - {% endblock %}
 
 {% block head %}
+
+    {% include '/elements/js_post_paste_attachment.html' %}
+
     <script>
-        $(document).ready(function() {
-
-            $("#btn_reply_submit").click(function (event) {
-                $("#btn_reply_submit").prop("disabled", true);
-                $("#btn_reply_submit").prop("value", "Posting...");
-            }
-
-            var volume_set = document.getElementsByClassName("volume-75");
-            if (volume_set.length) {
-                for(var i = 0; i <= volume_set.length; i++) {
-                    volume_set[i].volume = 0.75;
-                }
-            }
-
-        });
-
-        function randomString(id_field) {
-            var characters = "ABCDEFGHIJKLMNOPQRSTUVWXTZabcdefghiklmnopqrstuvwxyz0123456789";
-            var lenString = 32;
-            var randomstring = '';
-
-            for (var i=0; i<lenString; i++) {
-                var rnum = Math.floor(Math.random() * characters.length);
-                randomstring += characters.substring(rnum, rnum+1);
-            }
-
-            document.getElementById(id_field).value = randomstring;
-            CopyToClipboard(randomstring);
-        }
-
-        function reply_link_to_comment(text_reply) {
-            let myField = document.getElementById('post_body_reply_popup');
-            if (myField.selectionStart || myField.selectionStart == '0') {
-                var startPos = myField.selectionStart;
-                var endPos = myField.selectionEnd;
-                let str_value = myField.value.substring(0, startPos);
-                str_value += '>>' + text_reply + '\n';
-                if (window.getSelection().toString()) {
-                    let list_value = window.getSelection().toString().split(/\r?\n/)
-                    for (let i=0; i<list_value.length; i++) {
-                        str_value += '>' + list_value[i] + '\n';
-                    }
-                }
-                str_value += myField.value.substring(endPos, myField.value.length);
-                myField.value = str_value;
-            }
-        }
-
-    {% if settings.enable_kiosk_mode and settings.kiosk_post_rate_limit %}
-        {% include '/elements/js_post_countdown.html' %}
-    {% endif %}
+    {% include '/elements/js_reply_popup.html' %}
     </script>
 
     <style>
@@ -167,7 +126,7 @@ Board
 {% endblock %}
 
 {% block body %}
-    {% if (thread and not is_private or (is_private and on_any_access_list)) and not thread.hide %}
+    {% if not can_post %}
     <div id="popup_reply" class="overlay" style="z-index: 2;">
         <div id="popup_content" class="themed popup_reply_bg popup_reply">
             <span class="themed">Replying to {{thread.subject|safe}}</span>
@@ -184,6 +143,7 @@ Board
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
     {% include '/elements/banner.html' %}
     <br/>
 
@@ -216,15 +176,42 @@ Board
     </div>
     {% endif %}
 
+    {%- if board['current_chan'].read_only -%}
+    <div style="padding-top: 1em">
+        <center>
+            <span class="title themed bold god-text" style="text-decoration: none;">Read-Only Mode</span>
+        </center>
+    </div>
+    {%- endif -%}
+
     <div style="padding-top: 1em">
         <center>
             <a class="title themed bold" style="text-decoration: none;" href="/thread_steg/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash}}">{{board["current_thread"].subject|safe}}</a>
         </center>
     </div>
 
+    {% if thread_rules %}
     <div style="padding-top: 1em">
         <center>
-            <span style="text-decoration: none; font-size: 18px;" class="themed">[</span><a class="link" style="text-decoration: none; font-size: 18px;" href="#popup_reply">Reply</a><span style="text-decoration: none; font-size: 18px;" class="themed">]
+            <span style="text-decoration: none; font-size: 14px;" class="themed">
+                Rules:
+        {% for each_rule in thread_rules if each_rule in config.DICT_THREAD_RULES %}
+                <br/>{{config.DICT_THREAD_RULES[each_rule]}}
+            {% if each_rule == "require_pow_to_reply" and "pow_method" in thread_rules["require_pow_to_reply"] and "pow_difficulty" in thread_rules["require_pow_to_reply"] and "pow_repetitions" in thread_rules["require_pow_to_reply"] %}
+                (Method: {{thread_rules["require_pow_to_reply"]["pow_method"]}}, Min: Difficulty {{thread_rules["require_pow_to_reply"]["pow_difficulty"]}}/Repetitions {{thread_rules["require_pow_to_reply"]["pow_repetitions"]}})
+            {% endif %}
+        {% endfor%}
+            </span>
+        </center>
+    </div>
+    {% endif %}
+
+    <div style="padding-top: 1em">
+        <center>
+            <span style="text-decoration: none; font-size: 18px;" class="themed">
+    {% if not can_post -%}
+            [</span><a class="link" style="text-decoration: none; font-size: 18px;" href="#popup_reply">Reply</a><span style="text-decoration: none; font-size: 18px;" class="themed">]
+    {%- endif -%}
             [<a id="toggle_images" class="link" style="text-decoration: none; font-size: 18px;" href="">Toggle Images</a>]</span>
         </center>
     </div>
@@ -251,18 +238,6 @@ Board
            .filter(board["messages"].thread_id == thread.id)
            .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
            .first() %}
-
-    {% set message_op_steg = board["messages"].query
-           .filter(board["messages"].thread_id == thread.id)
-           .filter(board["messages"].message_sha256_hash == thread.op_sha256_hash)
-           .filter(board["messages"].message_steg != "{}")
-           .first() %}
-
-    {% set message_replies_steg = board["messages"].query
-           .filter(board["messages"].thread_id == thread.id)
-           .filter(board["messages"].message_sha256_hash != thread.op_sha256_hash)
-           .filter(board["messages"].message_steg != "{}")
-           .order_by(board["messages"].timestamp_sent.asc()) %}
 
     {% if message_op %}
         {% set post = message_op %}
@@ -305,8 +280,11 @@ Board
 
     <div class="themed" style="clear: both; text-align: left; padding-left: 1.5em;">
         <div class="themed">
+        {% if can_post -%}
             <a class="link" href="#popup_reply">Reply</a>
-            / <a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a>
+            /
+        {%- endif %}
+            <a class="link" title="Catalog" href="/overboard/{{board['current_chan'].address}}/1">Catalog</a>
             / <a class="link" title="Recent" href="/recent/{{board['current_chan'].address}}/1">Recent</a>
         </div>
     </div>
@@ -314,4 +292,5 @@ Board
 
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
 {% endblock %}

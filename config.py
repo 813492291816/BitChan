@@ -1,16 +1,19 @@
 import logging
 import os
-from datetime import timedelta
+
+from cachelib.file import FileSystemCache
 
 logger = logging.getLogger('bitchan.config')
+
 DOCKER = os.environ.get('DOCKER', False) == 'TRUE'
 
-VERSION_BITCHAN = "1.3.0"
-VERSION_ALEMBIC = '000000000118'
+VERSION_BITCHAN = "1.4.0"
+VERSION_ALEMBIC = '000000000131'
 VERSION_MSG = "1.3.0"
 VERSION_MIN_MSG = "1.3.0"
 
 LOG_LEVEL = logging.INFO
+# LOG_LEVEL = logging.DEBUG
 
 # Kiosk Recovery User
 # Only temporarily enable this to log into the kiosk.
@@ -49,6 +52,8 @@ if os.path.exists(BM_KEYS_DAT):
         for line in f:
             if "apipassword" in line:
                 BM_PASSWORD = line.split("=")[1].strip()
+
+MINODE_ARGS_PATH = "/home/minode/minode_data/run_args"
 
 if DOCKER:
     GPG_DIR = "/usr/local/gnupg"
@@ -162,7 +167,7 @@ REFRESH_DELETE_SENT = (60 * 10)  # 10 minutes
 REFRESH_REMOVE_DEL = (60 * 60 * 24)  # 1 day
 REFRESH_UNREAD_COUNT = 120
 REFRESH_WIPE = 120
-SESSION_TIMEOUT_DAYS = 30
+SESSION_TIMEOUT_DAYS = 31
 MAX_PROC_THREADS = 5
 API_CHECK_FREQ = 15
 API_TIMEOUT = 15
@@ -178,7 +183,7 @@ ID_LENGTH = 9
 LABEL_LENGTH = 25
 DESCRIPTION_LENGTH = 128
 LONG_DESCRIPTION_LENGTH = 1000
-BANNER_MAX_WIDTH = 650
+BANNER_MAX_WIDTH = 1200
 BANNER_MAX_HEIGHT = 400
 SPOILER_MAX_WIDTH = 250
 SPOILER_MAX_HEIGHT = 250
@@ -218,6 +223,7 @@ BITCHAN_BUG_REPORT_ADDRESS = "BM-2cVzMZfiP9qQw5MiKHD8whxrqdCwqtvdyE"
 
 ALEMBIC_POST = os.path.join(INSTALL_DIR, 'post_alembic_versions')
 FILE_DIRECTORY = os.path.join(INSTALL_DIR, "downloaded_files")
+FILE_DIRECTORY_HASHED = os.path.join(INSTALL_DIR, "downloaded_files_hashed")
 LOG_DIRECTORY = os.path.join(INSTALL_DIR, "log")
 LOG_BACKEND_FILE = os.path.join(LOG_DIRECTORY, "bitchan_backend.log")
 LOG_FRONTEND_FILE = os.path.join(LOG_DIRECTORY, "bitchan_frontend.log")
@@ -407,11 +413,19 @@ UPLOAD_ENCRYPTION_CIPHERS = [
     ("NONE,999", "No Encryption")
 ]
 
-DICT_PERMISSIONS = {
+DICT_PERMISSIONS = {  # Board Rules
+    "require_attachment": "Require Post Attachment",
+    "require_pow_to_post": "Require Proof of Work (POW) to Post",
     "require_identity_to_post": "Require Identity to Post",
     "restrict_thread_creation": "Restrict Thread Creation to Owners, Admins, and Thread Creation Users",
     "automatic_wipe": "Automatic Wipe",
-    "allow_list_pgp_metadata": "Allow Lists to Store PGP Passphrases"
+    "allow_list_pgp_metadata": "Allow Lists to Store PGP Passphrases",
+    "disallow_attachments": "Disallow Post Attachments"
+}
+
+DICT_THREAD_RULES = {  # Thread Rules
+    "sort_replies_by_pow": "Sort Replies by POW",
+    "require_pow_to_reply": "Require Proof of Work (POW) to Reply"
 }
 
 DEFAULT_CHANS = [
@@ -535,9 +549,8 @@ class ProdConfig(object):
         key = str(os.urandom(32))
 
     SECRET_KEY = key
-    SESSION_TYPE = "filesystem"
-    SESSION_PERMANENT = False
-    PERMANENT_SESSION_LIFETIME = timedelta(days=30)
+    SESSION_TYPE = "cachelib"
+    SESSION_CACHELIB = FileSystemCache(threshold=50000, cache_dir="/sessions")
     WTF_CSRF_TIME_LIMIT = 60*60*24 * 2  # expire in 2 days
 
     CAPTCHA_ENABLE = True
@@ -551,3 +564,7 @@ class ProdConfig(object):
 
     SQLALCHEMY_DATABASE_URI = DB_PATH
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_size': 10,
+        'max_overflow': 40
+    }

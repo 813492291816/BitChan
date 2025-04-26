@@ -1,0 +1,22 @@
+crudini==0.9.5
+jsonrpclib==0.1.7  # python2 support stops at 0.1.7, don't upgrade until Bitmessage moves to python3
+msgpack==1.0.3
+stdeb==0.10.0
+
+# from commit 3d19c3f23fad2c7a26e8606cd95c6b3df417cfbc
+# coverage
+# psutil
+# pycryptodome
+# PyQt5;python_version>="3.7"
+# python_prctl;platform_system=="Linux"
+# six
+# xvfbwrapper;platform_system=="Linux"
+
+coverage==5.5
+iniparse==0.5
+psutil==6.0.0
+pybitmessage==0.6.3.2
+pycryptodome==3.21.0
+python-prctl==1.8.1
+six==1.16.0
+xvfbwrapper==0.2.9

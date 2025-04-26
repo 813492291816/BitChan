@@ -10,6 +10,7 @@ from io import BytesIO
 from urllib.parse import unquote
 
 from flask import current_app
+from flask import g
 from flask import jsonify
 from flask import redirect
 from flask import render_template
@@ -34,13 +35,13 @@ from database.models import Messages
 from database.models import Threads
 from database.models import UploadSites
 from flask_routes.utils import count_views
+from flask_routes.utils import get_posts_from_thread
 from flask_routes.utils import is_verified
 from flask_routes.utils import rate_limit
 from forms import forms_board
-from utils.files import LF
 from utils.generate_popup import attachment_info
 from utils.gpg import find_gpg
-from utils.gpg import get_all_key_information
+from utils.gpg import generate_gpg_to_from
 from utils.gpg import gpg_decrypt
 from utils.identicon import generate_icon
 from utils.message_post import generate_post_form_populate
@@ -64,6 +65,13 @@ blueprint = Blueprint('routes_board',
                       template_folder='../templates')
 
 
+@blueprint.after_request
+def after_request(response):
+    if request.url_rule.endpoint == "routes_board.thread":
+        logger.info(f"Thread total: {request.url_rule.endpoint}: {time.time() - g.start}")
+    return response
+
+
 @blueprint.context_processor
 def global_var():
     return page_dict()
@@ -71,6 +79,9 @@ def global_var():
 
 @blueprint.before_request
 def before_view():
+    if request.url_rule.endpoint == "routes_board.thread":
+        g.start = time.time()
+
     if not is_verified():
         # If making a post, preserve the form data during reverification
         if request.method == "POST" and request.form:
@@ -118,9 +129,10 @@ def board(current_chan, current_page):
         return allow_msg
 
     chan = Chan.query.filter(Chan.address == current_chan).first()
+    board_list_admin, _ = allowed_access("is_board_list_admin", board_address=current_chan)
     global_admin, _ = allowed_access("is_global_admin")
 
-    if not chan or (not global_admin and chan.restricted):
+    if not chan or (not global_admin and not board_list_admin and chan.restricted):
         return render_template("pages/404-board.html",
                                board_address=current_chan)
 
@@ -145,29 +157,7 @@ def board(current_chan, current_page):
     form_populate = session.get('form_populate', {})
     status_msg = session.get('status_msg', {"status_message": []})
 
-    (public_keys,
-     private_keys,
-     private_key_ids,
-     public_key_ids,
-     exported_public_keys) = get_all_key_information()
-
-    list_gpg_from = []
-    for each_key in private_keys:
-        if len(each_key['uids'][0]) > 40:
-            uid = f"{each_key['uids'][0][0:40]}..."
-        else:
-            uid = each_key['uids'][0]
-        name = f"{uid} ({each_key['fingerprint'][0:6]}...{each_key['fingerprint'][-6:]})"
-        list_gpg_from.append({"value": each_key["fingerprint"], "name": name})
-
-    list_gpg_to = []
-    for each_key in public_keys:
-        if len(each_key['uids'][0]) > 40:
-            uid = f"{each_key['uids'][0][0:40]}..."
-        else:
-            uid = each_key['uids'][0]
-        name = f"{uid} ({each_key['fingerprint'][0:6]}...{each_key['fingerprint'][-6:]})"
-        list_gpg_to.append({"value": each_key["fingerprint"], "name": name})
+    list_gpg_to, list_gpg_from = generate_gpg_to_from()
 
     if request.method == 'GET':
         if 'form_populate' in session:
@@ -261,12 +251,6 @@ def board(current_chan, current_page):
                 status_msg['status_title'] = "Error"
                 status_msg['status_message'].append("Invalid Captcha")
 
-            # Check if allowed to post
-            can_post, allow_msg = allowed_access("can_post")
-            board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=current_chan)
-            if not can_post and not board_list_admin:
-                return allow_msg
-
             # Check if allowed to create new thread
             if form_post.is_op.data == "yes":
                 if not can_address_create_thread(form_post.from_address.data, current_chan):
@@ -274,10 +258,17 @@ def board(current_chan, current_page):
                     status_msg['status_message'].append(
                         f"Address {form_post.from_address.data} is not permitted to create new threads on this board")
 
-            if form_post.default_from_address.data:
-                chan.default_from_address = form_post.from_address.data
-            else:
-                chan.default_from_address = None
+            # Check if allowed to post
+            can_post, allow_msg = allowed_access("can_post")
+            board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=current_chan)
+            if not can_post and not board_list_admin:
+                return allow_msg
+
+            if (settings.enable_kiosk_mode and (global_admin or board_list_admin)) or not settings.enable_kiosk_mode:
+                if form_post.default_from_address.data:
+                    chan.default_from_address = form_post.from_address.data
+                else:
+                    chan.default_from_address = None
             chan.save()
 
             status_msg, result, form_populate = post_message(
@@ -302,12 +293,20 @@ def board(current_chan, current_page):
 
     passphrase_base64, passphrase_base64_with_pgp = get_chan_passphrase(current_chan)
 
+    dict_threads = []
+
+    threads = get_threads_from_page(board['current_chan'].address, board["current_page"])
+    for thread in threads:
+        post_order, message_op, message_replies, message_reply_all_count = get_posts_from_thread(
+            thread, settings, None, 5, False)
+        dict_threads.append((thread, message_op, message_replies, message_reply_all_count))
+
     return render_template("pages/board.html",
                            board=board,
+                           dict_threads=dict_threads,
                            form_populate=form_populate,
                            form_post=form_post,
                            from_list=from_list,
-                           get_threads_from_page=get_threads_from_page,
                            list_gpg_from=list_gpg_from,
                            list_gpg_to=list_gpg_to,
                            page_id=str(uuid.uuid4()),
@@ -335,11 +334,24 @@ def csrf(current_chan):
 @count_views
 @rate_limit
 def thread(current_chan, thread_id):
+    start = time.time()
+
     can_view, allow_msg = allowed_access("can_view")
     if not can_view:
         return allow_msg
 
+    board_list_admin, _ = allowed_access("is_board_list_admin", board_address=current_chan)
+    global_admin, _ = allowed_access("is_global_admin")
+
     anchor = None
+
+    pow_filter_value = 0
+    try:
+        arg_filter_pow = request.args.get('filter_pow', default=None, type=str)
+        if arg_filter_pow:
+            pow_filter_value = ( 2**int(arg_filter_pow.split("x")[0]) ) * int(arg_filter_pow.split("x")[1])
+    except:
+        logger.exception("POW Filter")
 
     try:
         last = int(request.args.get('last'))
@@ -358,19 +370,7 @@ def thread(current_chan, thread_id):
     settings = GlobalSettings.query.first()
     chan = Chan.query.filter(Chan.address == current_chan).first()
 
-    (public_keys,
-     private_keys,
-     private_key_ids,
-     public_key_ids,
-     exported_public_keys) = get_all_key_information()
-
-    list_gpg_from = []
-    for each_key in private_keys:
-        list_gpg_from.append({"value": each_key["fingerprint"], "name": each_key["fingerprint"]})
-
-    list_gpg_to = []
-    for each_key in public_keys:
-        list_gpg_to.append({"value": each_key["fingerprint"], "name": each_key["fingerprint"]})
+    list_gpg_to, list_gpg_from = generate_gpg_to_from()
 
     game_hash = ""
     game = Games.query.filter(and_(
@@ -384,7 +384,7 @@ def thread(current_chan, thread_id):
     else:
         thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
 
-    if not chan:
+    if not chan or (not global_admin and not board_list_admin and chan.restricted):
         return render_template("pages/404-board.html",
                                board_address=current_chan)
 
@@ -392,6 +392,14 @@ def thread(current_chan, thread_id):
         return render_template("pages/404-thread.html",
                                board_address=current_chan,
                                thread_id=thread_id)
+
+    try:
+        thread_rules = json.loads(thread.rules)
+    except:
+        thread_rules = {}
+
+    post_count = Messages.query.filter(
+        Messages.thread_id == thread.id).count()
 
     board = {
         "current_chan": chan,
@@ -401,6 +409,9 @@ def thread(current_chan, thread_id):
 
     form_populate = session.get('form_populate', {})
     status_msg = session.get('status_msg', {"status_message": []})
+
+    post_order, message_op, message_replies, message_reply_all_count = get_posts_from_thread(
+        thread, settings, pow_filter_value, last, False)
 
     if request.method == 'GET':
         if 'form_populate' in session:
@@ -477,10 +488,11 @@ def thread(current_chan, thread_id):
             if not can_post and not board_list_admin:
                 return allow_msg
 
-            if form_post.default_from_address.data:
-                thread.default_from_address = form_post.from_address.data
-            else:
-                thread.default_from_address = None
+            if (settings.enable_kiosk_mode and (global_admin or board_list_admin)) or not settings.enable_kiosk_mode:
+                if form_post.default_from_address.data:
+                    thread.default_from_address = form_post.from_address.data
+                else:
+                    thread.default_from_address = None
             thread.save()
 
             status_msg, result, form_populate = post_message(
@@ -497,12 +509,23 @@ def thread(current_chan, thread_id):
             return redirect(url_for("routes_board.thread",
                                     current_chan=current_chan,
                                     last=last,
+                                    message_op=message_op,
+                                    message_replies=message_replies,
+                                    message_reply_all_count=message_reply_all_count,
+                                    post_count=post_count,
+                                    pow_filter_value=pow_filter_value,
                                     thread_id=thread_id,
+                                    thread_rules=thread_rules,
                                     _anchor=anchor))
         else:
             return redirect(url_for("routes_board.thread",
                                     current_chan=current_chan,
+                                    message_op=message_op,
+                                    message_replies=message_replies,
+                                    post_count=post_count,
+                                    pow_filter_value=pow_filter_value,
                                     thread_id=thread_id,
+                                    thread_rules=thread_rules,
                                     _anchor=anchor))
 
     try:
@@ -510,6 +533,18 @@ def thread(current_chan, thread_id):
     except:
         return render_template("pages/404-board.html",
                                board_address=current_chan)
+
+    message_op_steg = Messages.query.filter(and_(
+        Messages.thread_id == thread.id,
+        Messages.message_sha256_hash == thread.op_sha256_hash,
+        Messages.message_steg != "{}")).first()
+
+    message_replies_steg = Messages.query.filter(and_(
+        Messages.thread_id == thread.id,
+        Messages.message_sha256_hash != thread.op_sha256_hash,
+        Messages.message_steg != "{}")).order_by(post_order)
+
+    logger.info(f"Thread time: {time.time() - start}")
 
     return render_template("pages/thread.html",
                            board=board,
@@ -521,9 +556,17 @@ def thread(current_chan, thread_id):
                            list_gpg_from=list_gpg_from,
                            list_gpg_to=list_gpg_to,
                            logger=logger,
+                           message_op_steg=message_op_steg,
+                           message_op=message_op,
+                           message_replies=message_replies,
+                           message_reply_all_count=message_reply_all_count,
+                           message_replies_steg=message_replies_steg,
                            page_id=str(uuid.uuid4()),
+                           post_count=post_count,
+                           post_order_asc=post_order,
+                           pow_filter_value=pow_filter_value,
                            status_msg=status_msg,
-                           time=time,
+                           thread_rules=thread_rules,
                            upload_sites=UploadSites)
 
 
@@ -535,17 +578,35 @@ def thread_steg(current_chan, thread_id):
     if not can_view:
         return allow_msg
 
+    board_list_admin, _ = allowed_access("is_board_list_admin", board_address=current_chan)
+    global_admin, _ = allowed_access("is_global_admin")
+
     form_post = forms_board.Post()
 
     settings = GlobalSettings.query.first()
     chan = Chan.query.filter(Chan.address == current_chan).first()
+
+    pow_filter_value = 0
+    try:
+        arg_filter_pow = request.args.get('filter_pow', default=None, type=str)
+        if arg_filter_pow:
+            pow_filter_value = (2 ** int(arg_filter_pow.split("x")[0])) * int(arg_filter_pow.split("x")[1])
+    except:
+        logger.exception("POW Filter")
+
+    try:
+        last = int(request.args.get('last'))
+        if last < 0:
+            last = None
+    except:
+        last = None
     
     if len(thread_id) == 12:
         thread = Threads.query.filter(Threads.thread_hash_short == thread_id).first()
     else:
         thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
 
-    if not chan:
+    if not chan or (not global_admin and not board_list_admin and chan.restricted):
         return render_template("pages/404-board.html",
                                board_address=current_chan)
 
@@ -561,6 +622,9 @@ def thread_steg(current_chan, thread_id):
     }
     form_populate = session.get('form_populate', {})
     status_msg = session.get('status_msg', {"status_message": []})
+
+    post_order, message_op_steg, message_replies_steg, message_reply_all_count = get_posts_from_thread(
+        thread, settings, pow_filter_value, last, True)
 
     if request.method == 'GET':
         if 'form_populate' in session:
@@ -611,10 +675,11 @@ def thread_steg(current_chan, thread_id):
             if not can_post and not board_list_admin:
                 return allow_msg
 
-            if form_post.default_from_address.data:
-                thread.default_from_address = form_post.from_address.data
-            else:
-                thread.default_from_address = None
+            if (settings.enable_kiosk_mode and (global_admin or board_list_admin)) or not settings.enable_kiosk_mode:
+                if form_post.default_from_address.data:
+                    thread.default_from_address = form_post.from_address.data
+                else:
+                    thread.default_from_address = None
             thread.save()
 
             status_msg, result, form_populate = post_message(
@@ -626,6 +691,8 @@ def thread_steg(current_chan, thread_id):
 
         return redirect(url_for("routes_board.thread_steg",
                                 current_chan=current_chan,
+                                message_op_steg=message_op_steg,
+                                message_replies_steg=message_replies_steg,
                                 thread_id=thread_id))
 
     try:
@@ -639,6 +706,8 @@ def thread_steg(current_chan, thread_id):
                            form_populate=form_populate,
                            form_post=form_post,
                            from_list=from_list,
+                           message_op_steg=message_op_steg,
+                           message_replies_steg=message_replies_steg,
                            page_id=str(uuid.uuid4()),
                            status_msg=status_msg,
                            upload_sites=UploadSites)
@@ -995,7 +1064,6 @@ def block_address(chan_address, block_address, block_type):
             if list_delete_message_ids:
                 for each_id in list_delete_message_ids:
                     delete_post(each_id)
-                daemon_com.signal_generate_post_numbers()
 
             # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
             time.sleep(1)

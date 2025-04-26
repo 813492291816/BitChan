@@ -1,3 +1,72 @@
+## 1.4.0 (2024/04/26)
+
+Upgrading from version 1.3.0 can be performed with the following steps:
+
+1. Stop docker containers: cd Bitchan/docker && docker compose down
+2. Delete i2pd.conf: sudo rm -rf /usr/local/bitchan-docker/i2pd/i2pd.conf
+3. Delete torrc: sudo rm -rf /usr/local/bitchan-docker/tor/torrc 
+4. Get latest code: cd Bitchan && git pull 
+5. Build Bitchan: cd Bitchan/docker && make daemon
+
+After building, you may need to change the Bitmessage Connections option on the Config page before connections can occur.
+
+ - Fix display of image EXIF data
+ - Fix showing file names for undownloaded I2P/BitTorrent post attachments
+ - Fix deleting database entries for torrents
+ - Fix exception when formatting certain post text
+ - Fix sending GPG message without post body text
+ - Fix issue updating posts on long threads
+ - Fix error when deleting posts from Search page
+ - Fix board wipe not deleting threads
+ - Fix page to jump when loading by using fixed thumbnail dimensions
+ - Fix bug reports not respecting post refractory period
+
+ - Add ability to schedule automatic posting at a future time
+ - Add ability to perform additional Proof of Work (POW) to post
+ - Add ability to create Rules for Threads
+ - Add Thread Rule: Sort Replies by POW (instead of sent time)
+ - Add Thread Rule: Require Proof of Work (POW) to Reply
+ - Add Board Rule: Require Proof of Work (POW) to Post
+ - Add Board Rule: Require Post Attachment
+ - Add config option to allow/disallow kiosk users from selecting POW to be performed for posts
+ - Add config option to select boards to be Read Only
+ - Add ability to create static HTML Pages
+ - Add MiNode 0.3.5 for Bitmessage communication over I2P and set as default
+ - Add MiNode options in Bitmessage Connections config dropdown
+ - Add hash validation requirement for all pip libraries
+ - Add ability to attach image to post by pasting from clipboard
+ - Add thumbnails for attached images during post composition
+ - Add enlarged image popup on thumbnail hover during post composition
+ - Add option to automatically start seeding I2P BitTorrent attachments for your own posts
+ - Add option to disable search for users when in Kiosk mode
+ - Add ability to search for STEG posts
+ - Add option to use purple/i2pd, geti2p/i2p, or i2pplus
+ - Add ability to search for posts using from address
+ - Add Board Rule: Disallow Post Attachments
+ - Add Post Max Height (25em) to Options
+
+ - Change default Bitmessage connection mode to I2P-Only
+ - Enable tor DDoS protection
+ - Exclude global admins from rate-limiting
+ - Remove rate-limiting for global admins
+ - Remove post numbers
+ - Remove use of NTP
+ - Use randomly-generated password for i2pd webconsole
+ - Optimize MySQL server configuration using MySQLTune
+ - Optimizations to reduce CPU usage
+ - Optimize code to improve page load times
+ - Significant decrease in daemon idle CPU use
+ - Prevent regular users from setting default post From Address in Kiosk Mode
+ - Change max banner image width from 650 to 1200 px
+ - Update Python from 3.9 to 3.11
+ - Update i2pd to 2.56.0
+ - Update tor to 0.4.9.2-alpha
+ - Update QBittorrent to 5.1.0rc1
+ - Update libtorrent to 2.0.11
+ - Update Flask-Session to 0.8.0 and switch from deprecated filesystem to cachelib
+ - Increase session threshold to 50,000
+
+
 ## 1.3.0 (2024/04/20)
 
 This release has several incompatibilities with v1.2.0, therefore v1.2.0 and v1.3.0 will not be able to communicate with each other. Due to significant changes, there isn't an option to upgrade from v1.2.0 to v1.3.0, so a clean install will need to be performed.
@@ -37,7 +106,7 @@ Notes on BitTorrent over I2P feature: The introduction of BitTorrent over I2P as
  - Switch from using Sqlite3 to MySQL
  - Update Python packages
  - Update tor to 0.4.8.10
- - Update i2pd to 2.50.2
+ - Update i2pd to 2.51.0
 
 
 ## 1.2.0 (2023/04/24)

@@ -126,7 +126,6 @@ def gpg_decrypt(gpg_texts):
 
                 gpg_texts["pgp_messages"][each_id]["recipients_fingerprints"] = recipients
 
-
     if "pgp_public_keys" in gpg_tests_iter:
         pass
 
@@ -134,24 +133,32 @@ def gpg_decrypt(gpg_texts):
         gpg = gnupg.GPG(gnupghome=GPG_DIR, keyring=get_all_keyrings())
         for each_id, pgp_msg_info in gpg_tests_iter["pgp_signed_messages"].items():
             if not gpg_texts["pgp_signed_messages"][each_id]["verified"]:
-                verified_sig_msg = gpg.verify(gpg_texts["pgp_signed_messages"][each_id]["raw_string"])
-                if verified_sig_msg:
-                    gpg_texts["pgp_signed_messages"][each_id]["verified"] = True
-                    gpg_texts["pgp_signed_messages"][each_id]["verification_info"] = str(verified_sig_msg.sig_info)
-                else:
+                try:
+                    verified_sig_msg = gpg.verify(gpg_texts["pgp_signed_messages"][each_id]["raw_string"].encode().decode('latin-1'))
+
+                    if verified_sig_msg:
+                        gpg_texts["pgp_signed_messages"][each_id]["verified"] = True
+                        gpg_texts["pgp_signed_messages"][each_id]["verification_info"] = str(verified_sig_msg.sig_info)
+                    else:
+                        gpg_texts["pgp_signed_messages"][each_id]["verified"] = False
+                        gpg_texts["pgp_signed_messages"][each_id]["verification_info"] = (
+                            f"<br/>"
+                            f"Valid: {verified_sig_msg.valid}"
+                            f"<br/>Fingerprint: {verified_sig_msg.fingerprint}"
+                            f"<br/>Creation date: {verified_sig_msg.creation_date}"
+                            f"<br/>Time stamp: {verified_sig_msg.timestamp}"
+                            f"<br/>Signature id: {verified_sig_msg.signature_id}"
+                            f"<br/>Key id: {verified_sig_msg.key_id}"
+                            f"<br/>Status: {verified_sig_msg.status}"
+                            f"<br/>Public key fingerprint: {verified_sig_msg.pubkey_fingerprint}"
+                            f"<br/>Signature timestamp: {verified_sig_msg.sig_timestamp}"
+                            f"<br/>Trust text: {verified_sig_msg.trust_text}"
+                            f"<br/>Trust level: {verified_sig_msg.trust_level}")
+                except Exception:
                     gpg_texts["pgp_signed_messages"][each_id]["verified"] = False
-                    gpg_texts["pgp_signed_messages"][each_id]["verification_info"] = f"<br/>" \
-                        f"Valid: {verified_sig_msg.valid}" \
-                        f"<br/>Fingerprint: {verified_sig_msg.fingerprint}" \
-                        f"<br/>Creation date: {verified_sig_msg.creation_date}" \
-                        f"<br/>Time stamp: {verified_sig_msg.timestamp}" \
-                        f"<br/>Signature id: {verified_sig_msg.signature_id}" \
-                        f"<br/>Key id: {verified_sig_msg.key_id}" \
-                        f"<br/>Status: {verified_sig_msg.status}" \
-                        f"<br/>Public key fingerprint: {verified_sig_msg.pubkey_fingerprint}" \
-                        f"<br/>Signature timestamp: {verified_sig_msg.sig_timestamp}" \
-                        f"<br/>Trust text: {verified_sig_msg.trust_text}" \
-                        f"<br/>Trust level: {verified_sig_msg.trust_level}"
+                    gpg_texts["pgp_signed_messages"][each_id]["verification_info"] = "Error: Could not verify PGP message. See log for details."
+                    logger.exception(
+                        f'Verifying raw PGP string: {gpg_texts["pgp_signed_messages"][each_id]["raw_string"]}')
 
     if "pgp_signatures" in gpg_tests_iter:
         pass
@@ -213,12 +220,12 @@ def gpg_process_texts(body, gpg_texts):
             if "verified" not in texts[each_id] or "verification_info" not in texts[each_id] or "raw_string" not in texts[each_id]:
                 continue
             raw_string_html = html.escape(texts[each_id]["raw_string"]).replace("\n", "<br/>")
-            sig_msg_body = signed_message_get_msg(texts[each_id]["raw_string"])
+            sig_msg_body = signed_message_get_msg(texts[each_id]["raw_string"]).replace("\n", "<br/>")
             if texts[each_id]["verified"]:
-                gen_str = f'<div class="gpg-outer">{sig_msg_body}<details class="gpg-detail"><summary>GPG Signed Message (verified)</summary>' \
+                gen_str = f'<div class="gpg-outer">{sig_msg_body}<details class="gpg-detail"><summary>GPG Signed Message (Valid)</summary>' \
                           f'<div class="gpg-inner">{raw_string_html}<br/><br/>{texts[each_id]["verification_info"]}</div></details></div>'
             else:
-                gen_str = f'<div class="gpg-outer">{sig_msg_body}<details class="gpg-detail"><summary>GPG Signed Message (unverified)</summary>' \
+                gen_str = f'<div class="gpg-outer">{sig_msg_body}<details class="gpg-detail"><summary>GPG Signed Message (Invalid - Do Not Trust)</summary>' \
                           f'<div class="gpg-inner">{raw_string_html}<br/>{texts[each_id]["verification_info"]}</div></details></div>'
             body = body.replace(each_id, gen_str)
 
@@ -327,6 +334,35 @@ def get_all_key_information():
                 gpg, public_keys, exported_public_keys)
 
     return list_public_keys, list_private_keys, private_key_ids, public_key_ids, exported_public_keys
+
+
+def generate_gpg_to_from():
+    list_gpg_to = []
+    list_gpg_from = []
+
+    (public_keys,
+     private_keys,
+     private_key_ids,
+     public_key_ids,
+     exported_public_keys) = get_all_key_information()
+
+    for each_key in public_keys:
+        if len(each_key['uids'][0]) > 40:
+            uid = f"{each_key['uids'][0][0:40]}..."
+        else:
+            uid = each_key['uids'][0]
+        name = f"{uid} ({each_key['fingerprint'][0:6]}...{each_key['fingerprint'][-6:]})"
+        list_gpg_to.append({"value": each_key["fingerprint"], "name": name})
+
+    for each_key in private_keys:
+        if len(each_key['uids'][0]) > 40:
+            uid = f"{each_key['uids'][0][0:40]}..."
+        else:
+            uid = each_key['uids'][0]
+        name = f"{uid} ({each_key['fingerprint'][0:6]}...{each_key['fingerprint'][-6:]})"
+        list_gpg_from.append({"value": each_key["fingerprint"], "name": name})
+
+    return list_gpg_to, list_gpg_from
 
 
 def get_key_from_fingerprint(fingerprint_keyid):

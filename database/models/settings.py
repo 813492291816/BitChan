@@ -41,9 +41,9 @@ class GlobalSettings(CRUDMixin, db.Model):
     chan_update_display_number = db.Column(db.Integer, default=5)
     max_download_size = db.Column(db.Float, default=0.0)
     max_extract_size = db.Column(db.Float, default=20.0)
+    always_allow_my_i2p_bittorrent_attachments = db.Column(db.Boolean, default=True)
     allow_net_file_size_check = db.Column(db.Boolean, default=True)
     allow_net_book_quote = db.Column(db.Boolean, default=True)
-    allow_net_ntp = db.Column(db.Boolean, default=False)
     never_auto_download_unencrypted = db.Column(db.Boolean, default=True)
     allow_unencrypted_encryption_option = db.Column(db.Boolean, default=False)
     auto_dl_from_unknown_upload_sites = db.Column(db.Boolean, default=False)
@@ -63,7 +63,7 @@ class GlobalSettings(CRUDMixin, db.Model):
     html_body = db.Column(MEDIUMTEXT, default="")
 
     # Bitmessage
-    bm_connections_in_out = db.Column(db.String(255), default="in_tor_out_tor")
+    bm_connections_in_out = db.Column(db.String(255), default="minode_ip2_only")
     bitmessage_onion_services_only = db.Column(db.Boolean, default=False)
 
     # Kiosk Mode
@@ -80,8 +80,10 @@ class GlobalSettings(CRUDMixin, db.Model):
     kiosk_max_post_size_bytes = db.Column(db.Integer, default=0)
     kiosk_attempts_login = db.Column(db.Integer, default=5)
     kiosk_ban_login_sec = db.Column(db.Integer, default=300)
-    kiosk_only_admin_access_mod_log = db.Column(db.Boolean, default=False)
+    kiosk_only_admin_access_mod_log = db.Column(db.Boolean, default=True)
+    kiosk_only_admin_access_search = db.Column(db.Boolean, default=True)
     kiosk_allow_gpg = db.Column(db.Boolean, default=False)
+    kiosk_allow_pow = db.Column(db.Boolean, default=False)
 
     # Security
     enable_page_rate_limit = db.Column(db.Boolean, default=False)
@@ -115,13 +117,12 @@ class GlobalSettings(CRUDMixin, db.Model):
     messages_older = db.Column(db.Integer, default=0)
     messages_newer = db.Column(db.Integer, default=0)
     i2p_trackers = db.Column(db.Text, default=json.dumps([
-        # Working
         'http://opentracker.r4sas.i2p/a',
         'http://opentracker.skank.i2p/a',
-        'http://punzipidirfqspstvzpj6gb4tkuykqp6quurj6e23bgxcxhdoe7q.b32.i2p/a',
-        # Not working?
         'http://opentracker.dg2.i2p/a',
-        'http://w7tpbzncbcocrqtwwm3nezhnnsw4ozadvi2hmvzdhrqzfxfum7wa.b32.i2p/a'
+        'http://punzipidirfqspstvzpj6gb4tkuykqp6quurj6e23bgxcxhdoe7q.b32.i2p/a',
+        'http://w7tpbzncbcocrqtwwm3nezhnnsw4ozadvi2hmvzdhrqzfxfum7wa.b32.i2p/a',
+        'http://6a4kxkg5wp33p25qqhgwl6sj4yh4xuf5b3p3qldwgclebchm3eea.b32.i2p/announce.php'
     ]))
 
     def __repr__(self):
@@ -167,6 +168,7 @@ class UploadTorrents(CRUDMixin, db.Model):
     file_hash = db.Column(db.String(255), default=None)
     torrent_hash = db.Column(db.String(255), default=None)
     timestamp_started = db.Column(db.Float, default=None)
+    auto_start_torrent = db.Column(db.Boolean, default=False)
     torrent_completed = db.Column(db.Boolean, default=False)
     message_id = db.Column(db.String(255), default=None)
 

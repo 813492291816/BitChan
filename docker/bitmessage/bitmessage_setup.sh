@@ -6,32 +6,39 @@ APIPASS=$(tr -dc a-zA-Z0-9 < /dev/urandom | head -c32 && echo)
 mkdir -p /usr/local/bitmessage
 
 check_keys() {
-  crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings socksproxytype SOCKS5
-  crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings sockshostname bitchan_tor
-  crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings socksport 9050
-  crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings onionport 8444
-  crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings sockslisten False
-  crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings onionbindip 172.28.1.3
-  crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings extport 8444
-  crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apienabled True
-  crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apiport 8445
-  crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apiinterface 0.0.0.0
-  crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apivariant json
+  /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings socksport 9050
+  /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings onionport 8444
+  /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings sockslisten False
+  /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings onionbindip 172.28.1.3
+  /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings extport 8444
+  /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apienabled True
+  /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apiport 8445
+  /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apiinterface 0.0.0.0
+  /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apivariant json
+
+  # Used to enable/disable Tor
+  if ! grep -Fq "socksproxytype" /usr/local/bitmessage/keys.dat; then
+      /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings socksproxytype none
+  fi
+
+  if ! grep -Fq "sockshostname" /usr/local/bitmessage/keys.dat; then
+      /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings sockshostname none
+  fi
 
   if ! grep -Fq "onionservicesonly" /usr/local/bitmessage/keys.dat; then
-      crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings onionservicesonly false
+      /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings onionservicesonly false
   fi
 
   if ! grep -Fq "onionhostname" /usr/local/bitmessage/keys.dat; then
-      crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings onionhostname ""
+      /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings onionhostname ""
   fi
 
   if ! grep -Fq "apiusername" /usr/local/bitmessage/keys.dat; then
-      crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apiusername "bitchan_${APIUSER}"
+      /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apiusername "bitchan_${APIUSER}"
   fi
 
   if ! grep -Fq "apipassword" /usr/local/bitmessage/keys.dat; then
-      crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apipassword "${APIPASS}"
+      /home/bitchan/env2/bin/crudini --set /usr/local/bitmessage/keys.dat bitmessagesettings apipassword "${APIPASS}"
   fi
 }
 

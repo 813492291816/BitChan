@@ -6,7 +6,6 @@ import logging
 import os
 import random
 import re
-import shutil
 import time
 import zipfile
 from io import BytesIO
@@ -52,6 +51,7 @@ from utils.general import get_thread_id
 from utils.general import process_passphrase
 from utils.gpg import find_gpg
 from utils.gpg import gpg_decrypt
+from utils.hashcash import verify_token
 from utils.message_admin_command import admin_ban_address_from_board
 from utils.message_admin_command import admin_delete_from_board
 from utils.message_admin_command import admin_delete_from_board_with_comment
@@ -81,6 +81,7 @@ def parse_message(message_id, json_obj):
     file_url_type = None
     file_url = None
     file_torrent_file_hash = None
+    file_torrent_hash = None
     file_torrent_decoded = None
     file_torrent_magnet = None
     file_upload_settings = None
@@ -118,6 +119,13 @@ def parse_message(message_id, json_obj):
     delete_password_hash = None
     text_replacements = None
     gpg_texts = {}
+    timestamp_sent = None
+    pow_method = None
+    pow_difficulty = None
+    pow_repetitions = None
+    pow_token = None
+    pow_filter_value = 0
+    thread_rules = {}
 
     game_password_a = None
     game_password_b_hash = None
@@ -128,13 +136,22 @@ def parse_message(message_id, json_obj):
     orig_op_bm_json_obj = None
     process_op_json_obj = False
 
+    log_id = message_id[-config.ID_LENGTH:].upper()
+
     if message_id != json_obj["msgid"]:
-        logger.error("{}: Message ID provided doesn't match what's found in the message payload. "
-                     "Deleting".format(message_id[-config.ID_LENGTH:].upper()))
+        logger.error(f"{log_id}: Message ID provided doesn't match what's found in the message payload. Deleting")
         daemon_com.trash_message(message_id)
         return
 
     dict_msg = json_obj['message_decrypted']
+
+    # logger.info(f"dict_msg: {dict_msg}")
+
+    if ("timestamp_utc" in dict_msg and dict_msg["timestamp_utc"] and
+            isinstance(dict_msg["timestamp_utc"], int)):
+        timestamp_sent = dict_msg["timestamp_utc"]
+    elif 'receivedTime' in json_obj:
+        timestamp_sent = int(json_obj['receivedTime'])
 
     # SHA256 hash of the original encrypted message payload to identify the OP of the thread.
     # Each reply must identify the thread it's replying to by supplying the OP hash.
@@ -144,25 +161,22 @@ def parse_message(message_id, json_obj):
 
     # Check if message properly formatted, delete if not.
     if "subject" not in dict_msg or not dict_msg["subject"]:
-        logger.error(
-            "{}: Message missing required subject. Deleting.".format(message_id[-config.ID_LENGTH:].upper()))
+        logger.error("{}: Message missing required subject. Deleting.".format(log_id))
         daemon_com.trash_message(message_id)
         return
     else:
         subject = html.escape(base64.b64decode(dict_msg["subject"]).decode('utf-8')).strip()
         if len(base64.b64decode(dict_msg["subject"]).decode('utf-8')) > 64:
-            logger.error("{}: Subject too large. Deleting".format(message_id[-config.ID_LENGTH:].upper()))
+            logger.error("{}: Subject too large. Deleting".format(log_id))
             daemon_com.trash_message(message_id)
             return
 
     if "version" not in dict_msg or not dict_msg["version"]:
-        logger.error("{}: Message has no version. Deleting.".format(message_id[-config.ID_LENGTH:].upper()))
+        logger.error("{}: Message has no version. Deleting.".format(log_id))
         daemon_com.trash_message(message_id)
         return
     else:
         version = dict_msg["version"]
-
-    # logger.info("dict_msg: {}".format(dict_msg))
 
     # Determine if message indicates it's OP or not
     if "is_op" in dict_msg and dict_msg["is_op"]:
@@ -171,7 +185,7 @@ def parse_message(message_id, json_obj):
         # Check if new threads can be created by this address
         if not can_address_create_thread(json_obj['fromAddress'], json_obj['toAddress']):
             logger.error("{}: {} not permitted to create new thread on {}. Deleting.".format(
-                message_id[-config.ID_LENGTH:].upper(), json_obj['fromAddress'], json_obj['toAddress']))
+                log_id, json_obj['fromAddress'], json_obj['toAddress']))
             daemon_com.trash_message(message_id)
             return
     else:
@@ -192,15 +206,24 @@ def parse_message(message_id, json_obj):
         # A reply provides the OP hash to generate the thread ID
         thread_id = get_thread_id(op_sha256_hash)
     else:
-        logger.error("{}: Message neither OP nor reply: Deleting.".format(message_id[-config.ID_LENGTH:].upper()))
+        logger.error(f"{log_id}: Message neither OP nor reply: Deleting.")
         daemon_com.trash_message(message_id)
         return
+
+    # Thread Rules
+    if "thread_rules" in dict_msg and dict_msg["thread_rules"]:
+        for each_rule in dict_msg["thread_rules"]:
+            if each_rule not in config.DICT_THREAD_RULES:
+                logger.error(f"{log_id}: Unknown Thread Rule '{each_rule}': Deleting.")
+                daemon_com.trash_message(message_id)
+                return
+        thread_rules = dict_msg["thread_rules"]
 
     with session_scope(config.DB_PATH) as new_session:
         deleted_thread = new_session.query(DeletedThreads).filter(
             DeletedThreads.thread_hash == thread_id).first()
         if deleted_thread:
-            log_description = "Deleting post that arrived for deleted thread"
+            log_description = f"{log_id}: Deleting post that arrived for deleted thread"
             if deleted_thread.subject:
                 log_description += f' "{deleted_thread.subject}"'
             log_description += "."
@@ -209,7 +232,7 @@ def parse_message(message_id, json_obj):
                 message_id=message_id,
                 board_address=json_obj['toAddress'],
                 thread_hash=thread_id)
-            logger.error(f"{message_id[-config.ID_LENGTH:].upper()}: Message is for a deleted thread: Deleting.")
+            logger.error(f"{log_id}: Message is for a deleted thread: Deleting.")
             daemon_com.trash_message(message_id)
             return
 
@@ -230,15 +253,9 @@ def parse_message(message_id, json_obj):
             Command.thread_id == thread_id)).first()
 
         if admin_post_delete or admin_thread_delete:
-            logger.error("{}: Admin deleted this post or thread".format(message_id[-config.ID_LENGTH:].upper()))
+            logger.error(f"{log_id}: Admin deleted this post or thread")
             daemon_com.trash_message(message_id)
             return
-
-    if ("timestamp_utc" in dict_msg and dict_msg["timestamp_utc"] and
-            isinstance(dict_msg["timestamp_utc"], int)):
-        timestamp_sent = dict_msg["timestamp_utc"]
-    else:
-        timestamp_sent = int(json_obj['receivedTime'])
 
     log_age_and_expiration(
         message_id,
@@ -249,7 +266,7 @@ def parse_message(message_id, json_obj):
     # Check if board is set to automatically clear and message is older than the last clearing
     if chan_auto_clears_and_message_too_old(json_obj['toAddress'], timestamp_sent):
         logger.info("{}: Message sent before auto wipe for {}. Deleting.".format(
-            message_id[-config.ID_LENGTH:].upper(), json_obj['toAddress']))
+            log_id, json_obj['toAddress']))
         daemon_com.trash_message(message_id)
         return
 
@@ -280,7 +297,7 @@ def parse_message(message_id, json_obj):
 
         if banned_words:
             log_entry = f'Post contains banned word(s)/regex(s): {", ".join(banned_words)}. Deleting'
-            logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: {log_entry}")
+            logger.info(f"{log_id}: {log_entry}")
             add_mod_log_entry(
                 log_entry,
                 message_id=message_id,
@@ -294,7 +311,7 @@ def parse_message(message_id, json_obj):
     if "file_filename" in dict_msg and dict_msg["file_filename"]:
         file_filename = dict_msg["file_filename"]
         logger.info(
-            "{} Filename on post: {}".format(message_id[-config.ID_LENGTH:].upper(), dict_msg["file_filename"]))
+            "{} Filename on post: {}".format(log_id, dict_msg["file_filename"]))
     if "image1_spoiler" in dict_msg and dict_msg["image1_spoiler"]:
         image1_spoiler = dict_msg["image1_spoiler"]
     if "image2_spoiler" in dict_msg and dict_msg["image2_spoiler"]:
@@ -311,6 +328,8 @@ def parse_message(message_id, json_obj):
         file_amount = dict_msg["file_amount"]
     if "file_torrent_file_hash" in dict_msg and dict_msg["file_torrent_file_hash"]:
         file_torrent_file_hash = dict_msg["file_torrent_file_hash"]
+    if "file_torrent_hash" in dict_msg and dict_msg["file_torrent_hash"]:
+        file_torrent_hash = dict_msg["file_torrent_hash"]
     if "file_torrent_magnet" in dict_msg and dict_msg["file_torrent_magnet"]:
         file_torrent_magnet = dict_msg["file_torrent_magnet"]
     if "file_torrent_base64" in dict_msg and dict_msg["file_torrent_base64"]:
@@ -320,7 +339,7 @@ def parse_message(message_id, json_obj):
         except Exception as err:
             logger.exception(
                 "{}: Exception decoding base64 torrent attachment: {}".format(
-                    message_id[-config.ID_LENGTH:].upper(), err))
+                    log_id, err))
     if "file_url" in dict_msg and dict_msg["file_url"]:
         file_url = dict_msg["file_url"]
     if "file_url_type" in dict_msg and dict_msg["file_url_type"]:
@@ -336,7 +355,7 @@ def parse_message(message_id, json_obj):
         except Exception as err:
             logger.exception(
                 "{}: Exception decoding attachments: {}".format(
-                    message_id[-config.ID_LENGTH:].upper(), err))
+                    log_id, err))
     if "file_sha256_hash" in dict_msg and dict_msg["file_sha256_hash"]:
         file_sha256_hash = dict_msg["file_sha256_hash"]
     if "file_enc_cipher" in dict_msg and dict_msg["file_enc_cipher"]:
@@ -377,12 +396,137 @@ def parse_message(message_id, json_obj):
 
     if ((file_amount and file_amount > 4) or
             (file_order and len(file_order) > 4)):
-        logger.error(
-            "{}: More than 4 files found in message. Deleting.".format(
-                message_id[-config.ID_LENGTH:].upper()))
+        logger.error("{}: More than 4 files found in message. Deleting.".format(log_id))
         daemon_com.trash_message(message_id)
         return
 
+    # Check if POW required and if token can be verified
+    if "pow_method" in dict_msg and dict_msg["pow_method"]:
+        pow_method = dict_msg["pow_method"]
+    if "pow_difficulty" in dict_msg and dict_msg["pow_difficulty"]:
+        pow_difficulty = dict_msg["pow_difficulty"]
+    if "pow_repetitions" in dict_msg and dict_msg["pow_repetitions"]:
+        pow_repetitions = dict_msg["pow_repetitions"]
+    if "pow_token" in dict_msg and dict_msg["pow_token"]:
+        pow_token = dict_msg["pow_token"]
+
+    if pow_method and pow_difficulty and pow_repetitions and pow_token:
+        logger.info(f"{log_id}: POW Method: {pow_method}, Difficulty: {pow_difficulty}, "
+                    f"Repetitions: {pow_repetitions}, Token(s): {pow_token}")
+
+    #
+    # Board Rules
+    #
+
+    with session_scope(config.DB_PATH) as new_session:
+        try:
+            chan = new_session.query(Chan).filter(Chan.address == json_obj['toAddress']).first()
+            try:
+                rules = json.loads(chan.rules)
+            except:
+                rules = {}
+
+            if "require_attachments" in rules and not file_amount:
+                logger.error(f"{log_id}: Message requires attachment and none found. Deleting message.")
+                daemon_com.trash_message(message_id)
+                return
+
+            # Check if a message with the same POW token(s) exists
+            if pow_difficulty and pow_repetitions and pow_token:
+                message_test = new_session.query(Messages).filter(and_(
+                    Messages.pow_token == json.dumps(pow_token),
+                    Messages.pow_difficulty == pow_difficulty,
+                    Messages.pow_repetitions == int(pow_repetitions),
+                    Messages.timestamp_sent == timestamp_sent)).first()
+                if message_test:
+                    logger.error(f"{log_id}: Message with POW token already exists. Deleting message.")
+                    daemon_com.trash_message(message_id)
+                    return
+
+            # If POW Rule found, ensure message conforms to the minimum requirements for the rule
+            if "require_pow_to_post" in rules:
+                # Check if POW Rule is valid
+                if "pow_method" not in rules["require_pow_to_post"]:
+                    logger.error(f"{log_id}: Rule missing POW method. Deleting message.")
+                    daemon_com.trash_message(message_id)
+                    return
+                if "pow_difficulty" not in rules["require_pow_to_post"]:
+                    logger.error(f"{log_id}: Rule missing POW difficulty. Deleting message.")
+                    daemon_com.trash_message(message_id)
+                    return
+                if "pow_repetitions" not in rules["require_pow_to_post"]:
+                    logger.error(f"{log_id}: Rule missing POW repetitions. Deleting message.")
+                    daemon_com.trash_message(message_id)
+                    return
+                if len(pow_token) < int(rules["require_pow_to_post"]["pow_repetitions"]):
+                    logger.error(f"{log_id}: Rule specifies {rules['require_pow_to_post']['pow_repetitions']} POW "
+                                 f"repetitions, but only {len(pow_token)} tokens provided. Deleting message.")
+                    daemon_com.trash_message(message_id)
+                    return
+
+                if not pow_method or not pow_difficulty or not pow_repetitions or not pow_token:
+                    logger.error(f"{log_id}: Message missing POW method, difficulty, repetitions, or token(s). "
+                                 f"Deleting message.")
+                    daemon_com.trash_message(message_id)
+                    return
+
+                # Check POW meets rule requirements
+                if rules["require_pow_to_post"]["pow_method"] == "hashcash":
+                    if (int(pow_difficulty) >= int(rules["require_pow_to_post"]["pow_difficulty"]) and
+                            len(pow_token) >= int(rules["require_pow_to_post"]["pow_repetitions"])):
+
+                        for i in range(int(rules["require_pow_to_post"]["pow_repetitions"])):
+                            challenge = json.dumps({
+                                "msg": dict_msg["original_message"],
+                                "time": dict_msg["timestamp_utc"],
+                                "rep": i
+                            }).encode()
+                            verify = verify_token(challenge, pow_token[i], int(pow_difficulty))
+                            logger.info(f"{log_id}: Rule Post POW verify {i}: {verify}")
+                            if not verify:
+                                logger.error(f"{log_id}: Invalid POW token {i}. Deleting message.")
+                                daemon_com.trash_message(message_id)
+                                return
+                            else:
+                                pow_filter_value = (2**int(pow_difficulty)) * int(rules["require_pow_to_post"]["pow_repetitions"])
+                    else:
+                        logger.error(f"{log_id}: Message POW difficulty or repetitions too low. Deleting message.")
+                        daemon_com.trash_message(message_id)
+                        return
+                else:
+                    logger.error(f"{log_id}: Unknown rule POW method "
+                                 f"'{rules['require_pow_to_post']['pow_method']}'. Deleting message.")
+                    daemon_com.trash_message(message_id)
+                    return
+
+            # No POW rule but found POW data, so simply verify the token that was provided in the message
+            elif pow_method and pow_token and pow_difficulty and pow_repetitions:
+                if pow_method == "hashcash":
+                    for i in range(pow_repetitions):
+                        challenge = json.dumps({
+                            "msg": dict_msg["original_message"],
+                            "time": dict_msg["timestamp_utc"],
+                            "rep": i
+                        }).encode()
+                        verify = verify_token(challenge, pow_token[i], int(pow_difficulty))
+                        logger.info(f"{log_id}: Post POW verify {i}: {verify}")
+                        if not verify:
+                            logger.error(f"{log_id}: Could not verify POW token {i}. Deleting message.")
+                            daemon_com.trash_message(message_id)
+                            return
+                        else:
+                            pow_filter_value = (2**int(pow_difficulty)) * pow_repetitions
+                else:
+                    logger.error(f"{log_id}: Unknown message POW method "
+                                 f"'{rules['require_pow_to_post']['pow_method']}'. Deleting message.")
+                    daemon_com.trash_message(message_id)
+                    return
+        except:
+            logger.exception(f"{log_id}: Message POW exception. Deleting message.")
+            daemon_com.trash_message(message_id)
+            return
+
+    # Flag
     if nation_base64:
         flag_pass = True
         try:
@@ -405,16 +549,16 @@ def parse_message(message_id, json_obj):
         if not nation_name:
             flag_pass = False
             logger.error("{}: Flag name not found".format(
-                message_id[-config.ID_LENGTH:].upper()))
+                log_id))
         elif len(nation_name) > 64:
             flag_pass = False
             logger.error("{}: Flag name too long: {}".format(
-                message_id[-config.ID_LENGTH:].upper(), nation_name))
+                log_id, nation_name))
 
         if not flag_pass:
             logger.error(
                 "{}: Base64 flag didn't pass validation. Deleting.".format(
-                    message_id[-config.ID_LENGTH:].upper()))
+                    log_id))
             daemon_com.trash_message(message_id)
             return
 
@@ -432,7 +576,7 @@ def parse_message(message_id, json_obj):
     # check for banned file hashes
     banned_hashes = file_hash_banned(return_file_hashes(media_info), address=json_obj['toAddress'])
     if media_info and banned_hashes:
-        logger.error(f"{message_id[-config.ID_LENGTH:].upper()}: File hash banned. Deleting.")
+        logger.error(f"{log_id}: File hash banned. Deleting.")
         delete_files_recursive(save_dir)
         daemon_com.trash_message(message_id)
         add_mod_log_entry(
@@ -452,6 +596,7 @@ def parse_message(message_id, json_obj):
                 Threads.thread_hash == thread_id).first()
 
             if thread:
+                # Lock, anchor options
                 admin_cmd = new_session.query(Command).filter(and_(
                     Command.action == "set",
                     Command.action_type == "thread_options",
@@ -485,7 +630,7 @@ def parse_message(message_id, json_obj):
                     if json_obj['fromAddress'] in access["primary_addresses"]:
                         owner_posting = True
                         logger.error("{}: Owner posting in locked thread. Allowing.".format(
-                            message_id[-config.ID_LENGTH:].upper()))
+                            log_id))
         except Exception:
             logger.exception("Checking thread lock")
 
@@ -495,14 +640,15 @@ def parse_message(message_id, json_obj):
         daemon_com.trash_message(message_id)
         return
 
+    original_message = message
+
     # Perform general text replacements/modifications before saving to the database
     try:
         text_replacements = process_replacements(message, message_id, message_id, address=json_obj['toAddress'])
-        original_message = message
         message = text_replacements
     except Exception as err:
         logger.exception("{}: Error processing replacements: {}".format(
-            message_id[-config.ID_LENGTH:].upper(), err))
+            log_id, err))
 
     # Find GPG strings in message and attempt to decrypt
     if message:
@@ -511,14 +657,15 @@ def parse_message(message_id, json_obj):
             gpg_texts = gpg_decrypt(gpg_texts)
         except Exception as err:
             logger.exception("{}: Error processing gpg: {}".format(
-                message_id[-config.ID_LENGTH:].upper(), err))
+                log_id, err))
 
     try:
         hide_message = False
         thread_error = False
         thread_created = False
 
-        # First, check if a thread exists for this post.
+        # First, check Thread Rules
+        # Then, check if a thread exists for this post.
         # During this check, a thread may not be found, but may be created before this process creates a thread.
         # If this occurs, there will be a duplicate entry database error.
         # If this error occurs, the next section will check for the thread again.
@@ -526,13 +673,42 @@ def parse_message(message_id, json_obj):
             with session_scope(config.DB_PATH) as new_session:
                 chan = new_session.query(Chan).filter(
                     Chan.address == json_obj['toAddress']).first()
-                chan.last_post_number = chan.last_post_number + 1
 
                 thread = new_session.query(Threads).filter(
                     Threads.thread_hash == thread_id).first()
 
+                #
+                # Thread Rules
+                #
+
+                # Thread rules can only not be checked if the thread doesn't yet exist and a reply is received.
+                # This is because only the OP contains the Thread Rules
+                # TODO: add periodic check of threads with POW Rules to find replies that don't meet the POW requirement
+
+                thread_rules_ = {}
+
+                if thread:
+                    try:
+                        thread_rules_ = json.loads(thread.rules)
+                    except:
+                        thread_rules_ = {}
+                elif not thread and is_op:
+                    try:
+                        thread_rules_ = json.loads(thread_rules)
+                    except:
+                        thread_rules_ = {}
+
+                if thread_rules_:
+                    rule_errors = check_pow_thread_rule(thread_rules_, pow_filter_value)
+
+                    if rule_errors:
+                        logger.error(f"{log_id}: POW Thread Rule Error: {', '.join(rule_errors)}")
+                        daemon_com.trash_message(message_id)
+                        return
+
+
                 if not thread and is_op:  # OP received, create new thread
-                    logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: Thread doesn't exist and post is OP")
+                    logger.info(f"{log_id}: Thread doesn't exist and post is OP")
 
                     new_thread = Threads()
                     new_thread.thread_hash = thread_id
@@ -545,6 +721,7 @@ def parse_message(message_id, json_obj):
                     new_thread.timestamp_received = int(json_obj['receivedTime'])
                     new_thread.orig_op_bm_json_obj = json.dumps(json_obj)
                     new_thread.last_op_json_obj_ts = time.time()
+                    new_thread.rules = json.dumps(thread_rules)
                     new_session.add(new_thread)
 
                     if timestamp_sent > chan.timestamp_sent:
@@ -558,8 +735,7 @@ def parse_message(message_id, json_obj):
                     id_thread = new_thread.id
 
                 elif not thread and not is_op:  # Reply received before OP, create thread with OP placeholder
-                    logger.info(
-                        f"{message_id[-config.ID_LENGTH:].upper()}: Thread doesn't exist and post is a reply")
+                    logger.info(f"{log_id}: Thread doesn't exist and post is a reply")
 
                     new_thread = Threads()
                     new_thread.thread_hash = thread_id
@@ -599,20 +775,33 @@ def parse_message(message_id, json_obj):
                             logger.info("Instructing to process OP data found in reply post to heal OP")
                             process_op_json_obj = True
 
+                elif thread and is_op:  # OP received, but reply received beforehand and already created thread
+                    logger.info(f"{log_id}: Thread does exist and post is OP")
+
+                    thread.op_sha256_hash = message_sha256_hash
+                    if chan:
+                        thread.chan_id = chan.id
+                    thread.subject = subject
+                    thread.timestamp_sent = timestamp_sent
+                    thread.timestamp_received = int(json_obj['receivedTime'])
+                    thread.orig_op_bm_json_obj = json.dumps(json_obj)
+                    thread.last_op_json_obj_ts = time.time()
+                    thread.rules = json.dumps(thread_rules)
+                    new_session.commit()
+
         except IntegrityError:
             thread_error = True
             logger.error(
-                f"{message_id[-config.ID_LENGTH:].upper()}: Potential duplicate thread_hash "
+                f"{log_id}: Potential duplicate thread_hash "
                 f"(thread created while processing this message?)")
         except Exception as err:
-            logger.error(f"{message_id[-config.ID_LENGTH:].upper()}: Thread check exception: {err}")
+            logger.error(f"{log_id}: Thread check exception: {err}")
 
         # If thread_error is True and the thread is found, then continue processing the post normally.
         # If thread_error is False and a thread is not found, then log an error and return (don't create post).
         with session_scope(config.DB_PATH) as new_session:
             chan = new_session.query(Chan).filter(
                 Chan.address == json_obj['toAddress']).first()
-            chan.last_post_number = chan.last_post_number + 1
 
             thread = new_session.query(Threads).filter(
                 Threads.thread_hash == thread_id).first()
@@ -622,7 +811,7 @@ def parse_message(message_id, json_obj):
                 return
 
             if (thread_error or not thread_created) and thread and not is_op:  # Reply received after OP, add to current thread
-                logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: Thread exists and post is not OP")
+                logger.info(f"{log_id}: Thread exists and post is not OP")
 
                 if timestamp_sent > thread.timestamp_sent and not sage and not thread_anchored:
                     thread.timestamp_sent = timestamp_sent
@@ -672,7 +861,7 @@ def parse_message(message_id, json_obj):
                             process_op_json_obj = True
 
             elif (thread_error or not thread_created) and thread and is_op:
-                logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: Thread exists and post is OP")
+                logger.info(f"{log_id}: Thread exists and post is OP")
 
                 # Post indicating it is OP but thread already exists
                 # Could have received reply before OP
@@ -683,7 +872,7 @@ def parse_message(message_id, json_obj):
                 # Check if existing thread has OP json_obj
                 if not thread.orig_op_bm_json_obj and json_obj:
                     logger.info(
-                        f"{message_id[-config.ID_LENGTH:].upper()}: Thread found with empty orig_op_bm_json_obj "
+                        f"{log_id}: Thread found with empty orig_op_bm_json_obj "
                         f"while processing OP. Populating with OP data.")
                     thread.orig_op_bm_json_obj = json.dumps(json_obj)
 
@@ -694,7 +883,7 @@ def parse_message(message_id, json_obj):
                     Messages.is_op.is_(True),
                     Messages.thread_id == thread.id)).first()
                 if thread_op:
-                    logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: OP for thread already present. "
+                    logger.info(f"{log_id}: OP for thread already present. "
                                 "Skipping creation new message entry and updating last_op_json_obj_ts.")
                     return
                 else:
@@ -704,7 +893,7 @@ def parse_message(message_id, json_obj):
                 # Duplicate thread hash wasn't the previous exception and required rechecking thread
                 # Some other error occurred and this post likely needs to be trashed
                 # In any case, it's advised to check the log
-                logger.error(f"{message_id[-config.ID_LENGTH:].upper()}: Some other error prevented this message "
+                logger.error(f"{log_id}: Some other error prevented this message "
                              f"from being processed. Review the log.")
                 return
 
@@ -713,7 +902,6 @@ def parse_message(message_id, json_obj):
             new_msg.version = version
             new_msg.message_id = message_id
             new_msg.post_id = get_post_id(message_id)
-            new_msg.post_number = chan.last_post_number
             new_msg.expires_time = get_msg_expires_time(message_id)
             new_msg.thread_id = id_thread
             new_msg.address_from = bleach.clean(json_obj['fromAddress'])
@@ -730,6 +918,7 @@ def parse_message(message_id, json_obj):
             new_msg.file_filename = file_filename
             new_msg.file_url = file_url
             new_msg.file_torrent_file_hash = file_torrent_file_hash
+            new_msg.file_torrent_hash = file_torrent_hash
             new_msg.file_torrent_magnet = file_torrent_magnet
             new_msg.file_torrent_decoded = file_torrent_decoded
             new_msg.file_upload_settings = json.dumps(file_upload_settings)
@@ -761,6 +950,11 @@ def parse_message(message_id, json_obj):
             new_msg.text_replacements = text_replacements
             new_msg.gpg_texts = json.dumps(gpg_texts)
             new_msg.hide = hide_message
+            new_msg.pow_method = pow_method
+            new_msg.pow_difficulty = pow_difficulty
+            new_msg.pow_repetitions = pow_repetitions
+            new_msg.pow_token = json.dumps(pow_token)
+            new_msg.pow_filter_value = pow_filter_value
 
             # Games
             new_msg.game_password_a = game_password_a
@@ -864,13 +1058,13 @@ def parse_message(message_id, json_obj):
                     return_val = api.trashMessage(message_id)
                 except Exception as err:
                     logger.error("{}: Exception during message delete: {}".format(
-                        message_id[-config.ID_LENGTH:].upper(), err))
+                        log_id, err))
                 finally:
                     time.sleep(config.API_PAUSE)
                     lf.lock_release(config.LOCKFILE_API)
 
     except Exception as err:
-        logger.exception(f"{message_id[-config.ID_LENGTH:].upper()}: Saving message to DB")
+        logger.exception(f"{log_id}: Saving message to DB")
         delete_files_recursive(save_dir)
         daemon_com.trash_message(message_id)
     finally:
@@ -909,20 +1103,25 @@ def parse_message(message_id, json_obj):
         #
         # i2p torrent attachment
         #
-        elif file_torrent_decoded and file_torrent_file_hash and not settings.disable_downloading_i2p_torrent:
+        elif (file_torrent_decoded and
+                file_torrent_file_hash and
+                not settings.disable_downloading_i2p_torrent):
+            torrent_prop = None
             torrent_filename = f"{file_torrent_file_hash}.torrent"
             path_torrent_tmp = os.path.join("/tmp", torrent_filename)
 
             with open(path_torrent_tmp, mode='wb') as f:  # Save torrent file to temporary directory
                 f.write(file_torrent_decoded)
 
-            # Ensure all trackers have i2p as the TLD (Don't allow non-i2p trackers)
+            # Ensure all trackers have i2p as the TLD
             t = Torrent.read(path_torrent_tmp)
+            logger.info(f"Torrent file with hash {t.infohash}")
+
             list_trackers = []
             for tracker in t.trackers:
                 list_trackers += tracker
             non_i2p_urls = check_tld_i2p(list_trackers)
-            if non_i2p_urls:
+            if non_i2p_urls:  # Don't allow non-i2p trackers
                 update_msg = new_session.query(Messages).filter(
                     Messages.message_id == message_id).first()
                 if update_msg:
@@ -942,22 +1141,25 @@ def parse_message(message_id, json_obj):
             conn_info = dict(host=config.QBITTORRENT_HOST, port=8080)
             qbt_client = qbittorrentapi.Client(**conn_info)
             qbt_client.auth_log_in()
-            try:
-                torrent_prop = qbt_client.torrents_info(torrent_hashes=file_torrent_file_hash)[0]
-            except:
-                torrent_prop = None
 
-            if torrent_prop:
-                # Torrent is already in client
-                logger.info("Torrent already exists in client")
-            else:
-                # Torrent not already in client. Add paused.
+            if not file_torrent_hash and t.infohash:  # If torrent hash isn't with message, get from torrent file
+                file_torrent_hash = t.infohash
+
+            if file_torrent_hash:  # May not receive from other posts, but will with posts made by this BC instance
+                try:
+                    torrent_prop = qbt_client.torrents_info(torrent_hashes=file_torrent_hash)[0]
+                except:
+                    pass
+
+            # Do not log here to prevent log analysis from determining if a post came from this instance or not
+            if torrent_prop:  # Torrent is already in client
+                pass
+            else:  # Torrent not already in client. Add paused.
                 try:
                     ret = qbt_client.torrents_add(torrent_files=path_torrent_tmp, is_paused=True)
-                    logger.info(f"Adding paused torrent: {ret}")
                     if ret != "Ok.":
                         logger.error("{}: Error adding paused torrent {}".format(
-                            message_id[-config.ID_LENGTH:].upper(), path_torrent_tmp))
+                            log_id, path_torrent_tmp))
                 except:
                     logger.exception("Adding torrent file")
 
@@ -972,12 +1174,21 @@ def parse_message(message_id, json_obj):
                 update_msg.file_progress = "I2P BitTorrent Download Started"
                 new_session.commit()
 
-            new_torrent = UploadTorrents()
-            new_torrent.file_hash = file_torrent_file_hash
-            new_torrent.torrent_hash = t.infohash
-            new_torrent.message_id = message_id
-            new_torrent.timestamp_started = time.time()
-            new_session.add(new_torrent)
+            # check if torrent DB entry already exists
+            torrent_check = new_session.query(UploadTorrents).filter(
+                UploadTorrents.torrent_hash == file_torrent_hash).first()
+
+            if not torrent_check:  # Add torrent entry
+                new_torrent = UploadTorrents()
+                new_torrent.file_hash = file_torrent_file_hash
+                new_torrent.torrent_hash = t.infohash
+                new_torrent.message_id = message_id
+                new_torrent.timestamp_started = time.time()
+                new_session.add(new_torrent)
+                new_session.commit()
+            elif not torrent_check.message_id:  # torrent exists, update message_id
+                torrent_check.message_id = message_id
+                new_session.commit()
 
         #
         # upload site attachment
@@ -985,11 +1196,11 @@ def parse_message(message_id, json_obj):
         elif file_url and not settings.disable_downloading_upload_site:
             # Create dir to extract files into
             logger.info("{}: Filename on disk: {}".format(
-                message_id[-config.ID_LENGTH:].upper(), saved_file_filename))
+                log_id, saved_file_filename))
 
             if os.path.exists(file_path) and os.path.getsize(file_path) != 0 and save_dir:
                 logger.info("{}: Downloaded zip file found. Not attempting to download.".format(
-                    message_id[-config.ID_LENGTH:].upper()))
+                    log_id))
                 file_size_test = os.path.getsize(file_path)
                 file_download_successful = True
                 extract_zip(message_id, file_path, save_dir)
@@ -999,7 +1210,7 @@ def parse_message(message_id, json_obj):
                     # If under maintenance, don't download now but set to download when maintenance ends
                     logger.info("{}: Maintenance mode enabled. "
                                 "Waiting until maintenance ends to download attachments.".format(
-                                    message_id[-config.ID_LENGTH:].upper()))
+                                    log_id))
                     msg = new_session.query(Messages).filter(
                         Messages.message_id == message_id).first()
                     if msg:
@@ -1009,9 +1220,9 @@ def parse_message(message_id, json_obj):
 
                 logger.info(
                     "{}: File not found. Attempting to download.".format(
-                        message_id[-config.ID_LENGTH:].upper()))
+                        log_id))
                 logger.info("{}: Downloading file url: {}".format(
-                    message_id[-config.ID_LENGTH:].upper(), file_url))
+                    log_id, file_url))
 
                 if upload_filename and file_url_type and file_upload_settings:
                     # Set post status to downloading and attempt to start the download
@@ -1026,7 +1237,7 @@ def parse_message(message_id, json_obj):
                     except Exception as err:
                         logger.error(
                             "{}: Could not write to database. Deleting. Error: {}".format(
-                                message_id[-config.ID_LENGTH:].upper(), err))
+                                log_id, err))
                         logger.exception("Editing message in DB")
                     finally:
                         time.sleep(config.API_PAUSE)
@@ -1099,13 +1310,13 @@ def parse_message(message_id, json_obj):
                         file_extension = html.escape(os.path.splitext(f)[1].split(".")[-1].lower())
                         if not file_extension:
                             logger.error("{}: File extension not found. Deleting.".format(
-                                message_id[-config.ID_LENGTH:].upper()))
+                                log_id))
                             delete_post(message_id)
                             return
                         elif len(file_extension) >= config.MAX_FILE_EXT_LENGTH:
                             logger.error(
                                 "{}: File extension greater than {} characters. Deleting.".format(
-                                    message_id[-config.ID_LENGTH:].upper(), config.MAX_FILE_EXT_LENGTH))
+                                    log_id, config.MAX_FILE_EXT_LENGTH))
                             delete_post(message_id)
                             return
                         if file_extension in config.FILE_EXTENSIONS_IMAGE:
@@ -1134,7 +1345,7 @@ def parse_message(message_id, json_obj):
             except Exception as err:
                 logger.error(
                     "{}: Could not write to database. Deleting. Error: {}".format(
-                        message_id[-config.ID_LENGTH:].upper(), err))
+                        log_id, err))
                 logger.exception("Editing message in DB")
             finally:
                 time.sleep(config.API_PAUSE)
@@ -1151,7 +1362,9 @@ def parse_message(message_id, json_obj):
 
 def process_admin(msg_dict, msg_decrypted_dict):
     """Process message as an admin command"""
-    logger.info("{}: Message is an admin command".format(msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+    log_id = msg_dict["msgid"][-config.ID_LENGTH:].upper()
+
+    logger.info(f"{log_id}: Message is an admin command")
 
     # Authenticate sender
     with session_scope(config.DB_PATH) as new_session:
@@ -1163,17 +1376,16 @@ def process_admin(msg_dict, msg_decrypted_dict):
             access = get_access(msg_dict['toAddress'])
             if errors or (msg_dict['fromAddress'] not in access["primary_addresses"] and
                           msg_dict['fromAddress'] not in access["secondary_addresses"]):
-                logger.error("{}: Unauthorized Admin message. Deleting.".format(
-                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                logger.error("{}: Unauthorized Admin message. Deleting.".format(log_id))
                 daemon_com.trash_message(msg_dict["msgid"])
                 return
         else:
-            logger.error("{}: Admin message: Chan not found".format(msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            logger.error("{}: Admin message: Chan not found".format(log_id))
             daemon_com.trash_message(msg_dict["msgid"])
             return
 
     logger.info("{}: Admin message received from {} for {} is authentic".format(
-        msg_dict["msgid"][-config.ID_LENGTH:].upper(), msg_dict['fromAddress'], msg_dict['toAddress']))
+        log_id, msg_dict['fromAddress'], msg_dict['toAddress']))
 
     admin_dict = {
         "timestamp_utc": 0,
@@ -1250,14 +1462,13 @@ def process_admin(msg_dict, msg_decrypted_dict):
 
             else:
                 logger.error("{}: Unknown Admin command: action: {}, action_type: {}. Deleting. {}".format(
-                    msg_dict["msgid"][-config.ID_LENGTH:].upper(),
+                    log_id,
                     admin_dict["action"],
                     admin_dict["action_type"],
                     admin_dict))
                 daemon_com.trash_message(msg_dict["msgid"])
         except Exception:
-            logger.exception("{}: Exception processing Admin command. Deleting.".format(
-                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            logger.exception("{}: Exception processing Admin command. Deleting.".format(log_id))
             daemon_com.trash_message(msg_dict["msgid"])
         finally:
             time.sleep(config.API_PAUSE)
@@ -1271,15 +1482,17 @@ def decrypt_and_process_attachments(
     media_info = {}
     message_steg = {}
 
+    log_id = message_id[-config.ID_LENGTH:].upper()
+
     if file_enc_cipher == "NONE":
-        logger.info("{}: File not encrypted".format(message_id[-config.ID_LENGTH:].upper()))
+        logger.info("{}: File not encrypted".format(log_id))
         decrypted_zip = encrypted_zip
     elif file_enc_password:
         # decrypt file
         decrypted_zip = "/tmp/{}.zip".format(
             get_random_alphanumeric_string(12, with_punctuation=False, with_spaces=False))
         delete_file(decrypted_zip)  # make sure no file already exists
-        logger.info("{}: Decrypting file {}".format(message_id[-config.ID_LENGTH:].upper(), encrypted_zip))
+        logger.info("{}: Decrypting file {}".format(log_id, encrypted_zip))
 
         try:
             with session_scope(config.DB_PATH) as new_session:
@@ -1302,7 +1515,7 @@ def decrypt_and_process_attachments(
                         new_session.commit()
                     return 1, media_info, message_steg
                 else:
-                    logger.info("{}: Finished decrypting file".format(message_id[-config.ID_LENGTH:].upper()))
+                    logger.info("{}: Finished decrypting file".format(log_id))
 
                 delete_file(encrypted_zip)
         except Exception:
@@ -1315,15 +1528,14 @@ def decrypt_and_process_attachments(
             file_amount_test = count_files_in_zip(message_id, decrypted_zip)
         except Exception as err:
             file_amount_test = None
-            logger.error("{}: Error checking zip: {}".format(
-                message_id[-config.ID_LENGTH:].upper(), err))
+            logger.error("{}: Error checking zip: {}".format(log_id, err))
 
         if file_amount_test:
             file_amount = file_amount_test
 
         if file_amount > config.FILE_ATTACHMENTS_MAX:
             logger.info("{}: Number of attachments ({}) exceed the maximum ({}).".format(
-                message_id[-config.ID_LENGTH:].upper(), file_amount, config.FILE_ATTACHMENTS_MAX))
+                log_id, file_amount, config.FILE_ATTACHMENTS_MAX))
             daemon_com.trash_message(message_id)
             return 1, media_info, message_steg
 
@@ -1362,9 +1574,9 @@ def decrypt_and_process_attachments(
             if errors_files:
                 logger.error(
                     "{}: Encountered errors processing attachments. Deleting".format(
-                        message_id[-config.ID_LENGTH:].upper(), config.MAX_FILE_EXT_LENGTH))
+                        log_id, config.MAX_FILE_EXT_LENGTH))
                 for err in errors_files:
-                    logger.error("{}: Error: {}".format(message_id[-config.ID_LENGTH:].upper(), err))
+                    logger.error("{}: Error: {}".format(log_id, err))
                 delete_files_recursive(extract_path)
                 daemon_com.trash_message(message_id)
                 return 1, media_info, message_steg
@@ -1380,3 +1592,29 @@ def decrypt_and_process_attachments(
                 return 0, media_info, message_steg
 
     return 1, media_info, message_steg
+
+
+def check_pow_thread_rule(thread_rules_, pow_filter_value):
+    list_errors = []
+    try:
+        if "require_pow_to_reply" in thread_rules_:
+            if ("pow_method" not in thread_rules_["require_pow_to_reply"] or
+                    thread_rules_["require_pow_to_reply"]["pow_method"] != "hashcash"):
+                list_errors.append("Missing method")
+            if ("pow_difficulty" not in thread_rules_["require_pow_to_reply"] or
+                    int(thread_rules_["require_pow_to_reply"]["pow_difficulty"]) < 1):
+                list_errors.append("Invalid difficulty")
+            if ("pow_repetitions" not in thread_rules_["require_pow_to_reply"] or
+                    int(thread_rules_["require_pow_to_reply"]["pow_repetitions"]) < 1):
+                list_errors.append("Invalid repetitions")
+
+            # Check if post meets minimum POW requirements
+            required_pow_filter_value = (2 ** int(thread_rules_["require_pow_to_reply"]["pow_difficulty"])) * int(thread_rules_["require_pow_to_reply"]["pow_repetitions"])
+
+            if pow_filter_value < required_pow_filter_value:
+                list_errors.append("Reply doesn't meet minimum POW requirements")
+    except Exception as error:
+        logger.exception("POW Thread Rule")
+        list_errors.append(f"POW Thread Rule Exception: {error}")
+
+    return list_errors

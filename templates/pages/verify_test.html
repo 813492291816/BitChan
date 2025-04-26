@@ -1,9 +1,14 @@
-<HTML><HEAD><TITLE>Verification - BitChan</TITLE></HEAD><BODY>
+<HTML>
+<HEAD>
+<TITLE>Verify - {% if settings.title_text %}{{settings.title_text}}{% else %}BitChan{% endif %}</TITLE>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</HEAD>
+<BODY>
 <div style="text-align:center;padding-top:2em">
 <form method="post" enctype="multipart/form-data" autocomplete="off">
 <input type="hidden" name="page_id" value="{{page_id}}"/>
 {{captcha(page_id=page_id, img_id="post_captcha")}}
-<div style="padding:0.5em"><input type="text" name="captcha" autofocus/></div>
+<div style="padding:0.5em"><input type="number" pattern="[0-9]*" inputmode="numeric" name="captcha" autofocus/></div>
 <input type="submit" name="submit" value="Submit"/></form>
 </div>
 </BODY>

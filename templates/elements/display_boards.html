@@ -7,8 +7,7 @@
     {%- set break_tracker.chan_exists = True -%}
 {%- endfor -%}
 
-<div class="chans themed">
-    <center>
+<div class="chans themed" style="text-align: center;">
     {% if break_tracker.chan_exists %}
         <a class="link" href="/boards">Boards</a> [
         {% for address in chans_board_info if global_admin or
@@ -21,5 +20,4 @@
     {% else %}
         No Boards
     {% endif %}
-    </center>
 </div>

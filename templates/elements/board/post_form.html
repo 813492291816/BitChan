@@ -11,11 +11,17 @@
     <input type="hidden" name="board_id" value="{{board['current_chan'].address}}"/>
     <input type="hidden" name="page_id" value="{{page_id}}"/>
     <input type="hidden" name="game_hash" value="{{game_hash}}"/>
-    {% if thread %}
+  {% if thread %}
     <input type="hidden" name="subject" value="{{thread.subject|safe}}"/>
-    {% endif %}
+  {% endif %}
     <input type="hidden" name="submit_post" value="Post"/>
     {{form_post.csrf_token}}
+  {% if disallow_attachments %}
+    <input style="display:none" id="file1" name="file1" type="file"/>
+    <input style="display:none" id="file2" name="file2" type="file"/>
+    <input style="display:none" id="file3" name="file3" type="file"/>
+    <input style="display:none" id="file4" name="file4" type="file"/>
+  {% endif %}
     <table class="form themed bold" style="table-layout: fixed; max-width: 600px;">
       <tbody>
         <tr>
@@ -42,10 +48,10 @@
         <tr>
         {% if thread %}
           <td class="form themed bold">Thread Default From</td>
-          <td colspan="2"><input type="checkbox" id="default_from_address" name="default_from_address" value="y"{% if thread.default_from_address or ("default_from_address" in form_populate and form_populate["default_from_address"]) %} checked{% endif %}/></td>
+          <td colspan="2"><input type="checkbox" id="default_from_address" name="default_from_address" value="y"{% if "default_from_address" in form_populate and form_populate["default_from_address"] %} checked{% endif %}/></td>
         {% else %}
           <td class="form themed bold">Board Default From</td>
-          <td colspan="2"><input type="checkbox" id="default_from_address" name="default_from_address" value="y"{% if board['current_chan'].default_from_address or ("default_from_address" in form_populate and form_populate["default_from_address"]) %} checked{% endif %}/></td>
+          <td colspan="2"><input type="checkbox" id="default_from_address" name="default_from_address" value="y"{% if "default_from_address" in form_populate and form_populate["default_from_address"] %} checked{% endif %}/></td>
         {% endif %}
         </tr>
         <tr>
@@ -90,6 +96,14 @@
           {% include '/elements/board/form_post_game_options.html' %}
                   </tbody>
                 </table>
+            {% if not thread %}
+          {% include '/elements/board/form_post_thread_rules.html' %}
+            {% endif %}
+            {% if not settings.enable_kiosk_mode or
+                  (settings.enable_kiosk_mode and settings.kiosk_allow_pow) or
+                  (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) %}
+          {% include '/elements/board/form_post_pow_options.html' %}
+            {% endif %}
             {% if not settings.enable_kiosk_mode or
                   (settings.enable_kiosk_mode and settings.kiosk_allow_gpg) or
                   (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) %}
@@ -99,13 +113,14 @@
             </section>
           </td>
         </tr>
+        {% if not disallow_attachments %}
         <tr>
           <td class="form themed bold">Upload Images/Files<br/><span style="font-size: 0.7em">(Check to spoiler media)</span></td>
           <td colspan="2">
-            1 <input style="vertical-align: middle;" type="checkbox" id="image1_spoiler" name="image1_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file1')">&#8856;</button> <input id="file1" name="file1" type="file"/>
-            <br/>2 <input style="vertical-align: middle;" type="checkbox" id="image2_spoiler" name="image2_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file2')">&#8856;</button> <input id="file2" name="file2" type="file"/>
-            <br/>3 <input style="vertical-align: middle;" type="checkbox" id="image3_spoiler" name="image3_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file3')">&#8856;</button> <input id="file3" name="file3" type="file"/>
-            <br/>4 <input style="vertical-align: middle;" type="checkbox" id="image4_spoiler" name="image4_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file4')">&#8856;</button> <input id="file4" name="file4" type="file"/>
+            1 <input style="vertical-align: middle;" type="checkbox" id="image1_spoiler" name="image1_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file1'); document.getElementById('image1').removeAttribute('src'); document.getElementById('image1_large').removeAttribute('src');">&#8856;</button> <input style="width: 200px" id="file1" name="file1" type="file"/> <img class="image_thumb" id="image1" /><div class="large_image_wrp"><img id="image1_large" class="large-image" /></div>
+            <br/>2 <input style="vertical-align: middle;" type="checkbox" id="image2_spoiler" name="image2_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file2'); document.getElementById('image2').removeAttribute('src'); document.getElementById('image2_large').removeAttribute('src');">&#8856;</button> <input style="width: 200px" id="file2" name="file2" type="file"/> <img class="image_thumb" id="image2" /><div class="large_image_wrp"><img id="image2_large" class="large-image" /></div>
+            <br/>3 <input style="vertical-align: middle;" type="checkbox" id="image3_spoiler" name="image3_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file3'); document.getElementById('image3').removeAttribute('src'); document.getElementById('image3_large').removeAttribute('src');">&#8856;</button> <input style="width: 200px" id="file3" name="file3" type="file"/> <img class="image_thumb" id="image3" /><div class="large_image_wrp"><img id="image3_large" class="large-image" /></div>
+            <br/>4 <input style="vertical-align: middle;" type="checkbox" id="image4_spoiler" name="image4_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file4'); document.getElementById('image4').removeAttribute('src'); document.getElementById('image4_large').removeAttribute('src');">&#8856;</button> <input style="width: 200px" id="file4" name="file4" type="file"/> <img class="image_thumb" id="image4" /><div class="large_image_wrp"><img id="image4_large" class="large-image" /></div>
             {% if "file1" in form_populate and form_populate["file1"] or
                   "file2" in form_populate and form_populate["file2"] or
                   "file3" in form_populate and form_populate["file3"] or
@@ -118,8 +133,8 @@
           <td class="form themed bold">Strip EXIF<br/><span style="font-size: 0.7em">JPG/PNG only</span></td>
           <td colspan="2"><input type="checkbox" id="strip_exif" name="strip_exif" value="y"{% if "strip_exif" in form_populate and not form_populate["strip_exif"] %}{% else %} checked{% endif %}/></td>
         </tr>
-          <tr>
-            <td class="form themed bold">Upload Method - {% if "upload" in form_populate %}{{form_populate["upload"]}}{% endif %}</td>
+        <tr>
+          <td class="form themed bold">Upload Method</td>
           <td>
             <select style="width: 100%;" name="upload">
             {% if not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and not settings.kiosk_disable_bm_attach) %}
@@ -131,9 +146,9 @@
             {% for each_server in upload_sites.query.all() if each_server.enabled or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) %}
               <option value="{{each_server.id}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.id|string %} selected{% endif %}>{{each_server.form_name}}</option>
             {% endfor %}
-              </select>
-            </td>
-          </tr>
+            </select>
+          </td>
+        </tr>
         <tr>
           <td class="form themed bold">Upload Encryption</td>
           <td>
@@ -142,21 +157,6 @@
               <option value="{{each_cipher[0]}}"{% if "upload_cipher_and_key" in form_populate and form_populate["upload_cipher_and_key"] == each_cipher[0] %} selected{% endif %}>{{each_cipher[1]}}</option>
             {%- endfor %}
             </select>
-          </td>
-            {% if settings.enable_captcha %}
-        </tr>
-        <tr>
-          <td>{{captcha(page_id=page_id, img_id="post_captcha")}}</td>
-          <td><input type="text" name="captcha"></td>
-            {% endif %}
-
-          <td>
-            <div style="float: left;">
-              <input class="postbutton" type="submit" name="preview_post" value="Preview"/>
-            </div>
-            <div style="float: left;">
-              <input class="postbutton" type="submit" name="submit_post" value="Post"/>
-            </div>
           </td>
         </tr>
         <tr>
@@ -185,6 +185,21 @@
                 </table>
               </details>
             </section>
+          </td>
+        </tr>
+        {% endif %}
+        <tr>
+        {% if settings.enable_captcha %}
+          <td>{{captcha(page_id=page_id, img_id="post_captcha")}}</td>
+          <td><input type="text" name="captcha"></td>
+        {% endif %}
+          <td>
+            <div style="float: left;">
+              <input class="postbutton" type="submit" name="preview_post" value="Preview"/>
+            </div>
+            <div style="float: left;">
+              <input class="postbutton" type="submit" name="submit_post" value="Post"/>
+            </div>
           </td>
         </tr>
         {% if "preview" in form_populate %}

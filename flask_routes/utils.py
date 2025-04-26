@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 import uuid
@@ -5,14 +6,78 @@ from collections import OrderedDict
 from functools import wraps
 
 from flask import session
+from sqlalchemy import and_
 
 from bitchan_client import DaemonCom
 from database.models import GlobalSettings
+from database.models import Messages
 from database.models import SessionInfo
+from utils.routes import has_permission
+from utils.routes import is_logged_in
 
 logger = logging.getLogger('bitchan.decorators')
 
 daemon_com = DaemonCom()
+
+
+def get_posts_from_thread(thread, settings, pow_filter_value, last, steg):
+    """Return order, OP, and sorted replies for a particular thread"""
+    try:
+        thread_rules = json.loads(thread.rules)
+    except:
+        thread_rules = {}
+
+    message_op = Messages.query.filter(and_(
+        Messages.thread_id == thread.id,
+        Messages.message_sha256_hash == thread.op_sha256_hash))
+
+    message_replies = Messages.query.filter(and_(
+        Messages.thread_id == thread.id,
+        Messages.message_sha256_hash != thread.op_sha256_hash))
+
+    if steg:
+        message_op = message_op.filter(Messages.message_steg != "{}")
+        message_replies = message_replies.filter(Messages.message_steg != "{}")
+
+    message_op = message_op.first()
+
+    message_reply_all_count = message_replies.count()
+
+    # Sort
+    if "sort_replies_by_pow" in thread_rules:
+        post_order = Messages.pow_filter_value.desc()
+        message_replies = message_replies.order_by(post_order)  # Needs to be sorted before filtering/limiting
+    elif settings.post_timestamp == 'received':
+        post_order = Messages.timestamp_received.asc()
+    elif settings.post_timestamp == 'sent':
+        post_order = Messages.timestamp_sent.asc()
+
+    # Filter POW
+    if pow_filter_value:
+        message_replies = message_replies.filter(Messages.pow_filter_value >= pow_filter_value)
+
+    # Limit
+    if last and message_replies.count() > last:
+        if "sort_replies_by_pow" in thread_rules:
+            message_start = message_replies.limit(last).all()
+            message_replies = message_replies.filter(
+                Messages.pow_filter_value >= message_start[-1].pow_filter_value)
+        elif settings.post_timestamp == 'received':
+            message_replies_test = message_replies.order_by(Messages.timestamp_received.desc())
+            message_start = message_replies_test.limit(last).all()
+            message_replies = message_replies.filter(
+                Messages.timestamp_received >= message_start[-1].timestamp_received)
+        elif settings.post_timestamp == 'sent':
+            message_replies_test = message_replies.order_by(Messages.timestamp_sent.desc())
+            message_start = message_replies_test.limit(last).all()
+            message_replies = message_replies.filter(
+                Messages.timestamp_sent >= message_start[-1].timestamp_sent)
+
+    # Needs to be sorted after filtering/limiting
+    if settings.post_timestamp == 'received' or settings.post_timestamp == 'sent':
+        message_replies = message_replies.order_by(post_order)
+
+    return post_order, message_op, message_replies, message_reply_all_count
 
 
 def count_views(f):
@@ -60,6 +125,9 @@ def count_views(f):
 def rate_limit(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        if is_logged_in() and has_permission("is_global_admin"):  # Bypass check if admin
+            return f(*args, **kwargs)
+
         settings = GlobalSettings.query.first()
         if settings.enable_page_rate_limit:
             if "session_id" not in session:
@@ -166,6 +234,7 @@ def is_verified():
 
     if "session_id" not in session:
         # Unknown session, not verified
+        # logger.info(f"Unknown session, not verified: {session}")
         return False
 
     session_info = SessionInfo.query.filter(
@@ -173,6 +242,7 @@ def is_verified():
     if (not session_info or not session_info.verified or
             ("verified" not in session or not session["verified"])):
         # not verified
+        # logger.info(f"not verified: {session}, {session_info}")
         return False
 
     # verified

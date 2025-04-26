@@ -14,6 +14,7 @@ from sqlalchemy import and_
 import config
 from bitchan_client import DaemonCom
 from database.models import Chan
+from database.models import GlobalSettings
 from flask_routes.utils import count_views
 from flask_routes.utils import is_verified
 from flask_routes.utils import rate_limit
@@ -23,6 +24,7 @@ from utils.general import set_clear_time_to_future
 from utils.routes import allowed_access
 from utils.routes import get_chan_passphrase
 from utils.routes import get_logged_in_user_name
+from utils.routes import has_permission
 from utils.routes import page_dict
 from utils.shared import add_mod_log_entry
 from utils.shared import get_access
@@ -83,9 +85,10 @@ def list_chans(current_chan):
         return allow_msg
 
     chan = Chan.query.filter(Chan.address == current_chan).first()
+    board_list_admin, _ = allowed_access("is_board_list_admin", board_address=current_chan)
     global_admin, _ = allowed_access("is_global_admin")
 
-    if not chan or (not global_admin and chan.restricted):
+    if not chan or (not global_admin and not board_list_admin and chan.restricted):
         return render_template("pages/404-board.html",
                                board_address=current_chan)
 
@@ -181,12 +184,14 @@ def list_chans(current_chan):
         # set default/preferred address to update list
         elif form_list.save_from.data:
             global_admin, allow_msg = allowed_access("is_global_admin")
-            if not global_admin:
+            board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=current_chan)
+            if not global_admin and not board_list_admin:
                 return allow_msg
 
             chan = Chan.query.filter(
                 Chan.address == current_chan).first()
-            if chan:
+            settings = GlobalSettings.query.first()
+            if chan and ((settings.enable_kiosk_mode and (global_admin or board_list_admin)) or not settings.enable_kiosk_mode):
                 if form_list.from_address.data:
                     chan.default_from_address = form_list.from_address.data
                 else:
@@ -259,6 +264,13 @@ def list_chans(current_chan):
                         status_msg['status_message'].append("Error parsing passphrase")
                         for error in errors:
                             status_msg['status_message'].append(error)
+
+                    settings = GlobalSettings.query.first()
+                    if (settings.enable_kiosk_mode and
+                            chan.read_only and
+                            not has_permission("is_global_admin") and
+                            not has_permission("is_board_list_admin")):
+                        status_msg['status_message'].append("Only Admins can add to a read-only list.")
 
                     if "allow_list_pgp_metadata" in rules and rules["allow_list_pgp_metadata"]:
                         if dict_chan_info["type"] in ["board", "list"]:

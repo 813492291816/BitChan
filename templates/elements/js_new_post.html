@@ -7,7 +7,7 @@ var original_title = document.title;
 
 <!-- Make list of posts that initially load on page -->
 var thread_post_ids = [
-{%- if not message_replies.count() and message_op -%}
+{%- if message_op -%}
     "{{get_post_id_string(post_id=message_op.post_id)}}",
 {%- endif -%}
 
@@ -100,7 +100,9 @@ function add_post(post_id_prev, post_id_new, post_html, post_id_attach) {
 
 function get_new_posts() {
     console.log("Checking for new posts");
-    const url = '/new_posts/{{thread.thread_hash_short}}/' + thread_post_ids.join("_");
+    const url = '/new_posts/{{thread.thread_hash_short}}/' + thread_post_ids.join("_") + "
+        {%- if last -%}?last={{last}}{%- endif -%}
+        {%- if pow_filter_value -%}?filter_pow={{pow_filter_value}}{%- endif -%}";
     $.ajax({
         url: url,
         dataType: 'json',

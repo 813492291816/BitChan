@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   bitchan_nginx:
     container_name: bitchan_nginx
@@ -45,24 +43,26 @@ services:
 
   bitchan_bitmessage:
     container_name: bitchan_bitmessage
-    image: app
     pull_policy: never
     networks:
       bc_net:
         ipv4_address: 172.28.1.3
     restart: always
+    build:
+      context: ../
+      dockerfile: docker/bitmessage/Dockerfile
     volumes:
-      - /usr/local/bitchan-docker/bitchan:/usr/local/bitchan
       - /usr/local/bitchan-docker/bitmessage:/usr/local/bitmessage
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
     command: >
       bash -c "/home/bitchan/docker/bitmessage/bitmessage_setup.sh &&
-               /home/bitchan/database/upgrade_database_docker.sh &&
-               /usr/local/bin/pybitmessage -d"
+               /home/bitchan/env2/bin/pybitmessage -d"
     depends_on:
       - bitchan_mysql
       - bitchan_tor
+      - bitchan_i2p
+      - bitchan_minode
 
   bitchan_flask:
     container_name: bitchan_flask
@@ -74,10 +74,11 @@ services:
     restart: always
     build:
       context: ../
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/bitchan/Dockerfile
     working_dir: /home/bitchan
     volumes:
       - /usr/local/bitchan-docker/bitchan:/usr/local/bitchan
+      - /usr/local/bitchan-docker/bitchan-tmp:/usr/local/bitchan-tmp
       - /usr/local/bitchan-docker/bitmessage:/usr/local/bitmessage
       - /usr/local/bitchan-docker/gnupg:/usr/local/gnupg
       - /usr/local/bitchan-docker/tor:/usr/local/tor
@@ -88,7 +89,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # For BitChan to control docker containers
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
-    command: python3 -m gunicorn --workers 1 --worker-class gthread --threads 4 --timeout 1800 --bind unix:/run/bitchan.sock bitchan_flask:app
+    command: /home/bitchan/env3/bin/python3 -m gunicorn --workers 1 --worker-class gthread --threads 4 --timeout 1800 --limit-request-line 0 --bind unix:/run/bitchan.sock bitchan_flask:app
     depends_on:
       - bitchan_bitmessage
       - bitchan_mysql
@@ -104,20 +105,94 @@ services:
     working_dir: /home/bitchan
     volumes:
       - /usr/local/bitchan-docker/bitchan:/usr/local/bitchan
+      - /usr/local/bitchan-docker/bitchan-tmp:/usr/local/bitchan-tmp
       - /usr/local/bitchan-docker/bitmessage:/usr/local/bitmessage
       - /usr/local/bitchan-docker/gnupg:/usr/local/gnupg
       - /usr/local/bitchan-docker/tor:/usr/local/tor
       - /usr/local/bitchan-docker/i2p_qb:/i2p_qb
+      - /usr/local/bitchan-docker/minode:/home/minode/minode_data
       - var_lock:/var/lock
       - /var/run/docker.sock:/var/run/docker.sock:ro  # For BitChan to control docker containers
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
-    command: bash -c "sleep 10 && PYTHONPATH=/home/bitchan python3 bitchan_daemon.py"
+    command: bash -c "/home/bitchan/database/upgrade_database_docker.sh &&
+                      sleep 10 &&
+                      PYTHONPATH=/home/bitchan /home/bitchan/env3/bin/python3 bitchan_daemon.py"
     depends_on:
       - bitchan_bitmessage
       - bitchan_mysql
 
-  # See the manual for setting up an i2p hidden service to host a kiosk.
+#
+# I2P
+#
+# Only enable one of these i2p servers.
+# See the manual for setting up an i2p hidden service to host a kiosk.
+#
+
+#
+# I2PSnark Standalone
+#
+
+# See https://codeberg.org/Strict3443/i2psnark-docker
+#  bitchan_i2psnark:
+#    container_name: bitchan_i2psnark
+#    build:
+#      context: ../
+#      dockerfile: docker/i2psnark/Dockerfile
+#    logging:
+#      options:
+#        max-size: 30m
+#    depends_on:
+#      - bitchan_i2p
+#    networks:
+#      bc_net:
+#        ipv4_address: 172.28.1.9
+#    environment:
+##      - HOST_IP=0.0.0.0      # IP to host i2psnark
+##      - HOSTNAMES=           # allowed hostnames for web ui
+##      - HOST_GID=            # GID on the HOST from which i2psnark will work
+##      - HOST_UID=            # UID on the HOST from which i2psnark will work
+#      - I2CP_HOST=172.28.1.6        #   I2CP hostname (container name will be resolved to the IP of the container)
+#      - I2CP_PORT=7654       # I2CP port
+#    ports:
+#      - "8002:8002" # web ui
+#    volumes:
+#      - "/usr/local/bitchan-docker/i2psnark/i2psnark.config.d:/i2psnark/i2psnark.config.d/"
+#      - "/usr/local/bitchan-docker/i2psnark/downloads/:/i2psnark/downloads"
+##      - "./i2psnark-appctx.config:/i2psnark/i2psnark-appctx.config"
+##      - "./jetty-i2psnark.xml:/i2psnark/jetty-i2psnark.xml"
+#    restart: unless-stopped
+
+#  bitchan_i2psnark_2:
+#    container_name: bitchan_i2psnark_2
+#    build:
+#      context: ../
+#      dockerfile: docker/i2psnark-2/Dockerfile
+#    logging:
+#      options:
+#        max-size: 30m
+#    depends_on:
+#      - bitchan_i2p
+#    networks:
+#      bc_net:
+#        ipv4_address: 172.28.1.9
+#    environment:
+##      - HOST_IP=0.0.0.0      # IP to host i2psnark
+##      - HOSTNAMES=           # allowed hostnames for web ui
+##      - HOST_GID=            # GID on the HOST from which i2psnark will work
+##      - HOST_UID=            # UID on the HOST from which i2psnark will work
+#      - I2CP_HOST=172.28.1.6        #   I2CP hostname (container name will be resolved to the IP of the container)
+#      - I2CP_PORT=7654       # I2CP port
+#    ports:
+#      - "8002:8002" # web ui
+#    volumes:
+#      - "/usr/local/bitchan-docker/i2psnark:/i2psnark"
+#    restart: unless-stopped
+
+#
+# purple/i2pd
+# This will work out of the box, without any additional configuration
+#
   bitchan_i2p:
     container_name: bitchan_i2p
     networks:
@@ -131,11 +206,63 @@ services:
       options:
         max-size: 30m
     ports:
-      - "7070:7070"  # Access to the webconsole is at http://publicIP:7070
-                     # If public, it's recommended to change the user/password in i2pd.conf
+      - "7070:7070"  # webconsole: http://172.28.1.6:7070
     volumes:
       - /usr/local/bitchan-docker/i2pd:/home/i2pd/data
     privileged: true
+
+#
+# geti2p/i2p
+# If using this, you will need to set SAMBridge to be enabled at start, then start it, from the I2P Services Config of the web UI
+#
+#  bitchan_i2p:
+#    container_name: bitchan_i2p
+#    image: geti2p/i2p
+#    networks:
+#      bc_net:
+#        ipv4_address: 172.28.1.6
+#    ports:
+#      - "7657:7657"  # Access to the web UI is at http://172.28.1.6:7657
+#    volumes:
+#      - /usr/local/bitchan-docker/i2p:/i2p/.i2p
+#      - /usr/local/bitchan-docker/i2p/torrents:/i2psnark
+
+#
+# geti2p/i2p+ (i2p-plus)
+# If using this, you will need to set SAMBridge to be enabled at start, then start it, from the I2P Services Config of the web UI
+#
+#  bitchan_i2p:
+#    container_name: bitchan_i2p
+#    image: justinhimself/i2pplus
+#    networks:
+#      bc_net:
+#        ipv4_address: 172.28.1.6
+#    ports:
+#      - "7657:7657"  # Access to the web UI is at http://172.28.1.6:7657
+#    volumes:
+#      - /usr/local/bitchan-docker/i2p_plus:/i2p/.i2p
+#      - /usr/local/bitchan-docker/i2p_plus/torrents:/i2psnark
+
+#
+# MiNode - Bitmessage bridge to communicating over I2P
+#
+
+  bitchan_minode:
+    container_name: bitchan_minode
+    networks:
+      bc_net:
+        ipv4_address: 172.28.1.10
+    restart: always
+    build:
+      context: ../
+      dockerfile: docker/minode/Dockerfile
+    logging:
+      options:
+        max-size: 30m
+    volumes:
+      - /usr/local/bitchan-docker/minode:/home/minode/minode_data
+    depends_on:
+      - bitchan_i2p
 
   bitchan_qbittorrent:
     container_name: bitchan_qbittorrent
@@ -176,7 +303,17 @@ services:
       - /usr/local/bitchan-docker/bitchan:/usr/local/bitchan
       - /usr/local/bitchan-docker/mysql:/var/lib/mysql
     command:
-      --sort_buffer_size=1000000
+      - --binlog_cache_size=32M
+      - --innodb_buffer_pool_size=286M
+      - --innodb_log_buffer_size=64M
+      - --innodb_redo_log_capacity=32M
+      - --interactive_timeout=10000
+      - --join_buffer_size=2M
+      - --max_connections=220
+      - --max_heap_table_size=20M
+      - --sort_buffer_size=1M
+      - --tmp_table_size=20M
+      - --wait_timeout=10000
 
 volumes:
   run_vol:
@@ -192,3 +329,6 @@ networks:
       driver: default
       config:
         - subnet: 172.28.0.0/16
+  no-internet:
+    driver: bridge
+    internal: true

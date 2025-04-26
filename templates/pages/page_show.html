@@ -1,0 +1,27 @@
+{% extends "layout.html" %}
+
+{% if this_page %}
+
+{% block title %}{{this_page.name}} - {% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    {{this_page.html|safe}}
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}
+
+{% else %}
+
+Page Not Found
+
+{% endif %}

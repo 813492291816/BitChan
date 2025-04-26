@@ -41,6 +41,7 @@
 {% block body %}
     {% include '/elements/display_boards.html' %}
     {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
     {% include '/elements/banner.html' %}
     <br/>
 
@@ -64,9 +65,10 @@
         {% endfor %}
             </select>
             <input type="text" id="search" name="search" value="{{search_string}}" autofocus/>
-            OP <input type="checkbox" id="filter_op" name="filter_op" value="y"{% if filter_op %} checked{% endif %}>
+            OP: <input type="checkbox" id="filter_op" name="filter_op" value="y"{% if filter_op %} checked{% endif %}>
         {% if global_admin %}
-            Hidden <input type="checkbox" id="filter_hidden" name="filter_hidden" value="y"{% if filter_hidden %} checked{% endif %}>
+            Hidden: <input type="checkbox" id="filter_hidden" name="filter_hidden" value="y"{% if filter_hidden %} checked{% endif %}>
+            STEG: <input type="checkbox" id="filter_steg" name="filter_steg" value="y"{% if filter_steg %} checked{% endif %}>
         {% endif %}
             <input type="submit" name="submit" value="Search"/>
         </form>

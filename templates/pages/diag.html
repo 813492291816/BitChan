@@ -217,14 +217,6 @@
         <tr>
             <td>
                 <form method="post">
-                    <input type="submit" name="regenerate_all_post_numbers" value="Regenerate Post Numbers"/>
-                </form>
-            </td>
-            <td>Recalculate post numbers for all boards.</td>
-        </tr>
-        <tr>
-            <td>
-                <form method="post">
                     <input type="submit" name="regenerate_all_thumbnails" value="Regenerate All Thumbnails"/>
                 </form>
             </td>
@@ -264,6 +256,23 @@
                 </form>
             </td>
             <td>Enter the ID of any post in a thread to regenerate the HTML of all posts in that thread.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="text" id="decrypt_regenerate_post_id" name="decrypt_regenerate_post_id"/>
+                    <input type="submit" name="decrypt_regenerate_post_html" value="Decrypt and Regenerate Post HTML"/>
+                </form>
+            </td>
+            <td>Enter the post ID to decrypt and regenerate the HTML of that post. Decryption will use the currently-stored passphrases.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="decrypt_regenerate_post_all_html" value="Decrypt and Regenerate HTML for All Empty Posts"/>
+                </form>
+            </td>
+            <td>Decrypt and regenerate the HTML for all posts that should have text and are blank. Decryption will use the currently-stored passphrases.</td>
         </tr>
         <tr>
             <td>
@@ -320,28 +329,6 @@
                 </form>
             </td>
             <td>Database Entries: {{captcha_entry_count}}. Delete all columns in the Captcha database table.</td>
-        </tr>
-        <tr>
-            <td>
-                <form method="post">
-                    <input type="submit" name="download_backup" value="Download Backup Archive"/>
-                </form>
-            </td>
-            <td>NOTE: BITMESSAGE AND THE DAEMON SHOULD BE STOPPED BEFORE DOING THIS, AS THE DATA IS STREAMED. START BITMESSAGE AND TEH DAEMON AFTER THE DOWNLOAD COMPLETES. Zip and export a whole BitChan backup file, which includes the Bitmessage inventory and BitChan database. This contains everything needed to completely restore BitChan to the exact state it was when it was backed up.</td>
-        </tr>
-        <tr>
-            <td>
-                <form method="post">
-                    <div class="themed">
-                        Backup Tar Archive
-                        <input name="restore_backup_file" type="file"/>
-                    </div>
-                    <div>
-                        <input type="submit" name="restore_backup" value="Restore Backup Archive"/>
-                    </div>
-                </form>
-            </td>
-            <td>Restore a Zip backup file. This will delete the current Bitmessage inventory and BitChan database and replace it with the ones being restored.</td>
         </tr>
         <tr>
             <td>

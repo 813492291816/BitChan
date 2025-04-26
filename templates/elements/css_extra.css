@@ -334,6 +334,32 @@ input:checked + label + .content {
     color: #E359B4;
 }
 
+.code {
+    background: #f4f4f4;
+    border: 1px solid #ddd;
+    color: #666;
+    page-break-inside: avoid;
+    font-family: monospace;
+    font-size: 15px;
+    line-height: 1.6;
+    margin-bottom: 1.6em;
+    max-width: 100%;
+    max-height: 20em;
+    padding: 1em 1.5em;
+    display: block;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+.code a {
+    color: #db9f2c;
+    font-family: monospace;
+}
+
+.code a:hover {
+    color: #3fd5d0;
+}
+
 .god-text {
     font-size: 1.1em;
     width: auto;

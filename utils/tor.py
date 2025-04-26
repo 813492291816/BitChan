@@ -8,30 +8,56 @@ logger = logging.getLogger('bitchan.tor')
 
 
 if config.DOCKER:
-    str_bm_enabled = f"HiddenServiceDir {config.TOR_HS_BM}\nHiddenServicePort 8444 172.28.1.3:8444"
+    str_bm_enabled = (f"HiddenServiceDir {config.TOR_HS_BM}\n"
+                      f"HiddenServicePort 8444 172.28.1.3:8444\n"
+                      f"HiddenServiceEnableIntroDoSDefense 1\n"
+                      f"HiddenServiceEnableIntroDoSRatePerSec 25\n"
+                      f"HiddenServiceEnableIntroDoSBurstPerSec 200\n"
+                      f"HiddenServicePoWDefensesEnabled 1\n"
+                      f"HiddenServicePoWQueueRate 3\n"
+                      f"HiddenServicePoWQueueBurst 10")
 else:
-    str_bm_enabled = f"HiddenServiceDir {config.TOR_HS_BM}\nHiddenServicePort 8444 127.0.0.1:8444"
+    str_bm_enabled = (f"HiddenServiceDir {config.TOR_HS_BM}\n"
+                      f"HiddenServicePort 8444 127.0.0.1:8444\n"
+                      f"HiddenServiceEnableIntroDoSDefense 1\n"
+                      f"HiddenServiceEnableIntroDoSRatePerSec 25\n"
+                      f"HiddenServiceEnableIntroDoSBurstPerSec 200\n"
+                      f"HiddenServicePoWDefensesEnabled 1\n"
+                      f"HiddenServicePoWQueueRate 3\n"
+                      f"HiddenServicePoWQueueBurst 10")
 
 str_custom_enabled = (f"HiddenServiceDir {config.TOR_HS_CUS}\n"
                       f"HiddenServicePort 80 unix:/run/nginx.sock\n"
+                      f"HiddenServiceEnableIntroDoSDefense 1\n"
+                      f"HiddenServiceEnableIntroDoSRatePerSec 25\n"
+                      f"HiddenServiceEnableIntroDoSBurstPerSec 200\n"
                       f"HiddenServicePoWDefensesEnabled {config.TOR_POW_ENABLE}\n"
                       f"HiddenServicePoWQueueRate {config.TOR_POW_QUEUE_RATE}\n"
                       f"HiddenServicePoWQueueBurst {config.TOR_POW_QUEUE_BURST}\n")
 
 str_custom_disabled = (f"#HiddenServiceDir {config.TOR_HS_CUS}\n"
                        f"#HiddenServicePort 80 unix:/run/nginx.sock\n"
+                       f"#HiddenServiceEnableIntroDoSDefense 1\n"
+                       f"#HiddenServiceEnableIntroDoSRatePerSec 25\n"
+                       f"#HiddenServiceEnableIntroDoSBurstPerSec 200\n"
                        f"#HiddenServicePoWDefensesEnabled {config.TOR_POW_ENABLE}\n"
                        f"#HiddenServicePoWQueueRate {config.TOR_POW_QUEUE_RATE}\n"
                        f"#HiddenServicePoWQueueBurst {config.TOR_POW_QUEUE_BURST}\n")
 
 str_random_enabled = (f"HiddenServiceDir {config.TOR_HS_RAND}\n"
                       f"HiddenServicePort 80 unix:/run/nginx.sock\n"
+                      f"HiddenServiceEnableIntroDoSDefense 1\n"
+                      f"HiddenServiceEnableIntroDoSRatePerSec 25\n"
+                      f"HiddenServiceEnableIntroDoSBurstPerSec 200\n"
                       f"HiddenServicePoWDefensesEnabled {config.TOR_POW_ENABLE}\n"
                       f"HiddenServicePoWQueueRate {config.TOR_POW_QUEUE_RATE}\n"
                       f"HiddenServicePoWQueueBurst {config.TOR_POW_QUEUE_BURST}\n")
 
 str_random_disabled = (f"#HiddenServiceDir {config.TOR_HS_RAND}\n"
                        f"#HiddenServicePort 80 unix:/run/nginx.sock\n"
+                       f"#HiddenServiceEnableIntroDoSDefense 1\n"
+                       f"#HiddenServiceEnableIntroDoSRatePerSec 25\n"
+                       f"#HiddenServiceEnableIntroDoSBurstPerSec 200\n"
                        f"#HiddenServicePoWDefensesEnabled {config.TOR_POW_ENABLE}\n"
                        f"#HiddenServicePoWQueueRate {config.TOR_POW_QUEUE_RATE}\n"
                        f"#HiddenServicePoWQueueBurst {config.TOR_POW_QUEUE_BURST}\n")

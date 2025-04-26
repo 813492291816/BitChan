@@ -1,0 +1,47 @@
+<section>
+  <details>
+    <summary>Thread Rules</summary>
+    <table style="width: 100%;">
+      <tbody>
+        <tr>
+          <td class="form themed bold"><label for="sort_replies_by_pow">Sort Replies by POW</label></td>
+          <td>
+              <input type="checkbox" id="sort_replies_by_pow" name="sort_replies_by_pow" value="y"{% if "sort_replies_by_pow" in form_populate and form_populate["sort_replies_by_pow"] %} checked{% endif %}/>
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold"><label for="require_pow_to_reply">Require Minimum POW to Reply</label></td>
+          <td>
+              <input type="checkbox" id="require_pow_to_reply" name="require_pow_to_reply" value="y"{% if "require_pow_to_reply" in form_populate and form_populate["require_pow_to_reply"] %} checked{% endif %}/>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="2" class="themed">
+            Select the minimum difficulty and iteration, where total=(2^Difficulty)*Repetitions.
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold"><label for="require_pow_method">Required POW Method</label></td>
+          <td colspan="2">
+            <select id="require_pow_method" name="require_pow_method">
+              <option value=""></option>
+              <option value="hashcash"{% if "pow_method" in form_populate and form_populate["pow_method"] == "hashcash" %} selected{% endif %}>Hashcash</option>
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold"><label for="require_pow_difficulty">POW Difficulty (integer)</label></td>
+          <td colspan="2">
+            <input id="require_pow_difficulty" name="require_pow_difficulty"{% if "require_pow_difficulty" in form_populate and form_populate["require_pow_difficulty"] %} value="{{form_populate['require_pow_difficulty']}}"{% endif %}>
+          </td>
+        </tr>
+        <tr>
+          <td class="form themed bold"><label for="require_pow_repetitions">POW Repetitions (integer)</label></td>
+          <td colspan="2">
+            <input id="require_pow_repetitions" name="require_pow_repetitions"{% if "require_pow_repetitions" in form_populate and form_populate["require_pow_repetitions"] %}  value="{{form_populate['require_pow_repetitions']}}"{% endif %}>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </details>
+</section>

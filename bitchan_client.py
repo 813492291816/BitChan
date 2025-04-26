@@ -45,9 +45,6 @@ class DaemonCom:
     def enable_onion_services_only(self, enable=False):
         return self.proxy().enable_onion_services_only(enable=enable)
 
-    def generate_post_numbers(self, all_boards=False):
-        return self.proxy().generate_post_numbers(all_boards=all_boards)
-
     def get_address_book(self):
         return self.proxy().get_address_book()
 
@@ -141,9 +138,6 @@ class DaemonCom:
 
     def signal_clear_inventory(self):
         return self.proxy().signal_clear_inventory()
-
-    def signal_generate_post_numbers(self):
-        return self.proxy().signal_generate_post_numbers()
 
     def tor_enable_custom_address(self):
         return self.proxy().tor_enable_custom_address()

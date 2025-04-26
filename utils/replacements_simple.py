@@ -874,6 +874,8 @@ def stichomancy_pull(seed, select_book_id=None):
         full_book_url = get_book_url_from_id(book_id)
 
         logger.info("Got book URL: {}".format(full_book_url))
+        if not full_book_url:
+            return None, None, None, None, None
 
         try:
             book = requests.get(

@@ -54,6 +54,18 @@ class Post(FlaskForm):
     page_id = StringField("Page ID")
     game_hash = StringField("Game Hash")
 
+    # Proof of Work
+    pow_method = StringField("POW Method")
+    pow_difficulty = IntegerField("POW Difficulty")
+    pow_repetitions = IntegerField("POW Repetitions")
+
+    # Thread rules
+    sort_replies_by_pow = BooleanField("Sort Replies by POW")
+    require_pow_to_reply = BooleanField("Require POW to Reply")
+    require_pow_method = StringField("POW Method")
+    require_pow_difficulty = StringField("POW Difficulty")
+    require_pow_repetitions = StringField("POW Repetitions")
+
     # GPG
     gpg_body = StringField("GPG Body")
     gpg_encrypt_msg = BooleanField("Encrypt Post")
@@ -66,6 +78,7 @@ class Post(FlaskForm):
     image_steg_insert = IntegerField("Image to insert steg")
     steg_message = StringField("Steg Message")
     delete_password = StringField("Password to Delete")
+    schedule_post_epoch = IntegerField("Schedule to Post after Epoch")
 
     start_download = SubmitField("Download File")
     preview_post = SubmitField("Preview")
@@ -97,8 +110,14 @@ class SetOptions(FlaskForm):
 class Join(FlaskForm):
     stage = StringField("Stage")
     join_type = SelectField("Join Type", choices=[])
+    require_attachment = BooleanField("Require Post Attachment")
+    require_pow_to_post = BooleanField("Require Proof of Work (POW) to Post")
+    pow_method = StringField("POW Method")
+    pow_difficulty = StringField("POW Difficulty")
+    pow_repetitions = StringField("POW Repetitions")
     require_identity_to_post = BooleanField("Require Identity to Post")
     restrict_thread_creation = BooleanField("Restrict Thread Creation to Owners, Admins, and Thread Creation Users")
+    disallow_attachments = BooleanField("Disallow Post Attachments")
     thread_creation_users = StringField("Thread Creation User Addresses (separated by commas)")
     automatic_wipe = BooleanField("Automatic Wipe")
     allow_list_pgp_metadata = BooleanField("Allow Lists to Store PGP Passphrases")
@@ -170,6 +189,7 @@ class Search(FlaskForm):
     search = StringField("Search String")
     filter_hidden = BooleanField("Show Only Hidden")
     filter_op = BooleanField("Show Only OP")
+    filter_steg = BooleanField("Show Only STEG")
     page = IntegerField("Page")
     bulk_restore_post = SubmitField("Bulk Restore Posts")
     bulk_restore_thread = SubmitField("Bulk Restore Threads")

@@ -1,5 +1,6 @@
 import json
 
+from sqlalchemy.dialects.mysql import BIGINT
 from sqlalchemy.dialects.mysql import MEDIUMBLOB
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import relationship
@@ -89,6 +90,7 @@ class Chan(CRUDMixin, db.Model):
     unlisted = db.Column(db.Boolean, default=False)
     restricted = db.Column(db.Boolean, default=False)
     hide_passphrase = db.Column(db.Boolean, default=False)
+    read_only = db.Column(db.Boolean, default=False)
     primary_addresses = db.Column(db.Text, default="[]")
     secondary_addresses = db.Column(db.Text, default="[]")
     tertiary_addresses = db.Column(db.Text, default="[]")
@@ -104,7 +106,6 @@ class Chan(CRUDMixin, db.Model):
     timestamp_received = db.Column(db.Integer, default=0)
     default_from_address = db.Column(db.String(255), default=None)
     allow_css = db.Column(db.Boolean, default=False)
-    last_post_number = db.Column(db.Integer, default=0)
     regenerate_numbers = db.Column(db.Boolean, default=False)
 
     # List-specific
@@ -155,6 +156,7 @@ class Threads(CRUDMixin, db.Model):
     time_ts = db.Column(db.Integer, default=0)
     orig_op_bm_json_obj = db.Column(MEDIUMTEXT, default=None)
     last_op_json_obj_ts = db.Column(db.Integer, default=0)
+    rules = db.Column(MEDIUMTEXT, default="{}")
 
     chan = relationship("Chan", back_populates="threads")
     messages = relationship("Messages", back_populates="thread")
@@ -174,7 +176,6 @@ class Messages(CRUDMixin, db.Model):
     thread_id = db.Column(db.Integer, db.ForeignKey('thread.id'), default=None)
     message_id = db.Column(db.String(255), default=None)
     post_id = db.Column(db.String(255), default=None)
-    post_number = db.Column(db.Integer, default=None)
     expires_time = db.Column(db.Integer, default=None)
     address_from = db.Column(db.String(255), default=None)
     timestamp_received = db.Column(db.Integer, default=0)
@@ -193,6 +194,7 @@ class Messages(CRUDMixin, db.Model):
     file_extension = db.Column(db.String(255), default=None)
     file_url = db.Column(db.Text, default=None)
     file_torrent_file_hash = db.Column(db.String(255), default=None)
+    file_torrent_hash = db.Column(db.String(255), default=None)
     file_torrent_decoded = db.Column(db.LargeBinary, default=None)
     file_torrent_magnet = db.Column(db.Text, default=None)
     file_upload_settings = db.Column(db.Text, default="{}")
@@ -236,6 +238,13 @@ class Messages(CRUDMixin, db.Model):
     post_ids_replied_to = db.Column(db.Text, default="[]")  # Reply Post IDs in this message
     post_ids_replying_to_msg = db.Column(db.Text, default="[]")  # Post IDs that reply to this message
 
+    # POW
+    pow_method = db.Column(db.Text, default=None)
+    pow_difficulty = db.Column(db.Text, default=None)
+    pow_repetitions = db.Column(db.Integer, default=None)
+    pow_filter_value = db.Column(BIGINT, default=None)
+    pow_token = db.Column(db.Text, default=None)
+
     # GPG
     gpg_texts = db.Column(MEDIUMTEXT, default="{}")
 
@@ -253,6 +262,20 @@ class Messages(CRUDMixin, db.Model):
     def __repr__(self):
         return "<{cls}(id={rep.id})>".format(
             cls=self.__class__.__name__, rep=self)
+
+
+class SchedulePost(CRUDMixin, db.Model):
+    __tablename__ = "schedule_post"
+    __table_args__ = {
+        'extend_existing': True
+    }
+
+    id = db.Column(db.Integer, unique=True, primary_key=True)
+    schedule_id = db.Column(db.String(255), unique=True, default=None)
+    post_options = db.Column(MEDIUMTEXT, default="{}")
+    dict_message = db.Column(MEDIUMTEXT, default="{}")
+    schedule_post_epoch = db.Column(db.Integer, default=0)
+    start_send_ts = db.Column(db.Integer, default=0)
 
 
 class UploadProgress(CRUDMixin, db.Model):

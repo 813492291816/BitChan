@@ -247,15 +247,25 @@ def delete_message_files(message_id):
 
 
 def human_readable_size(size, decimal_places=1):
-    if size is None:
-        return "None"
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB', 'PB']:
-        if size < 1024.0 or unit == 'PiB':
-            break
-        size /= 1024.0
-    if unit in ["B"]:
-        decimal_places = 0
-    return f"{size:.{decimal_places}f} {unit}"
+    try:
+        float_size = float(size)
+    except:
+        logger.error(f"size doesn't represent number: {size}")
+        return
+
+    try:
+        if size is None:
+            return "None"
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB', 'PB']:
+            if float_size < 1024.0 or unit == 'PiB':
+                break
+            float_size /= 1024.0
+        if unit in ["B"]:
+            decimal_places = 0
+
+        return f"{float_size:.{decimal_places}f} {unit}"
+    except:
+        logger.exception("Parsing size")
 
 
 def get_directory_size(start_path):

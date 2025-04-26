@@ -538,13 +538,13 @@ def process_replacements(body, seed, message_id, address=None, steg=False, previ
     except:
         logger.exception("stich or god_song exception")
 
-    body = replace_pair(body, "<mark>", "</mark>", "``")
-    body = replace_pair(body, """<sup style="font-size: smaller;">""", "</sup>", "\^\^")
-    body = replace_pair(body, """<sub style="font-size: smaller;">""", "</sub>", "\%\%")
-    body = replace_pair(body, "<strong>", "</strong>", "@@")
-    body = replace_pair(body, "<i>", "</i>", "~~")
-    body = replace_pair(body, '<span style="text-decoration: underline;">', "</span>", "__")
-    body = replace_pair(body, "<s>", "</s>", "\+\+")
+    body = replace_pair(body, '<span style="background-color: yellow;"', '</span>', "``")
+    body = replace_pair(body, '<sup style="font-size: smaller">', "</sup>", "\^\^")
+    body = replace_pair(body, '<sub style="font-size: smaller">', "</sub>", "\%\%")
+    body = replace_pair(body, '<span style="font-weight: bold">', '</span>', "@@")
+    body = replace_pair(body, '<span style="font-style: italic">', "</span>", "~~")
+    body = replace_pair(body, '<span style="text-decoration: underline">', '</span>', "__")
+    body = replace_pair(body, '<span style="text-decoration: line-through">', '</span>', "\+\+")
     body = replace_pair(body, '<span class="replace-small">', '</span>', "\$\$")
     body = replace_pair(body, '<span class="replace-big">', '</span>', "##")
     body = replace_pair(body, '<span style="color:#F00000">', '</span>', "\^r")
@@ -632,12 +632,13 @@ def process_replacements(body, seed, message_id, address=None, steg=False, previ
         for each_greenpink_replace in greenpink_replacements:
             body = body.replace(each_greenpink_replace["ID"], each_greenpink_replace["string_wo_tags"], 1)
 
-    with session_scope(DB_PATH) as new_session:
-        this_message = new_session.query(Messages).filter(
-            Messages.message_id == message_id).first()
-        if this_message:
-            this_message.text_replacements = body
-            new_session.commit()
+    if not steg:
+        with session_scope(DB_PATH) as new_session:
+            this_message = new_session.query(Messages).filter(
+                Messages.message_id == message_id).first()
+            if this_message:
+                this_message.text_replacements = body
+                new_session.commit()
 
     return body
 

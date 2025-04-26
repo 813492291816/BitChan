@@ -136,7 +136,7 @@ cd ~
 wget --retry-connrefused --waitretry=5 --read-timeout=20 --timeout=20 -t 5 --continue ${TORLOC}
 tar xvzf ${TORVER}.tar.gz
 cd ${TORVER}
-./configure --enable-systemd --enable-nss
+./configure --enable-systemd --enable-nss --enable-gpl
 make
 sudo make install
 cd ~
@@ -210,12 +210,12 @@ sudo ${TORSOCKS_RUN} apt install -yq --no-install-suggests --no-install-recommen
 ${TORSOCKS_RUN} python2 -m pip install --no-cache-dir virtualenv
 python2 -m virtualenv /usr/local/bitchan_venv2
 ${TORSOCKS_RUN} /usr/local/bitchan_venv2/bin/pip install --no-cache-dir --upgrade pip
-${TORSOCKS_RUN} /usr/local/bitchan_venv2/bin/pip install --no-cache-dir -r /usr/local/bitchan/BitChan/requirements_bitmessage.txt
+${TORSOCKS_RUN} /usr/local/bitchan_venv2/bin/pip install --no-cache-dir -r /usr/local/bitchan/BitChan/install_files/bitmessage/requirements.txt
 
 ${TORSOCKS_RUN} python3 -m pip install --no-cache-dir virtualenv
 python3 -m virtualenv /usr/local/bitchan_venv3
 ${TORSOCKS_RUN} /usr/local/bitchan_venv3/bin/pip install --no-cache-dir --upgrade pip
-${TORSOCKS_RUN} /usr/local/bitchan_venv3/bin/pip install --no-cache-dir -r /usr/local/bitchan/BitChan/requirements.txt
+${TORSOCKS_RUN} /usr/local/bitchan_venv3/bin/pip install --no-cache-dir -r /usr/local/bitchan/BitChan/install_files/bitchan/requirements.txt
 ```
 
 ## Set Up PyBitmessage
@@ -381,10 +381,10 @@ sudo systemctl enable /usr/local/bitchan/BitChan/install_files/bitchan_backend.s
 
 ```bash
 sudo service bitchan_frontend start
-curl -sL -I 127.0.0.1:8000/favicon.ico > /dev/null
+curl -sL -I 127.0.0.1:8000/bc.ico > /dev/null
 ```
 
-Connecting to 127.0.0.1:8000/favicon.ico (above) creates the database and is required to be done only once, before starting the backend for the first time.
+Connecting to 127.0.0.1:8000/bc.ico (above) creates the database and is required to be done only once, before starting the backend for the first time.
 
 ## Start BitChan Backend
 
@@ -398,7 +398,7 @@ BitChan can now be accessed at http://127.0.0.1:8000 (If using tor browser, read
 
 ## Initial connection to bitmessage network
 
-The default connection settings for bitmessage allows incoming connections to use tor and clearnet and outgoing connections to use tor. You can check the number of bitmessage connections that have been made (named networkConnections) under Bitmessage Status on the Status page. If you don't have at least one connection after an hour, try changing the Incoming and Outgoing Connections setting on the Configuration page.
+The default connection settings for bitmessage allows incoming connections to use tor and clearnet and outgoing connections to use tor. You can check the number of bitmessage connections that have been made (named networkConnections) under Bitmessage Status on the Status page. If you don't have at least one connection after an hour, try changing the Bitmessage Connections setting on the Configuration page.
 
 ## Upgrading No-Docker Install
 

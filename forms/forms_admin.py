@@ -26,7 +26,7 @@ class KioskUsers(FlaskForm):
 
     new_password = StringField("New Password")
     retype_password = StringField("Retype")
-    require_change_pw = BooleanField("Require Changing on First Use")
+    require_change_pw = BooleanField("Require Password Change")
 
     edit_id = StringField("User ID")
     edit_user = SubmitField("Save")

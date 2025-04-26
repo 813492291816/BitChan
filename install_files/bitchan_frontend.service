@@ -9,6 +9,7 @@ ExecStart=/usr/local/bitchan_venv3/bin/python -m gunicorn \
 --worker-class gthread \
 --threads 4 \
 --timeout 1800 \
+--limit-request-line 0 \
 --pid /var/run/bitchan_frontend.pid \
 --bind unix:/run/bitchan.sock bitchan_flask:app
 

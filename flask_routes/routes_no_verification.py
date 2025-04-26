@@ -3,6 +3,7 @@ import logging
 import time
 
 from flask import abort
+from flask import request
 from flask.blueprints import Blueprint
 from sqlalchemy import and_
 
@@ -11,6 +12,7 @@ from database.models import GlobalSettings
 from database.models import Messages
 from database.models import Threads
 from flask_routes.utils import count_views
+from flask_routes.utils import get_posts_from_thread
 from flask_routes.utils import is_verified
 from flask_routes.utils import rate_limit
 from utils.generate_post import generate_post_html
@@ -46,26 +48,52 @@ def new_posts(thread_hash_short, post_ids):
     if not can_view:
         return allow_msg
 
+    list_new_posts = []
+    list_new_post_ids = []
+    list_ref_posts = []
+    list_ref_post_message_ids = []
+    last_post_id = None
+    list_post_ids_only = []
+    post_new_count = 0
+    post_ref_count = 0
+    list_posts = []
+    download_statuses = {}
+    found_first_post = False
+
     settings = GlobalSettings.query.first()
 
-    post_order_asc = Messages.timestamp_sent.asc()
-    if settings.post_timestamp == 'received':
-        post_order_asc = Messages.timestamp_received.asc()
+    pow_filter_value = 0
+    try:
+        arg_filter_pow = request.args.get('filter_pow', default=None, type=str)
+        if arg_filter_pow:
+            pow_filter_value = (2 ** int(arg_filter_pow.split("x")[0])) * int(arg_filter_pow.split("x")[1])
+    except:
+        logger.exception("/new_posts/ POW Filter")
 
-    post_op = Messages.query.join(Threads).filter(and_(
-        Threads.thread_hash_short == thread_hash_short,
-        Messages.is_op.is_(True))).first()
-    if post_op:
-        post_op_post_id = post_op.post_id
+    try:
+        last = int(request.args.get('last'))
+        if last < 0:
+            last = None
+    except:
+        last = None
+
+    thread = Threads.query.filter(Threads.thread_hash_short == thread_hash_short).first()
+    if not thread:
+        return json.dumps([])
+
+    post_order, message_op, message_replies, message_reply_all_count = get_posts_from_thread(
+        thread, settings, pow_filter_value, last, False)
+
+    if message_op:
+        post_op_post_id = message_op.post_id
+        list_posts.append(post_op_post_id)  # Add OP ID to list to it's not removed from thread
+        last_post_id = post_op_post_id
+        found_first_post = True
     else:
         post_op_post_id = None
 
-    posts = Messages.query.join(Threads).filter(
-        Threads.thread_hash_short == thread_hash_short).order_by(post_order_asc).all()
-    if not posts:
-        return json.dumps([])
+    message_replies = message_replies.all()
 
-    list_post_ids_only = []
     try:
         list_post_ids = post_ids.split("_")
         for each_post_id in list_post_ids:
@@ -76,34 +104,26 @@ def new_posts(thread_hash_short, post_ids):
     except:
         return json.dumps([])
 
-    list_new_posts = []
-    list_new_post_ids = []
-    list_ref_posts = []
-    list_ref_post_message_ids = []
-    last_post_id = None
-    post_new_count = 0
-    post_ref_count = 0
-    list_posts = []
-    download_statuses = {}
-
     # Find Posts removed
-    for each_post in posts:
+    for each_post in message_replies:
         list_posts.append(each_post.post_id)
+
+    # logger.info(f"Received: {list_post_ids_only}")
+    # logger.info(f"Available: {list_posts}")
+
     list_del_posts = list(set(list_post_ids_only) - set(list_posts))
 
     # Find posts added
-    found_first_post = False
-    for each_post in posts:
-        download_statuses[each_post.post_id] = get_post_id_string(post_id=each_post.post_id)
-
+    for each_post in message_replies:
         # Need to ensure we find at least the first post_id before starting to add new posts
-        # This allows Last 100 page to work
+        # This allows ?last=x page to work
         if each_post.post_id.upper() in list_post_ids_only:
             found_first_post = True
         if not found_first_post:
             continue
 
         # Find posts that have had attachments successfully downloaded to refresh
+        download_statuses[each_post.post_id] = get_post_id_string(post_id=each_post.post_id)
         for each_post_attach in list_post_ids:
             if (("-" in each_post_attach and
                     each_post_attach.split("-")[0] == each_post.post_id.upper()) or
@@ -154,6 +174,10 @@ def new_posts(thread_hash_short, post_ids):
         # Only allow returning up to 10 new posts at a time
         if post_new_count >= 10:
             break
+
+    # logger.info(f"ADD: {list_new_post_ids}")
+    # logger.info(f"DEL: {list_del_posts}")
+    # logger.info(f"REF: {list_ref_posts}")
 
     # Send posts in this thread that should be refreshed to update header of post replies
     for post_id, message_id in list_ref_post_message_ids:

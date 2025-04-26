@@ -117,10 +117,10 @@ def before_view():
                                 full_path_b64=full_path_b64))
 
 
-@blueprint.route('/favicon.ico')
+@blueprint.route('/bc.ico')
 def favicon():
     return send_from_directory(os.path.join(current_app.root_path, 'static'),
-                               'favicon.ico', mimetype='image/vnd.microsoft.icon')
+                               'bc.ico', mimetype='image/vnd.microsoft.icon')
 
 
 @blueprint.route('/', methods=('GET', 'POST'))
@@ -459,10 +459,17 @@ def options_save():
             response.set_cookie('options_js', request.form.get('options_js'))
         elif request.form.get('options_save_misc'):
             response.set_cookie('theme', request.form.get('options_theme'))
+
+            if request.form.get('options_max_height'):
+                response.set_cookie('options_max_height', '1')
+            else:
+                response.set_cookie('options_max_height', '0')
+
             if request.form.get('options_post_horizontal'):
                 response.set_cookie('options_post_horizontal', '1')
             else:
                 response.set_cookie('options_post_horizontal', '0')
+
             if request.form.get('options_hide_authors'):
                 response.set_cookie('options_hide_authors', '1')
             else:
@@ -474,6 +481,7 @@ def options_save():
                 "options_css": request.cookies.get('options_css'),
                 "options_js": request.cookies.get('options_js'),
                 "options_theme": request.cookies.get('theme'),
+                "options_max_height": request.cookies.get('options_max_height'),
                 "options_post_horizontal": request.cookies.get('options_post_horizontal'),
                 "options_hide_authors": request.cookies.get('options_hide_authors')
             }
@@ -497,10 +505,16 @@ def options_save():
                     response.set_cookie('options_css', file_cont['options_css'])
                     response.set_cookie('options_js', file_cont['options_js'])
                     response.set_cookie('theme', file_cont['options_theme'])
+                    if file_cont['options_max_height']:
+                        response.set_cookie('options_max_height', '1')
+                    else:
+                        response.set_cookie('options_max_height', '0')
+
                     if file_cont['options_post_horizontal']:
                         response.set_cookie('options_post_horizontal', '1')
                     else:
                         response.set_cookie('options_post_horizontal', '0')
+
                     if file_cont['options_hide_authors']:
                         response.set_cookie('options_hide_authors', '1')
                     else:
@@ -513,6 +527,7 @@ def options_save():
             response.set_cookie('options_css', "")
             response.set_cookie('options_js', "")
             response.set_cookie('theme', "")
+            response.set_cookie('options_max_height', '0')
             response.set_cookie('options_post_horizontal', '0')
             response.set_cookie('options_hide_authors', '0')
 
@@ -749,9 +764,8 @@ def delete_posts_threads(message_ids, user_from=None):
                 list_delete_message_ids.append(message.message_id)
 
             # First, delete messages from database
-            if list_delete_message_ids:
-                for each_id in list_delete_message_ids:
-                    delete_post(each_id)
+            for each_id in list_delete_message_ids:
+                delete_post(each_id)
 
             # Next, delete thread from DB
             delete_thread(msg.thread.thread_hash)
@@ -847,8 +861,6 @@ def recent_posts(address, current_page):
                     status_msg['status_title'] = "Success"
                 except Exception as err:
                     logger.error("Exception while deleting posts/threads: {}".format(err))
-                finally:
-                    daemon_com.signal_generate_post_numbers()
             except:
                 logger.exception("deleting posts/threads")
 
@@ -863,23 +875,26 @@ def recent_posts(address, current_page):
     if address != "0":
         chan = Chan.query.filter(
             Chan.address == address).first()
-        if chan:
-            recent_info["single_board"] = True
-            recent_info["board_label"] = chan.label
-            recent_info["board_description"] = chan.description
-            recent_info["board_address"] = chan.address
+        if not chan:
+            return render_template("pages/404-board.html",
+                                   board_address=address)
 
-            messages = Messages.query.join(Threads).join(Chan).filter(
-                Chan.address == address).order_by(post_order_desc)
-            msg_count = messages.count()
+        recent_info["single_board"] = True
+        recent_info["board_label"] = chan.label
+        recent_info["board_description"] = chan.description
+        recent_info["board_address"] = chan.address
 
-            msg_total = 0
-            for result in messages.all():
-                if msg_total > post_end:
-                    break
-                if post_start <= msg_total:
-                    recent_results.append(result)
-                msg_total += 1
+        messages = Messages.query.join(Threads).join(Chan).filter(
+            Chan.address == address).order_by(post_order_desc)
+        msg_count = messages.count()
+
+        msg_total = 0
+        for result in messages.all():
+            if msg_total > post_end:
+                break
+            if post_start <= msg_total:
+                recent_results.append(result)
+            msg_total += 1
     else:
         if global_admin:
             messages = Messages.query.order_by(post_order_desc)
@@ -911,9 +926,12 @@ def search(search_b64, current_page):
     if not allowed:
         return allow_msg
 
-    global_admin, _ = allowed_access("is_global_admin")
-
     settings = GlobalSettings.query.first()
+
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    if settings.kiosk_only_admin_access_search and not global_admin:
+        return allow_msg
+
     status_msg = {"status_message": []}
     search_string_b64 = search_b64
 
@@ -961,18 +979,22 @@ def search(search_b64, current_page):
                     status_msg['status_title'] = "Success"
                 except Exception as err:
                     logger.error("Exception while deleting posts/threads: {}".format(err))
-                finally:
-                    daemon_com.signal_generate_post_numbers()
             except:
                 logger.exception("deleting posts/threads")
+
+            return redirect(url_for("routes_main.search",
+                                    search_b64=search_b64,
+                                    current_page=current_page))
 
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
 
     arg_filter_hidden = request.args.get('fh', default=False, type=bool)
     arg_filter_op = request.args.get('fo', default=False, type=bool)
+    arg_filter_steg = request.args.get('fs', default=False, type=bool)
     arg_search_type = request.args.get('st', default="posts", type=str)
     arg_search_boards = request.args.get('sb', default="all", type=str)
+    arg_search_from = request.args.get('sf', default=False, type=str)
 
     search_type = arg_search_type
     search_boards = arg_search_boards
@@ -984,20 +1006,22 @@ def search(search_b64, current_page):
 
     filter_hidden = False
     filter_op = False
+    filter_steg = False
     result_count = 0
+    search_from = None
     search_results = []
     thread_results = []
 
     global_admin, allow_msg = allowed_access("is_global_admin")
 
-    search_threads = Threads.query
-    search_msgs = Messages.query
+    search_threads = Threads.query.join(Chan).join(Messages)
+    search_msgs = Messages.query.join(Threads).join(Chan)
 
     if search_boards != 'all':
         if search_type == "posts":
-            search_msgs = search_msgs.join(Threads).join(Chan).filter(Chan.address == search_boards)
+            search_msgs = search_msgs.filter(Chan.address == search_boards)
         elif search_type == "threads":
-            search_threads = search_threads.join(Chan).filter(Chan.address == search_boards)
+            search_threads = search_threads.filter(Chan.address == search_boards)
 
     if search_string and len(search_string) > 2:
         if search_type == "posts":
@@ -1008,12 +1032,22 @@ def search(search_b64, current_page):
                      Messages.is_op.is_(True))
             ))
         elif search_type == "threads":
-            search_threads = search_threads.join(Messages).filter(and_(
+            search_threads = search_threads.filter(and_(
                 Messages.is_op.is_(True),
                 or_(Messages.message.contains(search_string),
                     Messages.message_id.contains(search_string.lower()),
                     Messages.subject.contains(search_string))))
 
+    #
+    # Search from address
+    #
+    if arg_search_from:
+        search_from = arg_search_from
+        search_msgs = search_msgs.filter(Messages.address_from == arg_search_from)
+
+    #
+    # Hidden
+    #
     if form_search.filter_hidden.data or arg_filter_hidden:
         if global_admin:
             filter_hidden = True
@@ -1031,6 +1065,25 @@ def search(search_b64, current_page):
         elif search_type == "threads":
             search_threads = search_threads.filter(Threads.hide.is_(False))
 
+    #
+    # STEG
+    #
+    if form_search.filter_steg.data or arg_filter_steg:
+        if global_admin:
+            filter_steg = True
+            if search_type == "posts":
+                search_msgs = search_msgs.filter(Messages.message_steg != "{}")
+        else:
+            status_msg['status_message'].append(allow_msg)
+            status_msg['status_title'] = "Error"
+
+    if not filter_steg:
+        if search_type == "posts":
+            search_msgs = search_msgs.filter(Messages.message_steg == "{}")
+
+    #
+    # OP
+    #
     if form_search.filter_op.data or arg_filter_op and search_type == "posts":
         filter_op = True
         search_msgs = search_msgs.filter(Messages.is_op.is_(True))
@@ -1043,7 +1096,7 @@ def search(search_b64, current_page):
         if global_admin:
             search_msgs = search_msgs.order_by(post_order_desc)
         else:
-            search_msgs = search_msgs.join(Threads).join(Chan).filter(and_(
+            search_msgs = search_msgs.filter(and_(
                 Chan.unlisted.is_(False),
                 Chan.restricted.is_(False))).order_by(post_order_desc)
         result_count = search_msgs.count()
@@ -1056,7 +1109,7 @@ def search(search_b64, current_page):
         if global_admin:
             search_threads = search_threads.order_by(thread_order_desc)
         else:
-            search_threads = search_threads.join(Chan).filter(and_(
+            search_threads = search_threads.filter(and_(
                 Chan.unlisted.is_(False),
                 Chan.restricted.is_(False))).order_by(thread_order_desc)
         result_count = search_threads.count()
@@ -1082,9 +1135,11 @@ def search(search_b64, current_page):
                            current_page=current_page,
                            filter_hidden=filter_hidden,
                            filter_op=filter_op,
+                           filter_steg=filter_steg,
                            now=time.time(),
                            result_count=result_count,
                            search_boards=search_boards,
+                           search_from=search_from,
                            search_results=search_results,
                            search_string=search_string,
                            search_string_b64=search_string_b64,
@@ -1368,9 +1423,9 @@ def configure():
             settings.maintenance_mode = form_settings.maintenance_mode.data
             settings.max_download_size = form_settings.max_download_size.data
             settings.max_extract_size = form_settings.max_extract_size.data
+            settings.always_allow_my_i2p_bittorrent_attachments = form_settings.always_allow_my_i2p_bittorrent_attachments.data
             settings.allow_net_file_size_check = form_settings.allow_net_file_size_check.data
             settings.allow_net_book_quote = form_settings.allow_net_book_quote.data
-            settings.allow_net_ntp = form_settings.allow_net_ntp.data
             settings.never_auto_download_unencrypted = form_settings.never_auto_download_unencrypted.data
             settings.allow_unencrypted_encryption_option = form_settings.allow_unencrypted_encryption_option.data
             settings.auto_dl_from_unknown_upload_sites = form_settings.auto_dl_from_unknown_upload_sites.data
@@ -1445,6 +1500,7 @@ def configure():
             settings.kiosk_login_to_view = form_settings.kiosk_login_to_view.data
             settings.kiosk_allow_posting = form_settings.kiosk_allow_posting.data
             settings.kiosk_allow_gpg = form_settings.kiosk_allow_gpg.data
+            settings.kiosk_allow_pow = form_settings.kiosk_allow_pow.data
             settings.kiosk_disable_i2p_torrent_attach = form_settings.kiosk_disable_i2p_torrent_attach.data
             settings.kiosk_disable_torrent_file_download = form_settings.kiosk_disable_torrent_file_download.data
             settings.kiosk_disable_bm_attach = form_settings.kiosk_disable_bm_attach.data
@@ -1453,6 +1509,7 @@ def configure():
             settings.kiosk_attempts_login = form_settings.kiosk_attempts_login.data
             settings.kiosk_ban_login_sec = form_settings.kiosk_ban_login_sec.data
             settings.kiosk_only_admin_access_mod_log = form_settings.kiosk_only_admin_access_mod_log.data
+            settings.kiosk_only_admin_access_search = form_settings.kiosk_only_admin_access_search.data
 
             try:
                 list_i2p_trackers = form_settings.i2p_trackers.data.replace(" ", "").split("\n")
@@ -1465,7 +1522,7 @@ def configure():
                 else:
                     settings.i2p_trackers = json.dumps(list_i2p_trackers)
             except:
-                status_msg['status_message'].append("Improper I2P Tracker format. Must be I2P URLs separated by commas.")
+                status_msg['status_message'].append("Improper I2P Tracker format. Must be I2P URLs, each on a new line.")
 
             if (form_settings.kiosk_max_post_size_bytes.data < 0 or
                     form_settings.kiosk_max_post_size_bytes.data > config.BM_PAYLOAD_MAX_SIZE):
@@ -1686,6 +1743,7 @@ def configure():
             chans_unlisted = []
             chans_restricted = []
             chans_hide_passphrase = []
+            chans_read_only = []
             for each_input in request.form:
                 if each_input.startswith("option_unlisted_"):
                     chans_unlisted.append(each_input.split("_")[2])
@@ -1693,6 +1751,8 @@ def configure():
                     chans_restricted.append(each_input.split("_")[2])
                 if each_input.startswith("option_hide_passphrase_"):
                     chans_hide_passphrase.append(each_input.split("_")[3])
+                if each_input.startswith("option_read_only_"):
+                    chans_read_only.append(each_input.split("_")[3])
 
             chans = Chan.query.all()
             for each_chan in chans:
@@ -1733,6 +1793,19 @@ def configure():
                         hide_passphrase_changed = True
                     each_chan.hide_passphrase = False
                 if hide_passphrase_changed:
+                    each_chan.save()
+
+                # Change read_only status
+                read_only_changed = False
+                if each_chan.address in chans_read_only:
+                    if not each_chan.read_only:
+                        read_only_changed = True
+                    each_chan.read_only = True
+                else:
+                    if each_chan.read_only:
+                        read_only_changed = True
+                    each_chan.read_only = False
+                if read_only_changed:
                     each_chan.save()
 
             status_msg['status_title'] = "Success"
@@ -2307,6 +2380,18 @@ def status():
 
     try:
         if config.DOCKER:
+            qbittorrent_version = subprocess.check_output(
+                'docker exec -i bitchan_qbittorrent qbittorrent-nox --version', shell=True, text=True)
+        else:
+            qbittorrent_version = subprocess.check_output(
+                'i2pd --version', shell=True, text=True)
+    except:
+        logger.exception("getting qbittorrent version")
+        qbittorrent_version = "Error getting qbittorrent version"
+
+    attachment_size = None
+    try:
+        if config.DOCKER:
             attachment_size = subprocess.check_output(
                 f'docker exec -i bitchan_flask du {config.FILE_DIRECTORY} --max-depth=0', shell=True, text=True)
         else:
@@ -2314,7 +2399,7 @@ def status():
                 f'du {config.FILE_DIRECTORY} --max-depth=0', shell=True, text=True)
         attachment_size = int(attachment_size.split("\t")[0]) * 1000
     except:
-        logger.exception("getting size of attachments")
+        logger.exception(f"Getting size of attachments: {attachment_size}")
         attachment_size = "Error getting size of attachments"
 
     tor_circuit_dict = {}
@@ -2355,7 +2440,6 @@ def status():
     try:
         import re
         bc_env['version_python'] = sys.version
-        bc_env['version_regex'] = re.__version__
     except:
         logger.exception("BitChan environment information")
 
@@ -2374,6 +2458,7 @@ def status():
                            form_status=form_status,
                            i2pd_version=i2pd_version,
                            bm_keys_size=bm_keys_size,
+                           qbittorrent_version=qbittorrent_version,
                            status_msg=status_msg,
                            tor_circuit_dict=tor_circuit_dict,
                            tor_address_bm=tor_address_bm,

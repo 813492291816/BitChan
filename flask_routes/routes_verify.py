@@ -12,6 +12,7 @@ from flask import url_for
 from flask.blueprints import Blueprint
 
 from bitchan_flask import captcha
+from database.models import GlobalSettings
 from database.models import SessionInfo
 from flask_routes.utils import count_views
 from flask_routes.utils import watch_ban
@@ -52,6 +53,7 @@ def verify_wait(full_path_b64):
     return render_template("pages/verify_wait.html",
                            page_id=page_id,
                            full_path_b64=full_path_b64,
+                           settings=GlobalSettings.query.first(),
                            wait_sec=wait_sec)
 
 
@@ -120,6 +122,7 @@ def verify_test(page_id, full_path_b64):
 
     return render_template("pages/verify_test.html",
                            page_id=page_id,
+                           settings=GlobalSettings.query.first(),
                            full_path=full_path_b64)
 
 

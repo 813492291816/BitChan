@@ -2,7 +2,7 @@
 BitChan
 =======
 
-Version: 1.3.0
+Version: 1.4.0
 
 BitChan is a decentralized anonymous imageboard inspired by `BitBoard <https://github.com/michrob/bitboard>`__ and built on top of `Bitmessage <https://bitmessage.org>`__ with `Tor <https://www.torproject.org>`__, `I2P <https://i2pd.website>`__, and `GnuPG <https://gnupg.org>`__.
 
@@ -124,7 +124,7 @@ BitChan will automatically start at boot and runs on port 8000 by default, which
 
 For added security, it's recommended to either A) use tor browser or B) configure another browser to connect through tor. This will prevent any potentially malicious connections from accessing the clearnet and exposing your real IP address.
 
-- A: Tor Browser: Install tor browser (``sudo apt install torbrowser-launcher``). Launch tor browser and enter ``about:config`` in the address bar. Search for ``network.proxy.no_proxies_on`` and enter ``172.28.1.1,172.28.1.6,172.28.1.8`` (if installed with docker) or ``127.0.0.1`` (if installed without docker) to exclude the BitChan and I2P Webconsole IP addresses from the proxy. Access BitChan at ``http://172.28.1.1:8000`` and the I2P Webconsole at ``http://172.28.1.6:7070`` (use 127.0.0.1 if installed without docker).
+- A: Tor Browser: Install tor browser (``sudo apt install torbrowser-launcher``). Launch tor browser and enter ``about:config`` in the address bar. Search for ``network.proxy.no_proxies_on`` and enter ``172.28.1.1,172.28.1.6,172.28.1.8`` (if installed with docker) or ``127.0.0.1`` (if installed without docker) to exclude the BitChan and I2P Webconsole IP addresses from the proxy. Access BitChan at ``http://172.28.1.1:8000``, the I2P Webconsole at ``http://172.28.1.6:7070``, and the QBittorrent UI at ``http://172.28.1.8:8080`` (use 127.0.0.1 if installed without docker).
 
 - B: Configure your browser to use the Tor SOCKS5 proxy with the host ``172.28.1.2`` and port 9050 (the IP and port for tor running in the tor docker container). Open BitChan at ``http://localhost:8000``.
 
@@ -133,7 +133,7 @@ Verify your browser is using tor by visiting `https://check.torproject.org <http
 Install BitChan without Docker
 ------------------------------
 
-See `INSTALL <INSTALL.md#install-bitchan-without-docker>`__  for how to install BitChan without Docker.
+See `INSTALL <INSTALL.md#install-bitchan-without-docker>`__  for how to install BitChan without Docker. Note, these instructions may not always be up to date, so you may need to adapt and overcome challenges.
 
 Upgrade BitChan
 ---------------
@@ -146,6 +146,13 @@ Always read the changelog first to determine if an upgrade can be performed and 
     sudo docker compose down
     git pull
     sudo make daemon
+
+
+After a successful build, restart the containers.
+
+.. code::
+
+    docker compose restart
 
 
 Docker and Control Options
@@ -195,6 +202,13 @@ Docker Containers
   - IP: 172.28.1.1
   - HTTP Port: 8000 - http://172.28.1.1:8000
 
+- bitchan_qbittorrent container
+
+  - IP: 172.28.1.8
+  - Webconsole Port: 8080 - http://172.28.1.8:8080
+  - The web UI can be used to monitor BitChan I2P torrents as well as add your own I2P torrents. NOTE: The qbittorrent container blocks all connections except to the i2pd container, which only allows i2p torrents to work.
+  - Local storage: /usr/local/bitchan-docker/i2p_qb
+
 - bitchan_tor container
 
   - IP: 172.28.1.2
@@ -207,14 +221,16 @@ Docker Containers
   - IP: 172.28.1.6
   - HTTP Proxy Port: 4444
   - Webconsole Port: 7070 - http://172.28.1.6:7070
+  - Webconsole User/Password: Found in i2pd.conf, run: docker exec -it bitchan_i2p sh -c "cat /home/i2pd/data/i2pd.conf"
+  - The default docker-compose.yaml uses purple/i2pd. If you would like to use geti2p/i2p or i2p+, read the instructions in docker-compose.yml that instruct you to comment out the i2pd section and uncomment one of the other i2p sections. Only one i2p container can be enabled at any given time.
   - Local storage: /usr/local/bitchan-docker/i2pd
 
-- bitchan_qbittorrent container
+- bitchan_minode container
 
-  - IP: 172.28.1.8
-  - Webconsole Port: 8080 - http://172.28.1.8:8080
-  - The web UI can be used to monitor BitChan I2P torrents as well as add your own I2P torrents. NOTE: The qbittorrent container blocks all connections except to the i2pd container, which only allows i2p torrents to work.
-  - Local storage: /usr/local/bitchan-docker/i2p_qb
+  - IP: 172.28.1.10
+  - Listen Port: 8446
+  - A bridge for Bitmessage to communicate over IP and I2P networks. SOCKS (Tor) needs to be disabled to use.
+  - Local storage: /usr/local/bitchan-docker/minode
 
 - bitchan_bitmessage container
 
@@ -237,6 +253,7 @@ Docker Containers
   - IP: 172.28.1.7
   - Port: 3306
   - Local storage: /usr/local/bitchan-docker/mysql
+  - Access with command: mysql -u root -p -h 172.28.1.7
 
 Docker Volumes
 --------------
@@ -293,14 +310,12 @@ Bring Up (daemon)
 Build and Bring Up (stdout)
 ---------------------------
 
-Note: same as ``make build`` command
-
 ``docker compose up --build``
 
 Build and Bring Up (daemon)
 ---------------------------
 
-Note: same as ``make daemon`` command
+Note: same as ``make daemon`` command.
 
 ``docker compose up --build -d``
 

@@ -1,1 +1,9 @@
-<HTML><HEAD><TITLE>Please Wait - BitChan</TITLE><meta http-equiv="refresh" content="{{wait_sec}};url=/verify/{{page_id}}/{{full_path_b64}}"/></HEAD><BODY><div style="text-align:center;padding-top:2em">{{wait_sec}} second wait required. If your browser doesn't forward after {{wait_sec}} seconds, click <a href="/verify/{{page_id}}/{{full_path_b64}}">here</a>.</div></BODY>
+<HTML>
+<HEAD>
+<TITLE>Wait - {% if settings.title_text %}{{settings.title_text}}{% else %}BitChan{% endif %}</TITLE>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="refresh" content="{{wait_sec}};url=/verify/{{page_id}}/{{full_path_b64}}"/>
+</HEAD>
+<BODY>
+<div style="text-align:center;padding-top:2em">{{wait_sec}} second wait required.<br/>If you're not forwarded after {{wait_sec}} seconds, <a href="/verify/{{page_id}}/{{full_path_b64}}">click here</a>.</div>
+</BODY>

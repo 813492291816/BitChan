@@ -1,0 +1,9 @@
+{% if table_pages.query.count() %}
+<div class="chans themed" style="text-align: center;">
+    Pages [
+    {% for page in table_pages.query.all() -%}
+    <a class="link" href="/page/{{page.slug}}">{{page.name|safe}}</a>{% if not loop.last %} / {% endif %}
+    {% endfor %}
+    ]
+</div>
+{% endif %}

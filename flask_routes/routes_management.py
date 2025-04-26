@@ -331,9 +331,9 @@ def kiosk_users():
     status_msg = {"status_message": []}
     delete_id = None
 
-    for each_input in request.form:
-        if each_input.startswith("delete_"):
-            delete_id = each_input.split("_")[1]
+    for each_id in request.form:
+        if each_id.startswith("delete_"):
+            delete_id = each_id.split("_")[1]
             break
 
     if "edit_id" in request.form:
@@ -427,12 +427,12 @@ def kiosk_users():
                     status_msg['status_title'] = "Success"
                     status_msg['status_message'].append("User edits saved")
         else:
-            for each_input in request.form:
-                if each_input.startswith("edit_"):
-                    edit_id = each_input.split("_")[1]
+            for each_id in request.form:
+                if each_id.startswith("edit_"):
+                    edit_id = each_id.split("_")[1]
                     break
-                elif each_input.startswith("delete_"):
-                    delete_id = each_input.split("_")[1]
+                elif each_id.startswith("delete_"):
+                    delete_id = each_id.split("_")[1]
                     break
 
     if edit_id:
@@ -598,6 +598,7 @@ def join():
                         "public_list",
                         "private_list"] and
                 form_join.join.data):
+            rules = {}
 
             if not form_join.pgp_passphrase_msg.data:
                 status_msg['status_message'].append("Message PGP passphrase required")
@@ -744,10 +745,26 @@ def join():
                 status_msg['status_message'].append(
                     "Must provide at least one primary address as the owner")
 
-            rules = {}
+            # Rules
+            if form_join.require_attachment.data and form_join.disallow_attachments.data:
+                status_msg['status_message'].append(
+                    "Cannot have both rules Require Attachment and Disallow Attachments.")
+
+            if form_join.require_attachment.data:
+                rules["require_attachment"] = form_join.require_attachment.data
+
+            if form_join.require_pow_to_post.data:
+                rules["require_pow_to_post"] = {
+                    "pow_method": form_join.pow_method.data,
+                    "pow_difficulty": form_join.pow_difficulty.data,
+                    "pow_repetitions": form_join.pow_repetitions.data
+                }
 
             if form_join.require_identity_to_post.data:
                 rules["require_identity_to_post"] = form_join.require_identity_to_post.data
+
+            if form_join.disallow_attachments.data:
+                rules["disallow_attachments"] = form_join.disallow_attachments.data
 
             if form_join.restrict_thread_creation.data:
                 status_msg, add_list_restricted_fail, add_list_restricted_pass = return_list_of_csv_bitmessage_addresses(

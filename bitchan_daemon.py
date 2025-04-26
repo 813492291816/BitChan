@@ -22,7 +22,6 @@ from threading import Thread
 
 import bleach
 import gnupg
-import ntplib
 import qbittorrentapi
 from Pyro5.api import expose
 from Pyro5.api import serve
@@ -47,6 +46,7 @@ from database.models import Identity
 from database.models import Messages
 from database.models import PostCards
 from database.models import PostDeletePasswordHashes
+from database.models import SchedulePost
 from database.models import SessionInfo
 from database.models import Threads
 from database.models import UploadProgress
@@ -55,7 +55,7 @@ from database.utils import session_scope
 from utils.database import get_db_table_daemon
 from utils.download import allow_download
 from utils.download import check_banned_file_hashes
-from utils.download import generate_hash
+from utils.download import generate_hash_sha256
 from utils.download import validate_file
 from utils.encryption_decrypt import decrypt_safe_size
 from utils.files import LF
@@ -73,10 +73,12 @@ from utils.general import process_passphrase
 from utils.general import set_clear_time_to_future
 from utils.general import version_checker
 from utils.message_admin_command import send_commands
+from utils.message_post import send_message
 from utils.parse_message import decrypt_and_process_attachments
 from utils.parse_message import parse_message
 from utils.parse_message import process_admin
 from utils.posts import delete_post
+from utils.posts import delete_thread
 from utils.replacements import replace_dict_keys_with_values
 from utils.replacements import replace_lt_gt
 from utils.shared import add_mod_log_entry
@@ -112,13 +114,10 @@ class BitChan:
         self.maintenance_mode = False
         self.last_post_ts = 0
         self.message_threads = {}
-        self.utc_offset = None
         self.time_last = 0
         self.is_restarting_bitmessage = False
         self.list_stats = []
         self.first_run = True
-        self.update_ntp = False
-        self.update_post_numbers = False
 
         # Bitmessage
         self.api_status = None
@@ -145,11 +144,13 @@ class BitChan:
         self.timer_unread_mail = now
         self.timer_non_bitchan_message_ids = now
         self.timer_safe_send = now
-        self.timer_update_post_numbers = now
-        self.timer_new_tor_identity = now + random.randint(10800, 28800)
         self.timer_check_onion_address = now
         self.timer_check_torrents = now
         self.timer_remove_old_torrents = now
+        self.timer_check_maintenance = now
+
+        self.timer_new_tor_identity = now + random.randint(10800, 28800)
+        self.timer_scheduled_posts = now + random.randint(60, 180)  # 1 - 3 minutes
 
         self.timer_delete_and_vacuum = now + (60 * 60)     # 1 hour
         self.timer_check_locked_threads = now + (60 * 20)  # 20 minutes
@@ -171,7 +172,6 @@ class BitChan:
 
         # Net disable settings
         self.allow_net_file_size_check = False
-        self.allow_net_ntp = False
 
     def refresh_settings(self):
         with session_scope(config.DB_PATH) as new_session:
@@ -181,7 +181,6 @@ class BitChan:
             except:
                 self._non_bitchan_message_ids = "[]"
             self.allow_net_file_size_check = settings.allow_net_file_size_check
-            self.allow_net_ntp = settings.allow_net_ntp
 
     @staticmethod
     def reset_all_auto_downloads():
@@ -218,39 +217,27 @@ class BitChan:
         #
         # Check settings
         #
-        with session_scope(config.DB_PATH) as new_session:
-            settings = new_session.query(GlobalSettings).first()
-            if settings.maintenance_mode:
-                self.logger.info("Maintenance mode enabled. Pausing daemon operation.")
-                self.maintenance_mode = True
+        if self.timer_check_maintenance < now:
+            try:
+                with session_scope(config.DB_PATH) as new_session:
+                    settings = new_session.query(GlobalSettings).first()
+                    if settings.maintenance_mode:
+                        self.logger.info("Maintenance mode enabled. Pausing daemon operation.")
+                        self.maintenance_mode = True
 
-        #
-        # Maintenance Mode
-        #
-        while self.maintenance_mode:
-            with session_scope(config.DB_PATH) as new_session:
-                settings = new_session.query(GlobalSettings).first()
-                if not settings.maintenance_mode:
-                    self.logger.info("Maintenance mode disabled. Resuming daemon operation.")
-                    self.maintenance_mode = False
-            time.sleep(1)
-
-        #
-        # Update the time
-        #
-        if self.allow_net_ntp:
-            self.update_ntp = False
-            if abs(self.time_last - now) > 600:
-                self.logger.info("Time changed? Update NTP.")
-                self.update_ntp = True
-            self.time_last = now
-
-            if self.timer_time_server < now or self.update_ntp:
-                while self.timer_time_server < now:
-                    self.timer_time_server += (60 * 6 * random.randint(40, 70))
-                ntp = Thread(target=self.update_utc_offset)
-                ntp.daemon = True
-                ntp.start()
+                #
+                # Maintenance Mode
+                #
+                while self.maintenance_mode:
+                    with session_scope(config.DB_PATH) as new_session:
+                        settings = new_session.query(GlobalSettings).first()
+                        if not settings.maintenance_mode:
+                            self.logger.info("Maintenance mode disabled. Resuming daemon operation.")
+                            self.maintenance_mode = False
+                    time.sleep(3)
+            except:
+                self.logger.exception("Could not check maintenance mode")
+            self.timer_check_maintenance = time.time() + 10
 
         #
         # Check Bitmessage onion address
@@ -262,12 +249,12 @@ class BitChan:
                 self.logger.debug("End check_onion_address()")
             except:
                 self.logger.exception("Could not complete check_onion_address()")
-            self.timer_check_onion_address = time.time() + 60 * 60 * 12  # 12 hours
+            self.timer_check_onion_address = time.time() + (60 * 60 * 12)  # 12 hours
 
         #
         # Update Chans Board Info
         #
-        if self.timer_board_info < now or self.update_ntp:
+        if self.timer_board_info < now:
             try:
                 self.logger.debug("Run generate_chans_board_info()")
                 self.generate_chans_board_info()
@@ -279,7 +266,7 @@ class BitChan:
         #
         # Check if downloads initiated
         #
-        if self.timer_check_downloads < now or self.update_ntp:
+        if self.timer_check_downloads < now:
             try:
                 self.logger.debug("Run check_downloads()")
                 self.check_downloads()
@@ -291,7 +278,7 @@ class BitChan:
         #
         # Check if BM sync is complete
         #
-        if self.timer_sync < now or self.update_ntp:
+        if self.timer_sync < now:
             try:
                 self.logger.debug("Run check_sync()")
                 lf = LF()
@@ -310,7 +297,7 @@ class BitChan:
         #
         # Check if BM is alive
         #
-        if not self.is_restarting_bitmessage and self.timer_check_bm_alive < time.time():
+        if self.timer_check_bm_alive < now and not self.is_restarting_bitmessage:
             try:
                 self.logger.debug("Run bitmessage_monitor()")
                 self.bitmessage_monitor()
@@ -344,7 +331,7 @@ class BitChan:
                 self.update_address_book()
                 self.logger.debug("Run update_chans()")
                 self.update_chans()
-            except Exception:
+            except:
                 self.logger.exception("Updating addresses")
             self.timer_addresses = time.time() + config.REFRESH_ADDRESSES
 
@@ -356,7 +343,7 @@ class BitChan:
                 self.logger.debug("Run queue_new_messages()")
                 self.queue_new_messages()
                 self.logger.debug("End queue_new_messages()")
-            except Exception:
+            except:
                 self.logger.exception("Updating messages")
             self.timer_queue_messages = time.time() + config.REFRESH_MSGS
 
@@ -395,7 +382,7 @@ class BitChan:
                             msg += " address book entries"
                         self.logger.info(msg)
                         self.list_stats = list_stats
-            except Exception:
+            except:
                 self.logger.exception("Updating stats")
             self.timer_stats = time.time() + config.REFRESH_STATS
 
@@ -434,24 +421,24 @@ class BitChan:
         # Clear inventory 10 minutes after last board/list join
         #
         if self.timer_clear_inventory < now:
-            with session_scope(config.DB_PATH) as new_session:
-                settings = new_session.query(GlobalSettings).first()
-                if settings and settings.clear_inventory:
-                    if not self.message_threads and self.bm_sync_complete:
-                        # Only clear inventory if no messages are being processed and sync is complete
-                        self.logger.debug("Run clear_bm_inventory()")
-                        self.is_pow_sending()
-                        if self.timer_safe_send < now:  # Ensure BM isn't restarted while sending
-                            settings.clear_inventory = False
-                            new_session.commit()
-                            try:
+            try:
+                with session_scope(config.DB_PATH) as new_session:
+                    settings = new_session.query(GlobalSettings).first()
+                    if settings and settings.clear_inventory:
+                        if not self.message_threads and self.bm_sync_complete:
+                            # Only clear inventory if no messages are being processed and sync is complete
+                            self.logger.debug("Run clear_bm_inventory()")
+                            self.is_pow_sending()
+                            if self.timer_safe_send < now:  # Ensure BM isn't restarted while sending
+                                settings.clear_inventory = False
+                                new_session.commit()
                                 self.clear_bm_inventory()
                                 self.bm_sync_complete = False
-                                self.update_post_numbers = True
-                            except:
-                                self.logger.exception("Could not complete clear_bm_inventory()")
-                    else:
-                        self.timer_clear_inventory += 60  # Wait additional 60 seconds if messages are being processed
+                        else:
+                            self.timer_clear_inventory += 60  # Wait additional 60 seconds if messages are being processed
+            except:
+                self.logger.exception("Could not complete clear_bm_inventory()")
+            self.timer_clear_inventory = time.time() + (60 * 10)
 
         #
         # Get message expires time if not currently set
@@ -481,9 +468,8 @@ class BitChan:
         # Delete entries in deleted message database 1 day after they expire
         #
         if self.timer_remove_deleted_msgs < now:
-            self.logger.debug("Run delete entries in deleted message database")
             try:
-                self.logger.info("Checking for expired message entries")
+                self.logger.debug("Run delete entries in deleted message database")
                 with session_scope(config.DB_PATH) as new_session:
                     expired = time.time() - (24 * 60 * 60 * 5)  # 5 days in the past (expired 5 days ago)
                     for each_msg in new_session.query(DeletedMessages).all():
@@ -546,36 +532,26 @@ class BitChan:
                             if ("automatic_wipe" in rules and
                                     rules["automatic_wipe"]["wipe_epoch"] < now):
                                 self.clear_list_board_contents(each_chan.address)
+                                timer_test = time.time()
+                                break_test = False
                                 while rules["automatic_wipe"]["wipe_epoch"] < now:
+                                    if time.time() - timer_test > 10:
+                                        break_test = True
+                                        break
                                     rules["automatic_wipe"]["wipe_epoch"] += rules["automatic_wipe"]["interval_seconds"]
-                                each_chan.rules = json.dumps(rules)
-                                new_session.commit()
+                                if not break_test:
+                                    each_chan.rules = json.dumps(rules)
+                                    new_session.commit()
                         except Exception as err:
                             self.logger.error("Error clearing board/list: {}".format(err))
             except:
-                self.logger.exception("Could not complete check_unread_mail()")
+                self.logger.exception("Could not complete wipe")
             self.timer_wipe = time.time() + config.REFRESH_WIPE
-
-        #
-        # Update post numbers
-        #
-        if (self.timer_update_post_numbers < now and
-                self.update_post_numbers and
-                self.bm_sync_complete):
-            try:
-                self.logger.debug("Run generate_post_numbers()")
-                self.update_post_numbers = False
-                self.generate_post_numbers()
-                self.logger.debug("End generate_post_numbers()")
-            except:
-                self.logger.exception("Could not complete generate_post_numbers()")
-            self.timer_update_post_numbers = time.time() + (60 * 5)  # 5 minutes
 
         #
         # Delete and Vacuum
         #
         if self.timer_delete_and_vacuum < now:
-            self.timer_delete_and_vacuum = time.time() + (60 * 60 * 6)  # 6 hours
             # Check for expire times before deleting and vacuuming
             try:
                 self.logger.debug("Run get_message_expires_times()")
@@ -589,12 +565,9 @@ class BitChan:
                 self.logger.debug("Run delete_and_vacuum()")
                 self.delete_and_vacuum()
                 self.logger.debug("End delete_and_vacuum()")
-            except:
-                self.logger.exception("Could not complete delete_and_vacuum()")
 
-            # Set any expire times still None to 0
-            self.logger.debug("Setting message expire times to 0")
-            try:
+                # Set any expire times still None to 0
+                self.logger.debug("Setting message expire times to 0")
                 with session_scope(config.DB_PATH) as new_session:
                     msg_inbox = new_session.query(Messages).filter(
                         Messages.expires_time.is_(None)).all()
@@ -610,7 +583,8 @@ class BitChan:
                         each_msg.expires_time = 0
                     new_session.commit()
             except:
-                self.logger.exception("Could not set message expire times to 0")
+                self.logger.exception("Could not complete delete_and_vacuum() or set message expire times to 0")
+            self.timer_delete_and_vacuum = time.time() + (60 * 60 * 6)  # 6 hours
 
         #
         # Clear flask session info
@@ -622,25 +596,25 @@ class BitChan:
                 self.logger.debug("End clear_session_info()")
             except:
                 self.logger.exception("Could not complete clear_session_info()")
-            finally:
-                self.timer_clear_session_info = time.time() + (60 * 60 * 12)  # 12 hours
+            self.timer_clear_session_info = time.time() + (60 * 60 * 12)  # 12 hours
 
         #
         # Check that no posts exist past lock on locked threads
         #
         if self.timer_check_locked_threads < now:
-            with session_scope(config.DB_PATH) as new_session:
-                admin_store = new_session.query(AdminMessageStore).count()
-                if self.bm_sync_complete and not admin_store:
-                    try:
+            try:
+                with session_scope(config.DB_PATH) as new_session:
+                    admin_store = new_session.query(AdminMessageStore).count()
+                    if self.bm_sync_complete and not admin_store:
                         self.logger.debug("Run scan_locked_threads()")
                         self.scan_locked_threads()
                         self.logger.debug("End scan_locked_threads()")
-                    except:
-                        self.logger.exception("Could not complete scan_locked_threads()")
-                    self.timer_check_locked_threads = time.time() + (60 * 60)
-                else:
-                    self.timer_check_locked_threads = time.time() + 60
+                        self.timer_check_locked_threads = time.time() + (60 * 60)
+                    else:
+                        self.timer_check_locked_threads = time.time() + 60
+            except:
+                self.logger.exception("timer_check_locked_threads")
+                self.timer_check_locked_threads = time.time() + (60 * 5)
 
         #
         # Periodically delete stale captchas
@@ -652,8 +626,7 @@ class BitChan:
                 self.logger.debug("End delete_old_captchas()")
             except:
                 self.logger.exception("Could not complete delete_old_captchas()")
-            finally:
-                self.timer_delete_captchas = time.time() + (60 * 60 * 3)  # 3 Hours
+            self.timer_delete_captchas = time.time() + (60 * 60 * 3)  # 3 Hours
 
         #
         # Periodically check games
@@ -665,8 +638,7 @@ class BitChan:
                 self.logger.debug("End check_games()")
             except:
                 self.logger.exception("Could not complete check_games()")
-            finally:
-                self.timer_game = time.time() + 20  # 20 seconds
+            self.timer_game = time.time() + 20  # 20 seconds
 
         #
         # Periodically check every hour (at the top of the hour)
@@ -678,8 +650,8 @@ class BitChan:
                 self.logger.debug("End hourly_run()")
             except:
                 self.logger.exception("Could not complete hourly_run()")
-            finally:
-                self.timer_top_of_hour = time.time() + (60 * 60 * 3)  # 1 hour
+            while self.timer_top_of_hour < now:
+                self.timer_top_of_hour += 60 * 60  # 1 hour
 
         #
         # Check for completed torrents (and process their downloaded data)
@@ -691,9 +663,7 @@ class BitChan:
                 self.logger.debug("End check_torrents()")
             except:
                 self.logger.exception("Could not complete check_torrents()")
-            finally:
-                while self.timer_check_torrents < now:
-                    self.timer_check_torrents += 10  # 10 seconds
+            self.timer_check_torrents = time.time() + 10  # 10 seconds
 
         #
         # Remove torrents/data more than 28 days old
@@ -705,123 +675,182 @@ class BitChan:
                 self.logger.debug("End remove_old_torrents()")
             except:
                 self.logger.exception("Could not complete remove_old_torrents()")
-            finally:
-                self.timer_remove_old_torrents = time.time() + (60 * 60)  # 60 minutes
+            self.timer_remove_old_torrents = time.time() + (60 * 60)  # 1 hour
+
+        #
+        # Send scheduled posts
+        #
+        if self.timer_scheduled_posts < now:
+            try:
+                self.logger.debug("Run check_scheduled_posts()")
+                self.check_scheduled_posts()
+                self.logger.debug("End check_scheduled_posts()")
+            except:
+                self.logger.exception("Could not complete check_scheduled_posts()")
+            self.timer_scheduled_posts = time.time() + random.randint(30, 90)
 
         self.first_run = False
 
     def hourly_run(self, timestamp_hour):
-        try:
-            thread_hashes = {}
-            new_posts = {}
-            chan_addresses = {}
-            rss_threads = {}
-            rss_boards = {}
-            with session_scope(config.DB_PATH) as new_session:
-                for category, each_data in self.view_counter.items():
-                    for endpoint in each_data:
-                        if endpoint in ["index", "verify_wait", "verify_test", "verify_success"]:
-                            count = EndpointCount()
-                            count.timestamp_epoch = timestamp_hour
-                            count.category = category
-                            count.endpoint = endpoint
-                            count.requests = self.view_counter[category][endpoint]
-                            new_session.add(count)
-                        if category in ["boards", "lists"] and endpoint:
-                            if endpoint not in chan_addresses:
-                                chan_addresses[endpoint] = 0
-                            chan_addresses[endpoint] += self.view_counter[category][endpoint]
-                        if category == "threads" and endpoint:
-                            if endpoint not in thread_hashes:
-                                thread_hashes[endpoint] = 0
-                            thread_hashes[endpoint] += self.view_counter[category][endpoint]
-                        if category == "new_posts" and endpoint:
-                            if endpoint not in new_posts:
-                                new_posts[endpoint] = 0
-                            new_posts[endpoint] += self.view_counter[category][endpoint]
-                        if category == "rss_thread" and endpoint:
-                            if endpoint not in rss_threads:
-                                rss_threads[endpoint] = 0
-                            rss_threads[endpoint] += self.view_counter[category][endpoint]
-                        if category == "rss_board" and endpoint:
-                            if endpoint not in rss_boards:
-                                rss_boards[endpoint] = 0
-                            rss_boards[endpoint] += self.view_counter[category][endpoint]
+        thread_hashes = {}
+        new_posts = {}
+        chan_addresses = {}
+        rss_threads = {}
+        rss_boards = {}
+        with session_scope(config.DB_PATH) as new_session:
 
-                # Add DB entry for board loads
-                for each_address, views in chan_addresses.items():
+            # Stats
+            for category, each_data in self.view_counter.items():
+                for endpoint in each_data:
+                    if endpoint in ["index", "verify_wait", "verify_test", "verify_success"]:
+                        count = EndpointCount()
+                        count.timestamp_epoch = timestamp_hour
+                        count.category = category
+                        count.endpoint = endpoint
+                        count.requests = self.view_counter[category][endpoint]
+                        new_session.add(count)
+                    if category in ["boards", "lists"] and endpoint:
+                        if endpoint not in chan_addresses:
+                            chan_addresses[endpoint] = 0
+                        chan_addresses[endpoint] += self.view_counter[category][endpoint]
+                    if category == "threads" and endpoint:
+                        if endpoint not in thread_hashes:
+                            thread_hashes[endpoint] = 0
+                        thread_hashes[endpoint] += self.view_counter[category][endpoint]
+                    if category == "new_posts" and endpoint:
+                        if endpoint not in new_posts:
+                            new_posts[endpoint] = 0
+                        new_posts[endpoint] += self.view_counter[category][endpoint]
+                    if category == "rss_thread" and endpoint:
+                        if endpoint not in rss_threads:
+                            rss_threads[endpoint] = 0
+                        rss_threads[endpoint] += self.view_counter[category][endpoint]
+                    if category == "rss_board" and endpoint:
+                        if endpoint not in rss_boards:
+                            rss_boards[endpoint] = 0
+                        rss_boards[endpoint] += self.view_counter[category][endpoint]
+
+            # Add DB entry for board loads
+            for each_address, views in chan_addresses.items():
+                count = EndpointCount()
+                count.timestamp_epoch = timestamp_hour
+                count.chan_address = each_address
+                count.category = "requests"
+                count.requests = views
+                new_session.add(count)
+
+            # Add DB entry for thread loads
+            for thread_hash, views in thread_hashes.items():
+                count = EndpointCount()
+                count.timestamp_epoch = timestamp_hour
+                count.thread_hash = thread_hash
+                count.category = "requests"
+                count.requests = views
+                new_session.add(count)
+
+            new_session.commit()
+
+            # Add DB entry for rss board loads
+            for board_address, views in rss_boards.items():
+                test_count = new_session.query(EndpointCount).filter(and_(
+                    EndpointCount.timestamp_epoch == timestamp_hour,
+                    EndpointCount.chan_address == board_address,
+                    EndpointCount.category == "rss_board")).first()
+                if test_count:
+                    test_count.rss = views
+                else:
                     count = EndpointCount()
                     count.timestamp_epoch = timestamp_hour
-                    count.chan_address = each_address
-                    count.category = "requests"
-                    count.requests = views
+                    count.chan_address = board_address
+                    count.category = "rss_board"
+                    count.rss = views
                     new_session.add(count)
+            new_session.commit()
 
-                # Add DB entry for thread loads
-                for thread_hash, views in thread_hashes.items():
+            # Add DB entry for rss thread loads
+            for thread_hash, views in rss_threads.items():
+                test_count = new_session.query(EndpointCount).filter(and_(
+                    EndpointCount.timestamp_epoch == timestamp_hour,
+                    EndpointCount.thread_hash == thread_hash,
+                    EndpointCount.category == "rss_thread")).first()
+                if test_count:
+                    test_count.rss = views
+                else:
+                    count = EndpointCount()
+                    count.timestamp_epoch = timestamp_hour
+                    count.thread_hash = thread_hash
+                    count.category = "rss_thread"
+                    count.rss = views
+                    new_session.add(count)
+            new_session.commit()
+
+            # Add DB entry for thread updates
+            for thread_hash, views in new_posts.items():
+                test_count = new_session.query(EndpointCount).filter(and_(
+                    EndpointCount.timestamp_epoch == timestamp_hour,
+                    EndpointCount.thread_hash == thread_hash,
+                    EndpointCount.category == "requests")).first()
+                if test_count:
+                    test_count.new_posts = views
+                else:
                     count = EndpointCount()
                     count.timestamp_epoch = timestamp_hour
                     count.thread_hash = thread_hash
                     count.category = "requests"
-                    count.requests = views
+                    count.new_posts = views
                     new_session.add(count)
+            new_session.commit()
 
+        self.reset_view_counter()
+
+
+    def check_scheduled_posts(self):
+        now = time.time()
+
+        with session_scope(config.DB_PATH) as new_session:
+            for post in new_session.query(SchedulePost).all():
+                # self.logger.info(f"{post.schedule_id[-config.ID_LENGTH:].upper()}: "
+                #                  f"Now {int(now)}, Scheduled {post.schedule_post_epoch}")
+                if self.is_restarting_bitmessage:
+                    return  # Wait for bitmessage to be running
+                if not post.schedule_post_epoch or post.schedule_post_epoch > now:
+                    continue  # Post cannot be sent yet
+                if self.get_last_post_ts() < now and now - self.get_last_post_ts() < 60:
+                    continue  # Still within 60-second refractory period
+                if post.start_send_ts and now > post.start_send_ts and now - post.start_send_ts < 1200:
+                    continue  # Post already tried to be sent less than 20 minutes ago. Wait and try again
+
+                # self.logger.info(f"{post.schedule_id[-config.ID_LENGTH:].upper()}: Sending")
+                post.start_send_ts = now
                 new_session.commit()
 
-                # Add DB entry for rss board loads
-                for board_address, views in rss_boards.items():
-                    test_count = new_session.query(EndpointCount).filter(and_(
-                        EndpointCount.timestamp_epoch == timestamp_hour,
-                        EndpointCount.chan_address == board_address,
-                        EndpointCount.category == "rss_board")).first()
-                    if test_count:
-                        test_count.rss = views
-                    else:
-                        count = EndpointCount()
-                        count.timestamp_epoch = timestamp_hour
-                        count.chan_address = board_address
-                        count.category = "rss_board"
-                        count.rss = views
-                        new_session.add(count)
+                self.set_last_post_ts(now)  # Don't allow more than one post to be sent every 60 seconds
+
+                scheduled_post_send = Thread(target=self.send_post, args=(post.schedule_id,))
+                scheduled_post_send.daemon = True
+                scheduled_post_send.start()
+
+
+    def send_post(self, schedule_id):
+        with session_scope(config.DB_PATH) as new_session:
+            try:
+                post = new_session.query(SchedulePost).filter(SchedulePost.schedule_id == schedule_id).first()
+                if not post:
+                    return
+                post_options = json.loads(post.post_options)
+                dict_message = json.loads(post.dict_message)
+                dict_message["timestamp_utc"] = self.get_utc()
+                return_msg, errors = send_message(post_options, dict_message, upload_id=post.schedule_id)
+                if not errors:
+                    new_session.delete(post)
+                    new_session.commit()
+                    return
+                for error in errors:
+                    self.logger.error(f"Post schedule error: {post.schedule_id}: {error}")
+            except:
+                new_session.delete(post)
                 new_session.commit()
 
-                # Add DB entry for rss thread loads
-                for thread_hash, views in rss_threads.items():
-                    test_count = new_session.query(EndpointCount).filter(and_(
-                        EndpointCount.timestamp_epoch == timestamp_hour,
-                        EndpointCount.thread_hash == thread_hash,
-                        EndpointCount.category == "rss_thread")).first()
-                    if test_count:
-                        test_count.rss = views
-                    else:
-                        count = EndpointCount()
-                        count.timestamp_epoch = timestamp_hour
-                        count.thread_hash = thread_hash
-                        count.category = "rss_thread"
-                        count.rss = views
-                        new_session.add(count)
-                new_session.commit()
-
-                # Add DB entry for thread updates
-                for thread_hash, views in new_posts.items():
-                    test_count = new_session.query(EndpointCount).filter(and_(
-                        EndpointCount.timestamp_epoch == timestamp_hour,
-                        EndpointCount.thread_hash == thread_hash,
-                        EndpointCount.category == "requests")).first()
-                    if test_count:
-                        test_count.new_posts = views
-                    else:
-                        count = EndpointCount()
-                        count.timestamp_epoch = timestamp_hour
-                        count.thread_hash = thread_hash
-                        count.category = "requests"
-                        count.new_posts = views
-                        new_session.add(count)
-                new_session.commit()
-
-            self.reset_view_counter()
-        except:
-            self.logger.error("Could not import view_counter")
 
     def check_torrents(self):
         """Check torrents that need to be paused or processed after download completes"""
@@ -844,8 +873,7 @@ class BitChan:
                 qbt_client = qbittorrentapi.Client(**conn_info)
                 qbt_client.auth_log_in()
                 try:
-                    torrent_prop = qbt_client.torrents_info(
-                        torrent_hashes=torrent.torrent_hash)[0]
+                    torrent_prop = qbt_client.torrents_info(torrent_hashes=torrent.torrent_hash)[0]
                 except:
                     torrent_prop = None
 
@@ -864,6 +892,10 @@ class BitChan:
                 # Check if torrent should be prevented from starting
                 if message.file_do_not_download and not message.start_download:
                     continue  # Don't initiate if file prevented from being downloaded
+
+                elif torrent.auto_start_torrent:
+                    # Torrent originated from this instance and instructed to auto-start
+                    pass
 
                 # Pause if total size is greater than max size permitted to be auto-downloaded
                 elif not message.file_do_not_download and not message.start_download:
@@ -893,20 +925,21 @@ class BitChan:
                 #
                 try:
                     # Torrent is paused
-                    if torrent_prop and torrent_prop.state in ['pausedDL', 'pausedDL']:
+                    if torrent_prop and torrent_prop.state in ['pausedUP', 'pausedDL', 'stoppedDL']:
                         self.logger.info(
-                            f"Torrent {torrent.file_hash} paused when it's allowed to be downloaded. Resuming.")
+                            f"Torrent {torrent.torrent_hash} paused/stopped when it's been allowed. Resuming.")
                         qbt_client.torrents_resume(torrent_hashes=torrent.torrent_hash)
                         time.sleep(1)
 
                     # Torrent is seeding
                     elif torrent_prop and torrent_prop.state in ['stalledUP', 'uploading']:
                         self.logger.info(
-                            f"Torrent {torrent.file_hash} seeding when it hasn't been processed. Processing.")
+                            f"Torrent {torrent.torrent_hash} seeding and hasn't been processed. Start processing.")
 
                         # Check only the seeding directory for torrents that are completed and are seeding
-                        path_downloaded_file = os.path.join('/i2p_qb/Downloads', torrent.file_hash)
-                        path_downloaded_file_zip = os.path.join('/i2p_qb/Downloads', f"{torrent.file_hash}.zip")
+                        # Torrent contents will be different whether it's encrypted or unencrypted
+                        path_downloaded_file = os.path.join('/i2p_qb/Downloads', torrent.file_hash)  # Encrypted torrent
+                        path_downloaded_file_zip = os.path.join('/i2p_qb/Downloads', f"{torrent.file_hash}.zip")  # Unencrypted torrent
                         if torrent.message_id and torrent.file_hash and os.path.isfile(path_downloaded_file):
                             self.logger.info(f"Found completed torrent data {path_downloaded_file}")
                             path_downloaded = path_downloaded_file
@@ -944,7 +977,7 @@ class BitChan:
                         if message.file_sha256_hash:
                             if not validate_file(path_enc_file, message.file_sha256_hash):
                                 message.file_progress = "Attachment hash ({}) doesn't match expected hash ({}).".format(
-                                    generate_hash(path_enc_file), message.file_sha256_hash)
+                                    generate_hash_sha256(path_enc_file), message.file_sha256_hash)
                                 message.file_sha256_hashes_match = False
                                 message.regenerate_post_html = True
                                 new_session.commit()
@@ -973,9 +1006,13 @@ class BitChan:
                             message.file_download_successful = False
                             message.file_do_not_download = True
 
+                        # Set this back to the default False. Prevents knowing post originated from this instance.
+                        torrent.auto_start_torrent = False
+
                         new_session.commit()
 
                         regenerate_card_popup_post_html(message_id=torrent.message_id)
+                        # TODO: Refactor to use timestamps for when regenerated and when requested regeneration, regenerate if request > regenerated
 
                         check_banned_file_hashes(torrent.message_id, media_info)
 
@@ -1037,10 +1074,9 @@ class BitChan:
                         continue
 
                     # Add torrent
+                    self.logger.info(f"Deleting torrent with hash {torrent_hash}")
                     with qbittorrentapi.Client(**conn_info) as qbt_client:
-                        if qbt_client.torrents_delete(delete_files=True, torrent_hashes=torrent_hash) != "Ok.":
-                            self.logger.error("Failed to add torrent.")
-                            continue
+                        qbt_client.torrents_delete(delete_files=True, torrent_hashes=torrent_hash)
                 except:
                     self.logger.exception(f"qBittorrent error")
                     continue
@@ -1078,18 +1114,9 @@ class BitChan:
                 except:
                     self.logger.exception("Could not initiate game: {}".format(each_game.game_type))
 
-    def bm_change_connection_settings(self, restart_bm=True):
-        # stop BM, edit keys.dat, start bitmessage
+    def bm_change_connection_settings(self, restart_bm=True, restart_minode=True):
+        """Stop bitmessage, edit keys.dat, start bitmessage"""
         try:
-            if restart_bm:
-                timer_waiting = time.time()
-                while self.is_restarting_bitmessage and time.time() - timer_waiting < 360:
-                    self.logger.info("Already restarting bitmessage. Please wait.")
-                    time.sleep(2)
-
-                self.is_restarting_bitmessage = True
-                self.bitmessage_stop()
-
             # Get owner/group before modification
             try:
                 uid = pwd.getpwnam("bitchan").pw_uid
@@ -1102,8 +1129,21 @@ class BitChan:
                     uid = None
                     gid = None
 
+            if restart_bm:
+                timer_waiting = time.time()
+                while self.is_restarting_bitmessage and time.time() - timer_waiting < 360:
+                    self.logger.info("Already restarting bitmessage. Please wait.")
+                    time.sleep(2)
+
+                self.is_restarting_bitmessage = True
+                self.bitmessage_stop()
+
+            if restart_minode:
+                self.minode_stop()
+
             # Ensure all options exist in keys.dat
             socksproxytype = False
+            sockshostname = False
             sockslisten = None
             onionhostname = False
             onionport = None
@@ -1113,6 +1153,8 @@ class BitChan:
                 for line in f.readlines():
                     if line.startswith("socksproxytype"):
                         socksproxytype = True
+                    elif line.startswith("sockshostname"):
+                        sockshostname = True
                     elif line.startswith("sockslisten"):
                         sockslisten = True
                     elif line.startswith("onionhostname"):
@@ -1123,71 +1165,75 @@ class BitChan:
                         onionbindip = True
 
             if not socksproxytype:
-                os.system(f'crudini --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+            if not sockshostname:
+                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname none')
             if not sockslisten:
-                os.system(f'crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten False')
+                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten False')
             if not onionhostname:
-                os.system(f'crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
+                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
             if not onionport:
-                os.system(f'crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionport 8444')
+                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionport 8444')
             if not onionbindip:
-                os.system(f'crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionbindip {config.BM_HOST}')
+                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionbindip {config.BM_HOST}')
 
             with session_scope(config.DB_PATH) as new_session:
                 settings = new_session.query(GlobalSettings).first()
-                self.logger.info(f"Changing keys.dat settings to: {settings.bm_connections_in_out}")
+                self.logger.info(f"Changing connection settings based on setting: {settings.bm_connections_in_out}")
 
-                # Change settings in keys.dat to the user-selected choices
-                for line in fileinput.input(config.BM_KEYS_DAT, inplace=True):
-                    if settings.bm_connections_in_out in ["in_clear_out_clear",
-                                                          "in_tor+clear_out_clear",
-                                                          "in_tor_out_clear"]:
-                        if line.startswith("socksproxytype"):
-                            line = "socksproxytype = none\n"
-                            self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                    if settings.bm_connections_in_out in ["in_clear_out_tor",
-                                                          "in_tor+clear_out_tor",
-                                                          "in_tor_out_tor"]:
-                        if line.startswith("socksproxytype"):
-                            line = "socksproxytype = SOCKS5\n"
-                            self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                    if settings.bm_connections_in_out in ["in_clear_out_clear",
-                                                          "in_clear_out_tor"]:
-                        if line.startswith("onionhostname"):
-                            line = "onionhostname = none\n"
-                            self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                    if settings.bm_connections_in_out in ["in_clear_out_tor",
-                                                          "in_tor+clear_out_clear",
-                                                          "in_tor+clear_out_tor"]:
-                        if line.startswith("sockslisten"):
-                            line = "sockslisten = True\n"
-                            self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                    if settings.bm_connections_in_out in ["in_tor+clear_out_clear",
-                                                          "in_tor_out_clear",
-                                                          "in_tor+clear_out_tor",
-                                                          "in_tor_out_tor"]:
-                        if line.startswith("onionhostname"):
-                            self.get_bm_onion_address()
-                            if self.bm_onion_address:
-                                line = f"onionhostname = {self.bm_onion_address}\n"
-                                self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                        if line.startswith("onionport"):
-                            line = "onionport = 8444\n"
-                            self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                    if settings.bm_connections_in_out in ["in_tor_out_clear",
-                                                          "in_tor_out_tor"]:
-                        if line.startswith("onionbindip"):
-                            line = f"onionbindip = {config.BM_HOST}\n"
-                            self.logger.info(f"Setting in keys.dat: {line}".rstrip())
-                        if line.startswith("sockslisten"):
-                            line = "sockslisten = False\n"
-                            self.logger.info(f"Setting in keys.dat: {line}".rstrip())
+                if settings.bm_connections_in_out in [
+                        "minode_ip_and_i2p", "minode_ip2_only", "minode_ip_only",
+                        "minode_ip_and_i2p_tor_in", "minode_ip2_only_tor_in", "minode_ip_only_tor_in"]:
+                    # edit MiNode startup arguments
+                    with open(config.MINODE_ARGS_PATH, "w") as run_args:
+                        if settings.bm_connections_in_out == "minode_ip_and_i2p":
+                            run_args.write("--i2p --i2p-transient --i2p-tunnel-length 3 --i2p-sam-host 172.28.1.6 --host 0.0.0.0 --port 8446")
+                        elif settings.bm_connections_in_out == "minode_ip2_only":
+                            run_args.write("--i2p --no-ip --i2p-transient --i2p-tunnel-length 3 --i2p-sam-host 172.28.1.6 --host 0.0.0.0 --port 8446")
+                        elif settings.bm_connections_in_out == "minode_ip_only":
+                            run_args.write("--host 0.0.0.0 --port 8446")
 
-                    sys.stdout.write(line)
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings trustedpeer 172.28.1.10:8446')
+                else:
+                    os.system(f'/home/bitchan/env3/bin/crudini --del {config.BM_KEYS_DAT} bitmessagesettings trustedpeer')
+
+                # Allow tor incoming connections
+                if settings.bm_connections_in_out in [
+                        "minode_ip_and_i2p_tor_in", "minode_ip2_only_tor_in", "minode_ip_only_tor_in",
+                        "in_tor+clear_out_clear", "in_tor_out_clear", "in_tor+clear_out_tor", "in_tor_out_tor"]:
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname bitchan_tor')
+                else:
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname none')
+
+                if settings.bm_connections_in_out in ["in_clear_out_clear", "in_tor+clear_out_clear", "in_tor_out_clear"]:
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+
+                if settings.bm_connections_in_out in ["in_clear_out_tor", "in_tor+clear_out_tor", "in_tor_out_tor"]:
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype SOCKS5')
+
+                # No incoming tor
+                if settings.bm_connections_in_out in ["minode_ip_and_i2p", "minode_ip2_only", "minode_ip_only", "in_clear_out_clear", "in_clear_out_tor"]:
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
+
+                if settings.bm_connections_in_out in ["in_clear_out_tor", "in_tor+clear_out_clear", "in_tor+clear_out_tor"]:
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten True')
+
+                if settings.bm_connections_in_out in ["in_tor+clear_out_clear", "in_tor_out_clear", "in_tor+clear_out_tor", "in_tor_out_tor"]:
+                    self.get_bm_onion_address()
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname {self.bm_onion_address}')
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionport 8444')
+
+                if settings.bm_connections_in_out in ["in_tor_out_clear", "in_tor_out_tor"]:
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionbindip {config.BM_HOST}')
+                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten False')
 
             # Set owner/group after modification
             if uid and pwd:
                 os.chown(config.BM_KEYS_DAT, uid, gid)
+
+            if restart_minode:
+                self.minode_start()
 
             if restart_bm:
                 self.bitmessage_start()
@@ -1282,31 +1328,38 @@ class BitChan:
 
         try:
             if self.bm_onion_address:
-                self.logger.info("tor onion address found for Bitmessage. "
-                                 "Checking if 'onionhostname' set in keys.dat...")
+                self.logger.info(
+                    "tor onion address found for Bitmessage. Checking if onionhostname needs to be set in keys.dat...")
                 set_onionhostname = False
-                with open(config.BM_KEYS_DAT, 'r') as f:
+                with (open(config.BM_KEYS_DAT, 'r') as f):
                     for each_line in f.readlines():
                         if each_line.startswith("onionhostname"):
-                            self.logger.info("Found line: '{}'".format(each_line.rstrip()))
                             try:
                                 check_address = each_line.split(" = ")[1].rstrip()
                             except:
                                 check_address = ""
-                            self.logger.info("keys.dat: '{}'".format(check_address))
-                            self.logger.info("tor: '{}'".format(self.bm_onion_address))
+
                             with session_scope(config.DB_PATH) as new_session:
                                 settings = new_session.query(GlobalSettings).first()
                                 if (check_address != self.bm_onion_address and
-                                        settings.bm_connections_in_out not in ["in_clear_out_clear",
-                                                                               "in_clear_out_tor"]):  # settings require onionhostname = none
-                                    self.logger.info(
-                                        "Invalid keys.dat onion address. Updating and restarting Bitmessage")
-                                    set_onionhostname = True
-                                else:
-                                    self.logger.info("Valid onionhostname setting in keys.dat.")
+                                        settings.bm_connections_in_out not in ["minode_ip_and_i2p",
+                                                                               "minode_ip2_only",
+                                                                               "minode_ip_only",
+                                                                               "in_clear_out_clear",
+                                                                               "in_clear_out_tor"]):
+                                    set_onionhostname = self.bm_onion_address
+                                elif (check_address != "none" and  # settings require onionhostname = none
+                                        settings.bm_connections_in_out in ["minode_ip_and_i2p",
+                                                                           "minode_ip2_only",
+                                                                           "minode_ip_only",
+                                                                           "in_clear_out_clear",
+                                                                           "in_clear_out_tor"]):
+                                    set_onionhostname = "none"
 
                 if set_onionhostname:
+                    self.logger.info(
+                        f"Setting 'onionhostname = {set_onionhostname}' in keys.dat and restarting Bitmessage.")
+
                     # stop BM, edit keys.dat, start bitmessage
                     try:
                         timer_waiting = time.time()
@@ -1317,7 +1370,6 @@ class BitChan:
                         self.is_restarting_bitmessage = True
                         self.bitmessage_stop()
                         time.sleep(15)
-                        line_found = False
 
                         # Get owner/group before modification
                         try:
@@ -1331,14 +1383,7 @@ class BitChan:
                                 uid = None
                                 gid = None
 
-                        for line in fileinput.input(config.BM_KEYS_DAT, inplace=True):
-                            if line.startswith("onionhostname") and self.bm_onion_address:
-                                line_found = True
-                                self.logger.info("'onionhostname' found, setting to onion address.")
-                                line = f"onionhostname = {self.bm_onion_address}\n"
-                            sys.stdout.write(line)
-                        if not line_found:
-                            self.logger.info("'onionhostname' not found. Check keys.dat configuration.")
+                        os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname {set_onionhostname}')
 
                         # Set owner/group after modification
                         if uid and pwd:
@@ -1351,9 +1396,9 @@ class BitChan:
                     finally:
                         self.is_restarting_bitmessage = False
                 else:
-                    self.logger.info("Bitmessage onion address correctly set in keys.dat.")
+                    self.logger.info("Valid onionhostname setting in keys.dat.")
             else:
-                self.logger.info("tor onion address not found for Bitmessage. Check torrc configuration.")
+                self.logger.info("tor onion address not found for Bitmessage.")
         except:
             pass
 
@@ -1454,65 +1499,9 @@ class BitChan:
                         now,
                         session.request_rate_ts,
                         now - session.request_rate_ts))
-                    # Delete if last request is older than 7 days
+                    # Delete if last request is older than SESSION_TIMEOUT_DAYS days
                     new_session.delete(session)
                     new_session.commit()
-
-    def signal_generate_post_numbers(self):
-        self.timer_update_post_numbers = time.time() + (60 * 5)
-        self.update_post_numbers = True
-
-    def generate_post_numbers(self, all_boards=False):
-        try:
-            with session_scope(config.DB_PATH) as session:
-                # First, reset all board counts to 0
-                if all_boards:
-                    boards = session.query(Chan).filter(
-                        Chan.type == "board").all()
-                else:
-                    boards = session.query(Chan).filter(
-                        and_(
-                            Chan.type == "board",
-                            Chan.regenerate_numbers.is_(True))).all()
-                for each_board in boards:
-                    each_board.last_post_number = 0
-                session.commit()
-
-                # Set post numbers
-                messages = session.query(Messages).order_by(
-                    Messages.timestamp_sent.asc()).all()
-                for each_msg in messages:
-                    if not each_msg.thread_id:
-                        each_msg.post_number = 0
-                        session.commit()
-                        continue
-
-                    thread = session.query(Threads).filter(
-                        Threads.id == each_msg.thread_id).first()
-                    if not thread.chan_id:
-                        each_msg.post_number = 0
-                        session.commit()
-                        continue
-
-                    board = session.query(Chan).filter(
-                        Chan.id == thread.chan_id).first()
-                    if not board:
-                        each_msg.post_number = 0
-                        session.commit()
-                        continue
-
-                    board.last_post_number = board.last_post_number + 1
-                    if each_msg.post_number != board.last_post_number:
-                        each_msg.regenerate_post_html = True
-                    each_msg.post_number = board.last_post_number
-
-                    self.logger.debug("Board {}: Post {}: Post number {}".format(
-                        board.address,
-                        each_msg.post_id,
-                        each_msg.post_number))
-                    session.commit()
-        except Exception:
-            self.logger.exception("Updating post numbers")
 
     def check_sync_locked(self):
         """Determine if a Bitmessage sync has completed"""
@@ -2065,15 +2054,15 @@ class BitChan:
         else:
             return
 
-        for address in dict_return['addresses']:
-            # self.logger.info("Chan: {}".format(address))
-            if address['chan']:
-                all_chans[address['address']] = {
-                    "label": address['label'],
-                    "enabled": address['enabled']
-                }
+        with session_scope(config.DB_PATH) as new_session:
+            for address in dict_return['addresses']:
+                # self.logger.info("Chan: {}".format(address))
+                if address['chan']:
+                    all_chans[address['address']] = {
+                        "label": address['label'],
+                        "enabled": address['enabled']
+                    }
 
-            with session_scope(config.DB_PATH) as new_session:
                 # Only scan chans from the bitchan database
                 # Leave other chans alone
                 chan = new_session.query(
@@ -2163,13 +2152,9 @@ class BitChan:
 
     def process_stored_messages(self):
         self.logger.debug("process_stored_messages() start")
-        found_empty_post_number = False
 
         with session_scope(config.DB_PATH) as new_session:
             for message in new_session.query(Messages).all():
-                if message.post_number is None:
-                    found_empty_post_number = True
-
                 if not message.post_id:
                     post_id = message.message_id[-config.ID_LENGTH:].upper()
                     self.logger.info("{}: Post ID doesn't exist, creating and saving {}".format(
@@ -2191,10 +2176,6 @@ class BitChan:
                         message.message_id[-config.ID_LENGTH:].upper()))
                     self.trash_message(message.message_id)
                     continue
-
-        if found_empty_post_number:
-            self.logger.info("Post with post_number of None found. Scanning all posts.")
-            self.update_post_numbers = True
 
     def check_downloads(self):
         with session_scope(config.DB_PATH) as new_session:
@@ -2240,7 +2221,6 @@ class BitChan:
                         messages.extend(messages_api['inboxMessages'])
                 except Exception as err:
                     self.logger.error("Exception getting all message IDs: {}".format(err))
-                    return
                 finally:
                     if i + 1 == len(all_chans):
                         time.sleep(config.API_PAUSE)
@@ -2310,16 +2290,16 @@ class BitChan:
                         "started": False,
                         "completed": False
                     }
-                    self.message_threads[message["msgid"]]["thread"].setDaemon(True)
+                    self.message_threads[message["msgid"]]["thread"].daemon = True
                     self.check_message_threads()
 
         #
-        # Update list of non-bitchan message IDs in database
+        # Update list of non-BitChan message IDs in database
         #
         now = time.time()
         if self.timer_non_bitchan_message_ids < now:
             while self.timer_non_bitchan_message_ids < now:
-                self.timer_non_bitchan_message_ids += 3600  # 1 hour
+                self.timer_non_bitchan_message_ids += 60 * 60  # 1 hour
             with session_scope(config.DB_PATH) as new_session:
                 settings = new_session.query(GlobalSettings).first()
                 settings.discard_message_ids = json.dumps(self._non_bitchan_message_ids)
@@ -2505,20 +2485,23 @@ class BitChan:
 
     def delete_all_messages(self, address):
         with session_scope(config.DB_PATH) as new_session:
+            list_delete_message_ids = []
+            list_delete_thread_hashes = []
+
             chan = new_session.query(Chan).filter(
                 Chan.address == address).first()
             threads = new_session.query(Threads).filter(
                 Threads.chan_id == chan.id).all()
             for each_thread in threads:
-                messages = new_session.query(Messages).filter(
-                    Messages.thread_id == each_thread.id).all()
-                for each_message in messages:
-                    # Delete post
-                    delete_post(each_message.message_id)
-                # Delete thread
-                new_session.delete(each_thread)
-                new_session.commit()
-            self.signal_generate_post_numbers()
+                list_delete_thread_hashes.append(each_thread.thread_hash)
+                for each_message in each_thread.messages:
+                    list_delete_message_ids.append(each_message.message_id)
+
+            for message_id in list_delete_message_ids:
+                delete_post(message_id)
+
+            for thread_hash in list_delete_thread_hashes:
+                delete_thread(thread_hash)
 
     def get_address_labels(self):
         address_labels = {}
@@ -3068,6 +3051,28 @@ class BitChan:
                 self.trash_message(msg_id)
                 return True
 
+    def does_board_disallow_attachments(self, msg_id, to_address, from_address, msg_decrypted_dict):
+        # Determine if board doesn't allow attachments
+        chan = get_db_table_daemon(Chan).filter(and_(
+            Chan.type == "board",
+            Chan.address == to_address)).first()
+        if chan:
+            try:
+                rules = json.loads(chan.rules)
+            except:
+                rules = {}
+            if ("disallow_attachments" in rules and
+                    rules["disallow_attachments"] and
+                    ("file_amount" in msg_decrypted_dict and msg_decrypted_dict["file_amount"])):
+                # Board disallows attachments and post has attachment
+                self.logger.info(
+                    "{}: Message has an attachment but this board disallows attachments. "
+                    "Deleting.".format(
+                        msg_id[-config.ID_LENGTH:].upper(),
+                        from_address))
+                self.trash_message(msg_id)
+                return True
+
     def is_ban_in_place(self, msg_id, to_address, from_address):
         # Determine if there is a current ban in place for an address
         # If so, delete message and don't process it
@@ -3182,6 +3187,12 @@ class BitChan:
             self.trash_message(msg_dict["msgid"])
             return
 
+        not_allow_post = self.does_board_disallow_attachments(
+            msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'], msg_decrypted_dict)
+        if not_allow_post:
+            self.trash_message(msg_dict["msgid"])
+            return
+
         not_allow_post = self.is_ban_in_place(
             msg_dict["msgid"], msg_dict['toAddress'], msg_dict['fromAddress'])
         if not_allow_post:
@@ -3226,6 +3237,7 @@ class BitChan:
             if msg_decrypted_dict["message"]:
                 # Remove any potentially malicious HTML in received message text
                 # before saving it to the database or presenting it to the user
+                msg_decrypted_dict["original_message"] = msg_decrypted_dict["message"]  # Need the original for the POW challenge
                 msg_decrypted_dict["message"] = html.escape(msg_decrypted_dict["message"])
 
                 # perform admin command word replacements
@@ -3433,7 +3445,6 @@ class BitChan:
                     new_msg.version = msg_decrypted_dict["version"]
                     new_msg.message_id = msg_dict["msgid"]
                     new_msg.post_id = get_post_id(msg_dict["msgid"])
-                    new_msg.post_number = thread.chan.last_post_number
                     new_msg.message_sha256_hash = hashlib.sha256(
                         json.dumps(msg_dict['message']).encode('utf-8')).hexdigest()
                     new_msg.thread_id = thread.id
@@ -4169,21 +4180,6 @@ class BitChan:
         if not self.api_status:
             self.restart_bitmessage()
 
-    def update_utc_offset(self):
-        ntp = ntplib.NTPClient()
-        for _ in range(3):
-            try:
-                ntp_utc = ntp.request('pool.ntp.org').tx_time
-                self.utc_offset = time.time() - ntp_utc
-                self.logger.info("NTP UTC: {}, Offset saved: {}".format(
-                    ntp_utc, self.utc_offset))
-                break
-            except ntplib.NTPException as err:
-                self.logger.error("Error NTPException: {}".format(err))
-            except Exception as err:
-                self.logger.exception("Error update_utc_offset(): {}".format(err))
-            time.sleep(60)
-
     def restart_bitmessage(self):
         """Restart bitmessage"""
         try:
@@ -4223,6 +4219,32 @@ class BitChan:
             time.sleep(15)
         except Exception as err:
             self.logger.error("Exception starting Bitmessage: {}".format(err))
+
+    def minode_stop(self):
+        try:
+            self.logger.info("Stopping minode. Please wait.")
+            if config.DOCKER:
+                cmd = 'docker stop -t 15 bitchan_minode 2>&1'
+            else:
+                cmd = 'service bitchan_minode stop'
+            self.logger.info(f"Stop command: {cmd}")
+            subprocess.Popen(cmd, shell=True)
+            time.sleep(20)
+        except Exception as err:
+            self.logger.error("Exception stopping MiNode: {}".format(err))
+
+    def minode_start(self):
+        try:
+            self.logger.info("Starting minode. Please wait.")
+            if config.DOCKER:
+                cmd = 'docker start bitchan_minode 2>&1'
+            else:
+                cmd = 'service bitchan_minode start'
+            self.logger.info(f"Start command: {cmd}")
+            subprocess.Popen(cmd, shell=True)
+            time.sleep(15)
+        except Exception as err:
+            self.logger.error("Exception starting MiNode: {}".format(err))
 
     def get_sent_items(self):
         sent_items = []
@@ -4302,14 +4324,9 @@ class BitChan:
     def bitmessage_restarting(self):
         return self.is_restarting_bitmessage
 
-    def get_utc(self):
-        if self.utc_offset:
-            return int(time.time() + self.utc_offset)
-        else:
-            return int(time.time())
-
-    def is_utc_offset_set(self):
-        return bool(self.utc_offset)
+    @staticmethod
+    def get_utc():
+        return int(time.time())
 
     def get_address_book(self):
         return self._address_book_dict
@@ -4474,9 +4491,6 @@ class Pyros(object):
     def enable_onion_services_only(self, enable=False):
         return self.bitchan.enable_onion_services_only(enable=enable)
 
-    def generate_post_numbers(self, all_boards=False):
-        return self.bitchan.generate_post_numbers(all_boards=all_boards)
-
     def get_address_book(self):
         return self.bitchan.get_address_book()
 
@@ -4567,9 +4581,6 @@ class Pyros(object):
     def signal_clear_inventory(self):
         return self.bitchan.signal_clear_inventory()
 
-    def signal_generate_post_numbers(self):
-        return self.bitchan.signal_generate_post_numbers()
-
     def tor_enable_custom_address(self):
         tor_thread = Thread(target=self.bitchan.tor_enable_custom_address)
         tor_thread.daemon = True
@@ -4624,13 +4635,18 @@ class Daemon:
         self.bitchan = bc
 
     def start_daemon(self):
-        try:
-            pd = Pyrod(self.bitchan)
-            pd.daemon = True
-            pd.start()
-            self.bitchan.run()
-        except Exception:
-            self.logger.exception("Daemon Error")
+        count = 1
+        while count <= 3:
+            try:
+                pd = Pyrod(self.bitchan)
+                pd.daemon = True
+                pd.start()
+                self.bitchan.run()
+            except Exception:
+                self.logger.exception("Daemon Error")
+
+            time.sleep(10)
+            count += 1
 
 
 if __name__ == '__main__':

@@ -1,4 +1,3 @@
-import hashlib
 import html
 import json
 import logging
@@ -17,6 +16,7 @@ try:
 except:
     pass
 
+import hashlib
 import bs4
 import cv2
 import imagehash
@@ -60,7 +60,7 @@ logger = logging.getLogger('bitchan.download')
 daemon_com = DaemonCom()
 
 
-def generate_hash(file_path):
+def generate_hash_sha256(file_path):
     """
     Generates an SHA256 hash value from a file
 
@@ -78,6 +78,26 @@ def generate_hash(file_path):
                 m.update(chunk)
         sha256_hash = m.hexdigest()
     return sha256_hash
+
+
+def generate_hash_sha3_256(file_path):
+    """
+    Generates an SHA3-256 hash value from a file
+
+    :param file_path: path to the file for hash validation
+    :type file_path: string
+    """
+    sha3_256 = None
+    if os.path.exists(file_path):
+        m = hashlib.sha3_256()
+        with open(file_path, 'rb') as f:
+            while True:
+                chunk = f.read(1000 * 1000)  # 1MB
+                if not chunk:
+                    break
+                m.update(chunk)
+        sha3_256 = m.hexdigest()
+    return sha3_256
 
 
 def validate_file(file_path, hash_val):
@@ -134,6 +154,11 @@ def allow_download(message_id):
             if not message:
                 return
 
+            try:
+                file_upload_settings = json.loads(message.file_upload_settings)
+            except:
+                file_upload_settings = None
+
             #
             # Check if attachment is an i2p torrent
             #
@@ -146,9 +171,8 @@ def allow_download(message_id):
                 try:
                     qbt_client.auth_log_in()
                     qbt_client.torrents_resume(torrent_hashes=torrent.torrent_hash)
-                    logger.info(f"Resuming torrent {torrent.torrent_hash}")
                 except:
-                    logger.exception(f"qBittorrent error")
+                    logger.exception(f"Resuming torrent {torrent.torrent_hash}")
                 qbt_client.auth_log_out()
 
                 message.file_do_not_download = False
@@ -158,7 +182,7 @@ def allow_download(message_id):
             #
             # Attachment is not a torrent, check other methods
             #
-            else:
+            elif file_upload_settings:
                 file_download_successful = False
                 media_info = {}
                 file_progress = None
@@ -651,7 +675,7 @@ def download_and_extract(
                 if not validate_file(download_path, file_sha256_hash):
                     file_progress = (
                         "File SHA256 hash ({}) does not match provided SHA256 hash ({}). Deleting.").format(
-                        generate_hash(download_path), file_sha256_hash)
+                        generate_hash_sha256(download_path), file_sha256_hash)
                     logger.info(file_progress)
                     file_sha256_hashes_match = False
                     file_download_successful = False
@@ -859,38 +883,38 @@ def process_attachments(message_id, extract_path, progress=True, silent=False, o
                 with session_scope(config.DB_PATH) as new_session:
                     message = new_session.query(Messages).filter(
                         Messages.message_id == message_id).first()
-                    if message:
-                        if progress:
-                            message.file_progress = "Calculating video dimensions"
-                            message.regenerate_post_html = True
-                            new_session.commit()
-
-                        try:
-                            file_order = json.loads(message.file_order)
-                        except:
-                            file_order = []
-
-                        logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: File order: {file_order}")
-
-                        # determine if spoiler needed
-                        if not file_order:
-                            file_order = []
-
-                        for i, each_file in enumerate(file_order, start=1):
-                            if f == each_file:
-                                file_number = i
-                                if i == 1:
-                                    spoiler = message.image1_spoiler
-                                elif i == 2:
-                                    spoiler = message.image2_spoiler
-                                elif i == 3:
-                                    spoiler = message.image3_spoiler
-                                elif i == 4:
-                                    spoiler = message.image4_spoiler
-                                break
-                    else:
+                    if not message:
                         errors.append(f"Could not find database entry for message with ID {message_id}")
                         return errors, media_info, message_steg
+
+                    if progress:
+                        message.file_progress = "Starting attachment processing..."
+                        message.regenerate_post_html = True
+                        new_session.commit()
+
+                    try:
+                        file_order = json.loads(message.file_order)
+                    except:
+                        file_order = []
+
+                    logger.info(f"{message_id[-config.ID_LENGTH:].upper()}: File order: {file_order}")
+
+                    # determine if spoiler needed
+                    if not file_order:
+                        file_order = []
+
+                    for i, each_file in enumerate(file_order, start=1):
+                        if f == each_file:
+                            file_number = i
+                            if i == 1:
+                                spoiler = message.image1_spoiler
+                            elif i == 2:
+                                spoiler = message.image2_spoiler
+                            elif i == 3:
+                                spoiler = message.image3_spoiler
+                            elif i == 4:
+                                spoiler = message.image4_spoiler
+                            break
             except:
                 pass
 
@@ -1067,10 +1091,19 @@ def process_attachments(message_id, extract_path, progress=True, silent=False, o
                 # generate hashes of file
                 if imagehash_hash:
                     media_info[f]["imagehash_hash"] = imagehash_hash
-                media_info[f]["sha256_hash"] = generate_hash(fp)
+                media_info[f]["sha256_hash"] = generate_hash_sha256(fp)
 
                 if steg_msg:
                     message_steg[f] = steg_msg
+
+                # Generate hash of file and copy file to hash directory
+                # TODO: TEST this
+                # try:
+                #     sha3_256_hash = generate_hash_sha3_256(fp)
+                #     hash_path = os.path.join(config.FILE_DIRECTORY_HASHED, sha3_256_hash)
+                #     shutil.copy(str(fp), hash_path)
+                # except Exception as err:
+                #     logger.error(f"Error hashing file: {err}")
 
             except Exception:
                 logger.exception("{}: Error processing file: {}".format(message_id[-config.ID_LENGTH:].upper(), f))

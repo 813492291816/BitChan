@@ -9,9 +9,9 @@
     <div class="pages plaque">
     {% if recent_page > 1 %}
         {% if recent_page > 2 %}
-            <a class="link page-nav" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/1">&lt;&lt;</a>&nbsp;&nbsp;
+            <a class="link page-nav" title="first" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/1">&lt;&lt;</a>&nbsp;&nbsp;
         {% endif %}
-        <a class="link page-nav" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{recent_page - 1}}">&lt;</a>&nbsp;&nbsp;
+        <a class="link page-nav" title="previous" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{recent_page - 1}}">&lt;</a>&nbsp;&nbsp;
     {% endif %}
 
     {%- set break_tracker = namespace(pre_elipse = False) -%}
@@ -34,9 +34,9 @@
     {% endfor %}
 
     {% if recent_page < pages|length %}
-        <a class="link page-nav" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{recent_page + 1}}">&gt;</a>{% if recent_page < total_pages - 1 %}&nbsp;&nbsp;{% endif %}
+        <a class="link page-nav" title="next" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{recent_page + 1}}">&gt;</a>{% if recent_page < total_pages - 1 %}&nbsp;&nbsp;{% endif %}
         {% if recent_page < total_pages - 1 %}
-            <a class="link page-nav" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{total_pages}}">&gt;&gt;</a>
+            <a class="link page-nav" title="last" href="/recent/{% if recent_info['single_board'] %}{{recent_info['board_address']}}{% else %}0{%endif %}/{{total_pages}}">&gt;&gt;</a>
         {% endif %}
     {% endif %}
     </div>

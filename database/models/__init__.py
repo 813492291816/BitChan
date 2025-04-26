@@ -15,6 +15,7 @@ from .chans import Games
 from .chans import Identity
 from .chans import Messages
 from .chans import PGP
+from .chans import SchedulePost
 from .chans import StringReplace
 from .chans import Threads
 from .chans import UploadProgress
@@ -26,6 +27,7 @@ from .maintenance import ModLog
 from .maintenance import PostCards
 from .maintenance import PostDeletePasswordHashes
 from .maintenance import SessionInfo
+from .pages import Pages
 from .settings import Flags
 from .settings import GlobalSettings
 from .settings import RateLimit
@@ -59,14 +61,10 @@ def regenerate_upload_sites():
 
 def populate_db():
     if not Alembic.query.count():
-        Alembic().save()
+        Alembic(version_num=config.VERSION_ALEMBIC).save()
 
     if not GlobalSettings.query.count():
         GlobalSettings().save()
-
-    # Only for testing. TODO: remove for release
-    # for each in UploadSites.query.all():
-    #     each.delete()
 
     regenerate_upload_sites()
 

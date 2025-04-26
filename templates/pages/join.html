@@ -259,6 +259,29 @@
                 {% endif %}
 
                 <div class="themed" style="padding-top: 0.5em">
+                    <input type="checkbox" id="require_attachment" name="require_attachment" value="y"> <label for="require_attachment">{{config.DICT_PERMISSIONS["require_attachment"]}}</label>
+                </div>
+
+                <div class="themed" style="padding-top: 0.5em">
+                    <input type="checkbox" id="require_pow_to_post" name="require_pow_to_post" value="y"> <label for="require_pow_to_post">{{config.DICT_PERMISSIONS["require_pow_to_post"]}}</label>
+                </div>
+
+                <div class="themed" style="padding-top: 0.5em">
+                    <select id="pow_method" name="pow_method">
+                        <option value="hashcash">Hashcash</option>
+                    </select>
+                    <label for="pow_method">POW Method</label>
+                </div>
+
+                <div class="themed" style="padding-top: 0.5em">
+                    <input id="pow_difficulty" name="pow_difficulty" value="20"> <label for="pow_difficulty">POW Difficulty (integer)</label>
+                </div>
+
+                <div class="themed" style="padding-top: 0.5em">
+                    <input id="pow_repetitions" name="pow_repetitions" value="5"> <label for="pow_repetitions">POW Repetitions (integer)</label>
+                </div>
+
+                <div class="themed" style="padding-top: 0.5em">
                     <input type="checkbox" id="require_identity_to_post" name="require_identity_to_post" value="y"> <label for="require_identity_to_post">{{config.DICT_PERMISSIONS["require_identity_to_post"]}}</label>
                 </div>
 
@@ -269,6 +292,9 @@
                 <div class="themed" style="padding-top: 0.5em">
                     <div>Thread Creation User Addresses (can create threads, if Restrict Thread Creation is enabled)</div>
                     <input style="width: 100%" name="thread_creation_users" value="">
+                </div>
+                <div class="themed" style="padding-top: 0.5em">
+                    <input type="checkbox" id="disallow_attachments" name="disallow_attachments" value="y"> <label for="disallow_attachments">{{config.DICT_PERMISSIONS["disallow_attachments"]}}</label>
                 </div>
                 {% endif %}
 
@@ -282,10 +308,11 @@
                 </div>
                 {% endif %}
 
-                <div class="themed">
+                <div class="themed" style="padding-top: 0.5em">
                     <input name="wipe_epoch" id="wipe_epoch" value="{{time.time()|int}}"> <label for="wipe_epoch">Time of First Clear (Epoch, see <a class="link" target="_blank" href="https://www.epochconverter.com/">Epoch Converter</a>)</label>
                 </div>
-                <div class="themed">
+
+                <div class="themed" style="padding-top: 0.5em">
                     <input name="interval_seconds" id="interval_seconds" value="2592000"> <label for="interval_seconds">Interval (Seconds, default is 30 days)</label>
                 </div>
 
@@ -299,11 +326,11 @@
                 </div>
 
                 <div class="themed" style="padding-top: 0.5em">
-                    <input type="checkbox" id="unlisted" name="unlisted" value="y"> <label for="unlisted">Make locally unlisted (will not appear on public kiosk pages). Access via the <a href="/unlisted">unlisted page</a>.</label>
+                    <input type="checkbox" id="unlisted" name="unlisted" value="y"> <label for="unlisted">Make locally unlisted (will not appear on public kiosk pages). Access via the <a class="link" href="/unlisted">unlisted page</a>.</label>
                 </div>
 
                 <div class="themed" style="padding-top: 0.5em">
-                    <input type="checkbox" id="restricted" name="restricted" value="y"> <label for="restricted">Make locally restricted (will not appear on public kiosk pages and attempting to load the page URL will return a 404 Error). Access via the <a href="/restricted">restricted page</a>.</label>
+                    <input type="checkbox" id="restricted" name="restricted" value="y"> <label for="restricted">Make locally restricted (will not appear on public kiosk pages and attempting to load the page URL will return a 404 Error). Access via the <a class="link" href="/restricted">restricted page</a>.</label>
                 </div>
 
                 <p class="themed" style="font-size: 2em">Owner Addresses</p>

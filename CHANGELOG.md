@@ -1,4 +1,4 @@
-## 1.4.0 (2024/04/26)
+## 1.4.0 (2025/04/26)
 
 Upgrading from version 1.3.0 can be performed with the following steps:
 

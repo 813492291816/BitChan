@@ -115,7 +115,11 @@ By default, BitChan will not auto-download attachments from upload sites. If you
 
 ## How do I securely get people to join my board?
 
-If your board is public, just share the board passphrase or share link. If your board is private, you will have to add the Identity address of each person to the User addresses field under 'Owner Options' on the index page of your board. 
+If your board is public, just share the board passphrase or share link. If your board is private, you will have to add the Identity address of each person to the User addresses field under 'Owner Options' on the index page of your board.
+
+## What is MiNode?
+
+Bitmessage normally can only operate over the clearnet or tor. MiNode enables bitmessage to operate over I2P, providing better privacy and security than the clearnet, and possibly more than tor. MiNode can be configured to operate only over I2P, or any combination of I2P/tor/clearnet. There are other MiNode users that operate on multiple networks and synchronize the bitmessage block between the networks, meaning you don't have to connect to every network to be able to communicate to users on another network. This allows one instance of BitChan using MiNode only on I2P to communicate with another instance of BitChan using MiNode only on tor (or clearnet).
 
 # Permissions
 
@@ -150,9 +154,9 @@ There are a number of options available when composing a post, which include:
 
 This list includes all available addresses which are controlled by you and are allowed to post on the board. If the owner of the board has restricted certain addresses from posting and it's one you control, it will not appear in this list.
 
-***Board/Thread Default From***
+***Default From***
 
-The address that's selected when this option is enabled will be pre-populated every time you compose a post. When viewing the index of a board, a Board Default From option is available and when viewing a thread, a Thread Default From option is available.
+The address that's selected when this option is enabled will be pre-populated every time you compose a post on a Board or a reply of the Thread. These can be different addresses saved for a Board or a Thread.
 
 ***Flag***
 
@@ -188,6 +192,10 @@ Next to each of the 4 attachment fields is a checkbox for spoilering your image.
 
 This option removes EXIF data from .jpg and .png files prior to posting to a board.
 
+***Hash Filename***
+
+Change the original attachment filenames to the SHA256 hashes of the files. First, a random filename is generated before saving the file to disk, to prevent recovery efforts from discovering the original filename. Then, the SHA256 hash is calculated and the file renamed, before sending the post.
+
 ***Upload Method***
 
 Select the desired file transfer method. There are three different upload methods supported: Bitmessage, I2P BitTorrent, and 3rd Party Upload Sites.
@@ -196,13 +204,13 @@ Bitmessage is the most secure method of attaching a file, but only message (subj
 
 I2P BitTorrent attachments are seeded over the I2P-only BitTorrent client qBittorrent to other BitChan instances that receive the post. Those BitChan instances also begin seeding the attachment data after fully downloading it, contributing to the data distribution. After a user-configured period of time, seeding stops and the torrent is deleted. Because OP healing is possible, by default, attachments are seeded longer for OPs than replies. The same encryption and obfuscation method is used, as described in the Bitmessage section, above.
 
-The last upload method is using a 3rd party upload site. There are many upload sites on tor hidden onions and i2p eepsites that share a common API. These can only be accessed via tor and i2p, increasing security, but these should be considered the least secure of the three. You should assume many or all of these 3rd party upload sites are honeypots, making them the least secure of the three upload methods. The same encryption and obfuscation method is used, as described in the Bitmessage section, above.
+The last upload method is using a 3rd party upload site. There are many upload sites on the clearnet, tor hidden onions, and i2p eepsites that share a common API. Although some of these 3rd party sites may provide some security via tor or i2p, this upload method should be considered the least secure of the three. You should assume somewhere between some and all of these 3rd party upload sites are honeypots. The same encryption and obfuscation method is used, as described in the Bitmessage section, above.
 
 ***Upload Encryption***
 
 Select which cipher and key bit length you want to use to encrypt your file attachments.
 
-***Image to Insert Steg***
+***Steg Image***
 
 This dropdown lets you select the image to insert the steganographic comment. This only works for JPG attachments.
 
@@ -210,13 +218,17 @@ This dropdown lets you select the image to insert the steganographic comment. Th
 
 Enter any text you desire to hide in your image with steganography. Some images may not work due to limitations of the software or a characteristic of the particular image. You should receive an error if it's unable to be performed. This only works for JPG attachments.
 
-***Password to Delete***
+***Delete Password***
 
 A password can be supplied with a post to be able to delete the post at a later time. This password will initially be hashed with SHA512 and the hash sent with the post. At a later time, a request can be made to delete the post, which will send the unhashed, plain text password to all BitChan instances. These BitChan instances will hash the plain text password and compare it to the stored password hash for the post. If the hashes match, the post will be deleted. Because plain text passwords are sent with the request to delete the post (and for all intents and purposes, should be considered compromised because it has become publicly visible to all users), there are a few points to consider when choosing a password to use:
 
  1. Do not use a password that you would like to remain private (e.g. a password also used for bank account credentials).
  2. Do not use the same password for multiple posts, because one a request to delete a post is made, that password is visible to users (as those users can use that password to delete your other posts).
  3. Do write down your posts and passwords because the password will not be automatically saved for later retrieval.
+
+***Schedule Post Epoch***
+
+An epoch in the future can be entered to schedule the post. Alternatively, an epoch range in the format "xxxxxx-yyyyyy" can be used to schedule the post to occur at a random time between the two epochs.
 
 ## Text Modifications
 
@@ -356,7 +368,7 @@ If you control an ID with Board Owner permissions then, for any post on that boa
 
 ### Delete Post Using Password
 
-If you previously created a post and provided a Password to Delete, you may use this option to delete the post for all users. You must provide the same password that was originally provided. This password will be sent as plain text, and once this message propagates on the network and is received, BitChan will hash the password and compare it to the password hash that was originally saved when the post was made. If the hashes match, the post will be deleted.
+If you previously created a post and provided a Delete Password, you may use this option to delete the post for all users. You must provide the same password that was originally provided. This password will be sent as plain text, and once this message propagates on the network and is received, BitChan will hash the password and compare it to the password hash that was originally saved when the post was made. If the hashes match, the post will be deleted.
 
 # Threads
 
@@ -626,6 +638,10 @@ When a post is made with an attachment that has been uploaded to an external upl
 
 Because compressed/encrypted files can be of a size significantly less than the decompressed/decrypted file size, this option prevents an exploit whereby a very large post attachment can be made. For example, a 100 GB file containing a repeating "0" character is a mere ~200 KB when compressed/encrypted. If this 100 GB file were to be added as a post attachment, the header of the file to be downloaded would only return ~200 KB. Only upon decompressing/decrypting will the true file size be revealed. This option sets a limit for how large the decompressed/decrypted post attachment file size can be. This setting also restricts the size of attachments when creating posts, which can be useful if running a public kiosk to limit the total attachment size.
 
+### Default Selected Upload Method
+
+Set the default post upload method. This simply sets which dropdown option is selected by default.
+
 ### Automatically Start I2P BitTorrent Downloads for My Posts
 
 When enabled, posts created with your BitChan instance will have I2P BitTorrent attachments automatically downloaded. This will automatically start your torrent seeding and display attachments for the post as soon as the post is received. When disabled, you must manually select Allow Download before the torrent starts seeding. Keep in mind that for others to get the attachments for your post, you must seed, therefore it is recommended to keep this enabled. If you're running a public kiosk, it is recommended to disable this option and set Attachment Auto-Download Max Size to manage automatic downloads.
@@ -710,7 +726,7 @@ Set how bitmessage connects to peers. If desiring to use tor, keep in mind that 
 
 The installation procedure provides a version of knownnodes.dat that has aggregated many reliable hosts to make an initial connection to the bitmessage network. Alternatively, you can copy the contents of your own knownnodes.dat with your own bitmessage to BitChan's /usr/local/bitchan/bitmessage/knownnodes.dat (especially if bootstraping is not occurring in a timely manner).
 
-Here are the keys.dat settings for each option (from [Bitmessage FAQ: How do I setup Bitmessage as a hidden service on Tor](https://wiki.bitmessage.org/index.php/FAQ#How_do_I_setup_Bitmessage_as_a_hidden_service_on_Tor)):
+Here are the keys.dat settings for each option (from [Bitmessage FAQ: How do I setup Bitmessage as a hidden service on Tor](https://wiki.bitmessage.org/index.php/FAQ#How_do_I_setup_Bitmessage_as_a_hidden_service_on_Tor){.link}):
 
 In: Clearnet<br/>Out: Clearnet | In: Tor + Clearnet<br/>Out: Clearnet | In: Tor<br/>Out: Clearnet
 ---|---|---
@@ -1036,7 +1052,27 @@ Enter custom JavaScript here. The JavaScript is added to a cookie.
 
 ## Options Tab
 
-Locally change your theme here.
+Locally change options that will be added to a cookie.
+
+### Theme
+
+Set the theme.
+
+### Post Max Height
+
+Set the maximum post height, with larger posts overflowing with a scrollbar.
+
+### Disable Forced Post Max Height
+
+If a thread has the Force Post Max Height attribute set, this can override that setting and show the full posts. without a scrollbar. This is useful if you want to take screenshots of threads that have had the max post height set.
+
+### Horizontal Posts
+
+This switches from vertical to horizontal post page formatting.
+
+### Hide Authors
+
+This prevents post author information from being shown.
 
 # Bug
 

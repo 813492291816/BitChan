@@ -123,71 +123,6 @@ def mod_thread(address, thread_id, mod_type):
     url_text = "Thread: {}".format(thread.subject)
 
     try:
-        from_user = None
-        log_description = ""
-
-        message = Messages.query.filter(and_(
-            Messages.thread_id == thread.id,
-            Messages.is_op.is_(True))).first()
-        if message:
-            message_id = message.message_id
-
-        #
-        # Locally sticky/unsticky
-        #
-        if mod_type in ["thread_sticky_local", "thread_unsticky_local"]:
-            thread.stickied_local = bool(mod_type == "thread_sticky_local")
-            thread.save()
-
-            regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
-
-            if mod_type == "thread_sticky_local":
-                log_description = "Locally stickied thread"
-                status_msg['status_message'].append("Locally stickied thread: '{}'".format(thread.subject))
-                status_msg['status_title'] = "Locally stickied thread"
-            else:
-                log_description = "Locally unstickied thread"
-                status_msg['status_message'].append("Locally unstickied thread: '{}'".format(thread.subject))
-                status_msg['status_title'] = "Locally unstickied thread"
-
-        #
-        # Locally lock/unlock
-        #
-        elif mod_type in ["thread_lock_local", "thread_unlock_local"]:
-            thread.locked_local = bool(mod_type == "thread_lock_local")
-            thread.locked_local_ts = time.time()
-            thread.save()
-
-            regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
-
-            if mod_type == "thread_lock_local":
-                log_description = "Locally locked thread"
-                status_msg['status_message'].append("Locally locked thread: '{}'".format(thread.subject))
-                status_msg['status_title'] = "Locally locked thread"
-            else:
-                log_description = "Locally unlocked thread"
-                status_msg['status_message'].append("Locally unlocked thread: '{}'".format(thread.subject))
-                status_msg['status_title'] = "Locally unlocked thread"
-
-        #
-        # Locally anchor/unanchor
-        #
-        elif mod_type in ["thread_anchor_local", "thread_unanchor_local"]:
-            thread.anchored_local = bool(mod_type == "thread_anchor_local")
-            thread.anchored_local_ts = time.time()
-            thread.save()
-
-            regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
-
-            if mod_type == "thread_anchor_local":
-                log_description = "Locally anchored thread"
-                status_msg['status_message'].append("Locally anchored thread: '{}'".format(thread.subject))
-                status_msg['status_title'] = "Locally anchored thread"
-            else:
-                log_description = "Locally unanchored thread"
-                status_msg['status_message'].append("Locally unanchored thread: '{}'".format(thread.subject))
-                status_msg['status_title'] = "Locally unanchored thread"
-
         #
         # Send message to remotely sticky/unsticky thread
         #
@@ -284,21 +219,6 @@ def mod_thread(address, thread_id, mod_type):
                         finally:
                             time.sleep(config.API_PAUSE)
                             lf.lock_release(config.LOCKFILE_API)
-
-        if mod_type in ["thread_sticky_local",
-                        "thread_unsticky_local",
-                        "thread_lock_local",
-                        "thread_unlock_local",
-                        "thread_anchor_local",
-                        "thread_unanchor_local"]:
-            # Only log local events.
-            # Global events will be logged when the admin command message is processed
-            add_mod_log_entry(
-                log_description,
-                message_id=message_id,
-                user_from=from_user,
-                board_address=address,
-                thread_hash=thread_id)
 
     except Exception as err:
         logger.error("Exception while deleting message(s): {}".format(err))
@@ -789,6 +709,138 @@ def delete(address, message_id, thread_id, delete_type):
                            status_msg=status_msg,
                            url=url,
                            url_text=url_text)
+
+
+@blueprint.route('/thread_attributes/<address>/<thread_id>', methods=('GET', 'POST'))
+@count_views
+def thread_attributes(address, thread_id):
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=address)
+    if not global_admin and not board_list_admin:
+        return allow_msg
+
+    chan = Chan.query.filter(Chan.address == address).first()
+
+    if len(thread_id) == 12:
+        thread = Threads.query.filter(Threads.thread_hash_short == thread_id).first()
+    else:
+        thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
+
+    message = Messages.query.filter(Messages.message_id == thread.id).first()
+
+    message_id = None
+
+    user_from_tmp = get_logged_in_user_name()
+    user_from = user_from_tmp if user_from_tmp else None
+
+    if message:
+        message_id = message.message_id
+
+    # Ensure message, thread, board is valid
+    if not chan or not thread:
+        return "thread or board doesn't exist"
+
+    # Ensure message is from specified board address
+    if thread.chan.address != address:
+        return "Board addresses do not match thread"
+
+    status_msg = {"status_message": []}
+
+    form_thread_attributes = forms_board.ThreadAttributes()
+
+    if request.method == 'POST':
+        if form_thread_attributes.save_attributes.data:
+            status_msg['status_title'] = "Success"
+            status_msg['status_message'].append(f"Set thread attributes.")
+
+            if thread.locked_local != bool(form_thread_attributes.thread_lock.data):
+                thread.locked_local = form_thread_attributes.thread_lock.data
+                thread.save()
+
+                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
+
+                if thread.locked_local:
+                    log_description = "Locally locked thread"
+                    status_msg['status_message'].append(" Locally locked thread.")
+                else:
+                    log_description = "Locally unlocked thread"
+                    status_msg['status_message'].append(" Locally unlocked thread.")
+
+                add_mod_log_entry(
+                    log_description,
+                    message_id=message_id,
+                    user_from=user_from,
+                    board_address=address,
+                    thread_hash=thread_id)
+
+            if thread.anchored_local != bool(form_thread_attributes.thread_anchor.data):
+                thread.anchored_local = form_thread_attributes.thread_anchor.data
+                thread.save()
+
+                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
+
+                if thread.anchored_local:
+                    log_description = "Locally anchored thread"
+                    status_msg['status_message'].append(" Locally anchored thread.")
+                else:
+                    log_description = "Locally unanchored thread"
+                    status_msg['status_message'].append(" Locally unanchored thread.")
+
+                add_mod_log_entry(
+                    log_description,
+                    message_id=message_id,
+                    user_from=user_from,
+                    board_address=address,
+                    thread_hash=thread_id)
+
+            if thread.stickied_local != bool(form_thread_attributes.thread_sticky.data):
+                thread.stickied_local = form_thread_attributes.thread_sticky.data
+                thread.save()
+
+                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
+
+                if thread.stickied_local:
+                    log_description = "Locally stickied thread"
+                    status_msg['status_message'].append(" Locally stickied thread.")
+                else:
+                    log_description = "Locally unstickied thread"
+                    status_msg['status_message'].append(" Locally unstickied thread.")
+
+                add_mod_log_entry(
+                    log_description,
+                    message_id=message_id,
+                    user_from=user_from,
+                    board_address=address,
+                    thread_hash=thread_id)
+
+            if thread.post_max_height_local != bool(form_thread_attributes.thread_max_height.data):
+                thread.post_max_height_local = form_thread_attributes.thread_max_height.data
+                thread.save()
+
+                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
+
+                if thread.post_max_height_local:
+                    log_description = "Locally set max height for thread posts"
+                    status_msg['status_message'].append(" Locally set max height for thread posts.")
+                else:
+                    log_description = "Locally unset max height for thread posts"
+                    status_msg['status_message'].append(" Locally unset max height for thread posts.")
+
+                add_mod_log_entry(
+                    log_description,
+                    message_id=message_id,
+                    user_from=user_from,
+                    board_address=address,
+                    thread_hash=thread_id)
+
+        if 'status_title' not in status_msg:
+            status_msg['status_title'] = "Error"
+
+    return render_template("pages/thread_attributes.html",
+                           board_address=address,
+                           form_thread_attributes=form_thread_attributes,
+                           status_msg=status_msg,
+                           thread=thread)
 
 
 @blueprint.route('/attachment_options/<address>/<message_id>/<single_file>/<file_name>', methods=('GET', 'POST'))

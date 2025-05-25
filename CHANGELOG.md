@@ -1,3 +1,33 @@
+## 1.4.1 (2025/05/24)
+
+This is a bugfix release, that fixes the Bitmesssage Connections setting from working properly for some options. If upgrading, you may need to save the Bitmessage Connections configuration setting after the upgrade.
+
+Additionally, the post menu has changed to include d Set Thread Attributes menu. This will render fine for new posts, but old posts that have already had their HTML rendered, will still have the old (non-functional) menu. In order for old posts to show the new menu, select the Diag link at the top of the page and click Regenerate All HTML. Each post will then regenerate its HTML the next time it's loaded. The speed of loading posts will only be slower for their first load, then improve on subsequent loadings.
+
+ - Fix Allow Download post button starting attachment download
+ - Fix separation of threads on board page
+ - Fix thread size limitation of javascript thread post updater
+ - Fix not showing debug information for thread OP
+ - Fix Bitmessage Connection setting not being applied for some options
+ - Fix post overflow when using ASCII or CODE formatting
+ - Fix highlight text formatting
+ - Fix i2psnark standalone URL
+ - Add option to replace attachment filenames
+ - Add ability of Pages to use Jinja2 (example pages will be available in a future update)
+ - Add ability to schedule post at a random time in the future between two epochs
+ - Add ability to locally force post max height for individual threads
+ - Add user Option to force disable post max height
+ - Add Config and user Option to set base font size 
+ - Add setting to select default post dropdown for attachment upload method
+ - Add code style text formatting
+ - Add MiNode install instructions to INSTALL.md
+ - Periodically restart qBittorrent to prevent connection issues
+ - Style changes to be more mobile friendly
+ - Refactor setting post attributes into one settings page
+ - Update qBittorrent to 5.1.0
+ - Update qbittorrent-api to 2025.5.0
+
+
 ## 1.4.0 (2025/04/26)
 
 Upgrading from version 1.3.0 can be performed with the following steps:
@@ -20,7 +50,6 @@ After building, you may need to change the Bitmessage Connections option on the 
  - Fix board wipe not deleting threads
  - Fix page to jump when loading by using fixed thumbnail dimensions
  - Fix bug reports not respecting post refractory period
-
  - Add ability to schedule automatic posting at a future time
  - Add ability to perform additional Proof of Work (POW) to post
  - Add ability to create Rules for Threads
@@ -44,7 +73,6 @@ After building, you may need to change the Bitmessage Connections option on the 
  - Add ability to search for posts using from address
  - Add Board Rule: Disallow Post Attachments
  - Add Post Max Height (25em) to Options
-
  - Change default Bitmessage connection mode to I2P-Only
  - Enable tor DDoS protection
  - Exclude global admins from rate-limiting

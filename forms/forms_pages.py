@@ -13,6 +13,5 @@ class PageManage(FlaskForm):
     slug = StringField("URL Slug")
     html = StringField("HTML")
 
-    edit_id = StringField("Page ID")
     edit_page = SubmitField("Save")
     add_page = SubmitField("Add Page")

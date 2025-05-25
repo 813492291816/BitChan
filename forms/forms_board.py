@@ -21,6 +21,14 @@ class Log(FlaskForm):
     submit = SubmitField("Submit")
 
 
+class ThreadAttributes(FlaskForm):
+    thread_lock = BooleanField("Lock Thread")
+    thread_anchor = BooleanField("Anchor Thread")
+    thread_sticky = BooleanField("Sticky Thread")
+    thread_max_height = BooleanField("Force Post Max Height")
+    save_attributes = SubmitField("Save Thread Attributes")
+
+
 class Post(FlaskForm):
     board_id = StringField("Board ID")
     thread_id = StringField("Thread ID")
@@ -39,11 +47,12 @@ class Post(FlaskForm):
     game_password_b = StringField("Game Password B (new)")
     game_player_move = StringField("Game Player Move")
     ttl = IntegerField("TTL")
-    file1 = MultipleFileField("Upload Images/Files")
-    file2 = MultipleFileField("Upload Images/Files")
-    file3 = MultipleFileField("Upload Images/Files")
-    file4 = MultipleFileField("Upload Images/Files")
+    file1 = MultipleFileField("Upload 1")
+    file2 = MultipleFileField("Upload 2")
+    file3 = MultipleFileField("Upload 3")
+    file4 = MultipleFileField("Upload 4")
     strip_exif = BooleanField("Strip EXIF")
+    hash_filenames = BooleanField("Hash Filename")
     image1_spoiler = BooleanField("Image 1 Spoiler")
     image2_spoiler = BooleanField("Image 2 Spoiler")
     image3_spoiler = BooleanField("Image 3 Spoiler")
@@ -77,8 +86,8 @@ class Post(FlaskForm):
     # Additional options
     image_steg_insert = IntegerField("Image to insert steg")
     steg_message = StringField("Steg Message")
-    delete_password = StringField("Password to Delete")
-    schedule_post_epoch = IntegerField("Schedule to Post after Epoch")
+    delete_password = StringField("Delete Password")
+    schedule_post_epoch = StringField("Schedule Post Epoch")
 
     start_download = SubmitField("Download File")
     preview_post = SubmitField("Preview")

@@ -7,8 +7,8 @@ logger = logging.getLogger('bitchan.config')
 
 DOCKER = os.environ.get('DOCKER', False) == 'TRUE'
 
-VERSION_BITCHAN = "1.4.0"
-VERSION_ALEMBIC = '000000000131'
+VERSION_BITCHAN = "1.4.1"
+VERSION_ALEMBIC = '000000000134'
 VERSION_MSG = "1.3.0"
 VERSION_MIN_MSG = "1.3.0"
 
@@ -53,7 +53,10 @@ if os.path.exists(BM_KEYS_DAT):
             if "apipassword" in line:
                 BM_PASSWORD = line.split("=")[1].strip()
 
-MINODE_ARGS_PATH = "/home/minode/minode_data/run_args"
+if DOCKER:
+    MINODE_ARGS_PATH = "/home/minode/minode_data/run_args"
+else:
+    MINODE_ARGS_PATH = "/usr/local/bitchan/minode/minode_data/run_args"
 
 if DOCKER:
     GPG_DIR = "/usr/local/gnupg"
@@ -552,6 +555,7 @@ class ProdConfig(object):
     SESSION_TYPE = "cachelib"
     SESSION_CACHELIB = FileSystemCache(threshold=50000, cache_dir="/sessions")
     WTF_CSRF_TIME_LIMIT = 60*60*24 * 2  # expire in 2 days
+    TEMPLATES_AUTO_RELOAD = True
 
     CAPTCHA_ENABLE = True
     CAPTCHA_LENGTH = 5

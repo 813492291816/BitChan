@@ -50,7 +50,7 @@
           <td class="form themed bold">Thread Default From</td>
           <td colspan="2"><input type="checkbox" id="default_from_address" name="default_from_address" value="y"{% if "default_from_address" in form_populate and form_populate["default_from_address"] %} checked{% endif %}/></td>
         {% else %}
-          <td class="form themed bold">Board Default From</td>
+          <td class="form themed bold">Default From</td>
           <td colspan="2"><input type="checkbox" id="default_from_address" name="default_from_address" value="y"{% if "default_from_address" in form_populate and form_populate["default_from_address"] %} checked{% endif %}/></td>
         {% endif %}
         </tr>
@@ -115,7 +115,7 @@
         </tr>
         {% if not disallow_attachments %}
         <tr>
-          <td class="form themed bold">Upload Images/Files<br/><span style="font-size: 0.7em">(Check to spoiler media)</span></td>
+          <td class="form themed bold">Uploads<br/><span style="font-size: 0.7em">(Check to spoiler)</span></td>
           <td colspan="2">
             1 <input style="vertical-align: middle;" type="checkbox" id="image1_spoiler" name="image1_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file1'); document.getElementById('image1').removeAttribute('src'); document.getElementById('image1_large').removeAttribute('src');">&#8856;</button> <input style="width: 200px" id="file1" name="file1" type="file"/> <img class="image_thumb" id="image1" /><div class="large_image_wrp"><img id="image1_large" class="large-image" /></div>
             <br/>2 <input style="vertical-align: middle;" type="checkbox" id="image2_spoiler" name="image2_spoiler" value="y"{% if "image_spoiler" in form_populate and form_populate["image_spoiler"] %} checked{% endif %}/> <button type="button" class="btn themed" title="Remove File" onclick="ClearFile('file2'); document.getElementById('image2').removeAttribute('src'); document.getElementById('image2_large').removeAttribute('src');">&#8856;</button> <input style="width: 200px" id="file2" name="file2" type="file"/> <img class="image_thumb" id="image2" /><div class="large_image_wrp"><img id="image2_large" class="large-image" /></div>
@@ -134,23 +134,27 @@
           <td colspan="2"><input type="checkbox" id="strip_exif" name="strip_exif" value="y"{% if "strip_exif" in form_populate and not form_populate["strip_exif"] %}{% else %} checked{% endif %}/></td>
         </tr>
         <tr>
-          <td class="form themed bold">Upload Method</td>
+          <td class="form themed bold">Hash Filename</td>
+          <td colspan="2"><input type="checkbox" id="hash_filenames" name="hash_filenames" value="y"{% if "hash_filenames" in form_populate and not form_populate["hash_filenames"] %}{% else %} checked{% endif %}/></td>
+        </tr>
+        <tr>
+          <td class="form themed bold">Upl. Method</td>
           <td>
             <select style="width: 100%;" name="upload">
             {% if not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and not settings.kiosk_disable_bm_attach) %}
-              <option value="bitmessage"{% if "upload" in form_populate and form_populate["upload"] == "bitmessage" %} selected{% endif %}>Bitmessage (most secure, ~250KB)</option>
+              <option value="bitmessage"{% if "upload" in form_populate and form_populate["upload"] == "bitmessage" or ("upload" not in form_populate and settings.form_default_upload_method == "bitmessage") %} selected{% endif %}>Bitmessage (most secure, ~250KB)</option>
             {% endif %}
             {% if not settings.enable_kiosk_mode or (settings.enable_kiosk_mode and not settings.kiosk_disable_i2p_torrent_attach) %}
-              <option value="i2p_torrent"{% if "upload" in form_populate and form_populate["upload"] == "i2p_torrent" %} selected{% endif %}>I2P Torrent (second most secure, any size)</option>
+              <option value="i2p_torrent"{% if "upload" in form_populate and form_populate["upload"] == "i2p_torrent" or ("upload" not in form_populate and settings.form_default_upload_method == "i2p_torrent") %} selected{% endif %}>I2P Torrent (second most secure, any size)</option>
             {% endif %}
             {% for each_server in upload_sites.query.all() if each_server.enabled or (settings.enable_kiosk_mode and logged_in and has_permission("is_global_admin")) %}
-              <option value="{{each_server.id}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.id|string %} selected{% endif %}>{{each_server.form_name}}</option>
+              <option value="{{each_server.id}}"{% if "upload" in form_populate and form_populate["upload"] == each_server.id|string or ("upload" not in form_populate and settings.form_default_upload_method == each_server.id|string) %} selected{% endif %}>{{each_server.form_name}}</option>
             {% endfor %}
             </select>
           </td>
         </tr>
         <tr>
-          <td class="form themed bold">Upload Encryption</td>
+          <td class="form themed bold">Upl. Encryption</td>
           <td>
             <select style="width: 100%;" name="upload_cipher_and_key">
             {% for each_cipher in config.UPLOAD_ENCRYPTION_CIPHERS if each_cipher[1] != "No Encryption" or (each_cipher[1] == "No Encryption" and settings.allow_unencrypted_encryption_option) -%}
@@ -167,7 +171,7 @@
                 <table style="width: 100%">
                   <tbody>
                     <tr>
-                      <td class="form themed bold">Image to Insert Steg</td>
+                      <td class="form themed bold">Steg Image</td>
                       <td>
                         <select name="image_steg_insert" style="width: 100%">
                           <option value="1"{% if "image_steg_insert" in form_populate and form_populate["image_steg_insert"] == 1 %} selected{% endif %}>1</option>

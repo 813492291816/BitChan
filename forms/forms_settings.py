@@ -18,7 +18,6 @@ class Login(FlaskForm):
     login = SubmitField("Login")
 
 
-
 class AddressBook(FlaskForm):
     label = StringField("New Label")
     add_label = StringField("Address Label")
@@ -154,9 +153,11 @@ class Identity(FlaskForm):
 class Settings(FlaskForm):
     maintenance_mode = BooleanField("Enable Maintenance Mode")
     theme = StringField("Theme")
+    font_size = DecimalField("Font Size (pt)")
     chan_update_display_number = IntegerField("Max Home Page Updates")
     max_download_size = DecimalField("Attachment Auto-Download Max Size (MB)")
     max_extract_size = DecimalField("Attachment Extraction Max Size (MB)")
+    form_default_upload_method = StringField("Default Selected Upload Method")
     always_allow_my_i2p_bittorrent_attachments = BooleanField("Automatically Start I2P BitTorrent Downloads for My Posts")
     allow_net_file_size_check = BooleanField("Allow connecting to upload site to verify post attachment size")
     allow_net_book_quote = BooleanField("Allow connecting to get book quotes")

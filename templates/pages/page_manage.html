@@ -40,46 +40,9 @@
 
     <div class="heading-2 head-center themed">Page Management</div>
 
-    {% if edit_id %}
-
-    <div class="heading-2 head-center themed">Edit Page</div>
-
-    <div style="padding-bottom: 1em"><a class="head-center themed" href="/manage_pages">Back</a></div>
-
-    <form method="post" enctype="multipart/form-data">
-    <input type="hidden" name="edit_id" value="{{edit_id}}"/>
-    <div class='outer' style="padding-bottom: 1em;">
-        <table class="themed">
-            <tr>
-                <td>Option</td>
-                <td>Value</td>
-            </tr>
-            <tr>
-                <td>Name</td>
-                <td><input type="text" name="name" value="{{page_edit.name}}"/></td>
-            </tr>
-            <tr>
-                <td>URL Slug</td>
-                <td><input type="text" name="slug" value="{{page_edit.slug}}"/></td>
-            </tr>
-        </table>
-    </div>
-    <div style="margin: 0 auto; max-width: 800px; padding-bottom: 3em;">
-        <div class="heading-3 head-center themed">HTML</div>
-        <div style="padding-top: 1em;">
-            <textarea rows="25" maxlength="16000000" class="form" style="width: 100%; box-sizing: border-box;" name="html">{{page_edit.html}}</textarea>
-        </div>
-        <div style="padding-top: 1em;">
-            <input type="submit" name="edit_page" value="Save"/>
-        </div>
-    </div>
-    </form>
-
-    {% else %}
+        {% if table_pages.query.count() %}
 
     <div class="heading-2 head-center themed">Pages</div>
-
-        {% if pages.query.count() %}
     
     <form method="post" enctype="multipart/form-data">
     <div class='outer' style="padding-bottom: 3em;">
@@ -89,10 +52,10 @@
                 <td></td>
                 <td></td>
             </tr>
-            {% for each_page in pages.query.all() %}
+            {% for each_page in table_pages.query.all() %}
             <tr>
                 <td style="font-family: monospace"><a class="link" href="/page/{{each_page.slug}}">{{each_page.name}}</a></td>
-                <td><input type="submit" name="edit_{{each_page.id}}" value="Edit"/></td>
+                <td style="font-family: monospace"><a class="link" href="/edit_page/{{each_page.id}}">Edit</a></td>
                 <td><input type="submit" name="delete_{{each_page.id}}" value="Delete" onclick="return confirm('Are you sure you want to delete this user?')"/></td>
             </tr>
             {% endfor %}
@@ -116,7 +79,7 @@
                 <td>Value</td>
             </tr>
             <tr>
-                <td>Name</td>
+                <td>Title</td>
                 <td><input type="text" name="name" value=""/></td>
             </tr>
             <tr>
@@ -129,10 +92,12 @@
         <div class="heading-3 head-center themed">HTML</div>
         <div style="padding-top: 1em;">
             <textarea rows="15" maxlength="16000000" class="form" style="width: 100%; box-sizing: border-box;" name="html">&lt;div class="wrap"&gt;
-    &lt;h1 class="title themed bold" style="text-align: center">Page Title&lt;/h1&gt;
+    &lt;h1 class="title themed bold" style="text-align: center"&gt;Example Page: All Boards & Lists&lt;/h1&gt;
 &lt;/div&gt;
 &lt;div class="themed" style="margin: 0 auto; max-width: 800px; padding-bottom: 3em;"&gt;
-    Page Content
+&lcub;% for each_chan in table_chan.query.all() %&rcub;
+    &lt;br/&gt;/&lcub;&lcub; each_chan.label|safe &rcub;&rcub;/ - &lcub;&lcub; each_chan.description|safe &rcub;&rcub; (&lcub;&lcub; each_chan.address &rcub;&rcub;)
+&lcub;% endfor %&rcub;
 &lt;/div&gt;</textarea>
         </div>
         <div style="padding-top: 1em;">
@@ -140,8 +105,6 @@
         </div>
     </div>
     </form>
-
-    {% endif %}
 </div>
 
     {% include '/elements/display_boards.html' %}

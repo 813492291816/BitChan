@@ -494,7 +494,7 @@ def process_replacements(body, seed, message_id, address=None, steg=False, previ
             body = body.replace(each_greenpink_replace["string_with_tags"],
                                 each_greenpink_replace["ID"], 1)
 
-    # ASCII processing Stage 1 of 2 (must be before all text style formatting)
+    # ASCII and [code] processing Stage 1 of 2 (must be before all text style formatting)
     ascii_replacements = replace_ascii(body)
     if ascii_replacements:
         # Replace ASCII text and tags with ID strings
@@ -515,6 +515,13 @@ def process_replacements(body, seed, message_id, address=None, steg=False, previ
         for each_ascii_replace in ascii_replacements_xsmall:
             body = body.replace(each_ascii_replace["string_with_tags"],
                                 each_ascii_replace["ID"], 1)
+
+    code_replacements = replace_code(body)
+    if code_replacements:
+        # Replace [code] text and tags with ID strings
+        for each_code_replace in code_replacements:
+            body = body.replace(each_code_replace["string_with_tags"],
+                                each_code_replace["ID"], 1)
 
     body = replace_colors(body)
     body = replace_candy(body)
@@ -538,7 +545,7 @@ def process_replacements(body, seed, message_id, address=None, steg=False, previ
     except:
         logger.exception("stich or god_song exception")
 
-    body = replace_pair(body, '<span style="background-color: yellow;"', '</span>', "``")
+    body = replace_pair(body, '<mark>', '</mark>', "``")
     body = replace_pair(body, '<sup style="font-size: smaller">', "</sup>", "\^\^")
     body = replace_pair(body, '<sub style="font-size: smaller">', "</sub>", "\%\%")
     body = replace_pair(body, '<span style="font-weight: bold">', '</span>', "@@")
@@ -609,23 +616,30 @@ def process_replacements(body, seed, message_id, address=None, steg=False, previ
     if ascii_replacements:
         # Replace ID strings with ASCII text and formatted tags
         for each_ascii_replace in ascii_replacements:
-            str_final = '<span class="language-ascii-art">{}</span>'.format(
+            str_final = '<div class="language-ascii-art">{}</div>'.format(
                 each_ascii_replace["string_wo_tags"])
             body = body.replace(each_ascii_replace["ID"], str_final, 1)
 
     if ascii_replacements_small:
         # Replace ID strings with ASCII text and formatted tags
         for each_ascii_replace in ascii_replacements_small:
-            str_final = '<span class="language-ascii-art-s">{}</span>'.format(
+            str_final = '<div class="language-ascii-art-s">{}</div>'.format(
                 each_ascii_replace["string_wo_tags"])
             body = body.replace(each_ascii_replace["ID"], str_final, 1)
 
     if ascii_replacements_xsmall:
         # Replace ID strings with ASCII text and formatted tags
         for each_ascii_replace in ascii_replacements_xsmall:
-            str_final = '<span class="language-ascii-art-xs">{}</span>'.format(
+            str_final = '<div class="language-ascii-art-xs">{}</div>'.format(
                 each_ascii_replace["string_wo_tags"])
             body = body.replace(each_ascii_replace["ID"], str_final, 1)
+
+    if code_replacements:
+        # Replace ID strings with [code] text and formatted tags
+        for each_code_replace in code_replacements:
+            str_final = '<div class="code">{}</div>'.format(
+                each_code_replace["string_wo_tags"])
+            body = body.replace(each_code_replace["ID"], str_final, 1)
 
     if greenpink_replacements:
         # Replace ID strings with green/pink text
@@ -793,6 +807,20 @@ def replace_ascii_xsmall(text):
         return []
     list_replacements = []
     for each_find in re.finditer(r"(?s)(?i)\[aa\-xs](.*?)\[\/aa\-xs]", text):
+        list_replacements.append({
+            "ID": get_random_alphanumeric_string(
+                30, with_punctuation=False, with_spaces=False),
+            "string_with_tags": each_find.group(),
+            "string_wo_tags": each_find.groups()[0]
+        })
+    return list_replacements
+
+
+def replace_code(text):
+    if not text:
+        return []
+    list_replacements = []
+    for each_find in re.finditer(r"(?s)(?i)\[code](.*?)\[\/code]", text):
         list_replacements.append({
             "ID": get_random_alphanumeric_string(
                 30, with_punctuation=False, with_spaces=False),

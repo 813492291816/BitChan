@@ -40,10 +40,10 @@ def before_view():
         abort(401)  # 401 Unauthorized
 
 
-@blueprint.route('/new_posts/<thread_hash_short>/<post_ids>', methods=('GET', 'POST'))
+@blueprint.route('/new_posts/<thread_hash_short>', methods=('GET', 'POST'))
 @count_views
 @rate_limit
-def new_posts(thread_hash_short, post_ids):
+def new_posts(thread_hash_short):
     can_view, allow_msg = allowed_access("can_view")
     if not can_view:
         return allow_msg
@@ -53,9 +53,9 @@ def new_posts(thread_hash_short, post_ids):
     list_ref_posts = []
     list_ref_post_message_ids = []
     last_post_id = None
-    list_post_ids_only = []
     post_new_count = 0
     post_ref_count = 0
+    list_post_ids = []
     list_posts = []
     download_statuses = {}
     found_first_post = False
@@ -95,12 +95,12 @@ def new_posts(thread_hash_short, post_ids):
     message_replies = message_replies.all()
 
     try:
-        list_post_ids = post_ids.split("_")
-        for each_post_id in list_post_ids:
-            if "-" in each_post_id:
-                list_post_ids_only.append(each_post_id.split("-")[0])
+        list_post_ids_raw = request.get_json()
+        for each_post in list_post_ids_raw:
+            if "-" in each_post:
+                list_post_ids.append(each_post.split("-")[0])
             else:
-                list_post_ids_only.append(each_post_id)
+                list_post_ids.append(each_post)
     except:
         return json.dumps([])
 
@@ -108,33 +108,33 @@ def new_posts(thread_hash_short, post_ids):
     for each_post in message_replies:
         list_posts.append(each_post.post_id)
 
-    # logger.info(f"Received: {list_post_ids_only}")
+    # logger.info(f"Received: {list_post_ids}")
     # logger.info(f"Available: {list_posts}")
 
-    list_del_posts = list(set(list_post_ids_only) - set(list_posts))
+    list_del_posts = list(set(list_post_ids) - set(list_posts))
 
     # Find posts added
     for each_post in message_replies:
         # Need to ensure we find at least the first post_id before starting to add new posts
         # This allows ?last=x page to work
-        if each_post.post_id.upper() in list_post_ids_only:
+        if each_post.post_id.upper() in list_post_ids:
             found_first_post = True
         if not found_first_post:
             continue
 
         # Find posts that have had attachments successfully downloaded to refresh
         download_statuses[each_post.post_id] = get_post_id_string(post_id=each_post.post_id)
-        for each_post_attach in list_post_ids:
+        for each_post_attach in list_post_ids_raw:
             if (("-" in each_post_attach and
-                    each_post_attach.split("-")[0] == each_post.post_id.upper()) or
-                        each_post.post_id.upper() == each_post_attach):
+                 each_post_attach.split("-")[0] == each_post.post_id.upper()) or
+                    each_post.post_id.upper() == each_post_attach):
                 if each_post_attach != download_statuses[each_post.post_id]:
                     # Post ID string is not the same as on the user's page, indicate to refresh post content
                     list_ref_post_message_ids.append(
                         [each_post.post_id, each_post.message_id])
                 break
 
-        if each_post.post_id.upper() not in list_post_ids_only:
+        if each_post.post_id.upper() not in list_post_ids:
             if each_post.post_id in download_statuses:
                 download_status = download_statuses[each_post.post_id]
             else:
@@ -147,7 +147,7 @@ def new_posts(thread_hash_short, post_ids):
                 download_status
             ])
             list_new_post_ids.append(each_post.post_id.upper())
-            list_post_ids_only.append(each_post.post_id.upper())
+            list_post_ids.append(each_post.post_id.upper())
             post_new_count += 1
 
             # Find posts that the new post references, check if it's in this thread, and update it.
@@ -156,7 +156,7 @@ def new_posts(thread_hash_short, post_ids):
             try:
                 replies = json.loads(each_post.post_ids_replied_to)
                 for each_post_id in replies:
-                    if each_post_id in list_post_ids_only or (post_op_post_id and each_post_id == post_op_post_id):
+                    if each_post_id in list_post_ids or (post_op_post_id and each_post_id == post_op_post_id):
                         reply_post = Messages.query.join(Threads).filter(and_(
                             Threads.thread_hash_short == thread_hash_short,
                             Messages.post_id == each_post_id)).first()
@@ -168,16 +168,12 @@ def new_posts(thread_hash_short, post_ids):
             except:
                 pass
 
-        if each_post.post_id.upper() in list_post_ids_only:
+        if each_post.post_id.upper() in list_post_ids:
             last_post_id = each_post.post_id.upper()
 
         # Only allow returning up to 10 new posts at a time
         if post_new_count >= 10:
             break
-
-    # logger.info(f"ADD: {list_new_post_ids}")
-    # logger.info(f"DEL: {list_del_posts}")
-    # logger.info(f"REF: {list_ref_posts}")
 
     # Send posts in this thread that should be refreshed to update header of post replies
     for post_id, message_id in list_ref_post_message_ids:
@@ -195,6 +191,10 @@ def new_posts(thread_hash_short, post_ids):
 
         list_ref_posts.append([post_id, generate_post_html(message_id), download_status])
         post_ref_count += 1
+
+    # logger.info(f"ADD: {list_new_post_ids}")
+    # logger.info(f"DEL: {list_del_posts}")
+    # logger.info(f"REF: {list_ref_posts}")
 
     ret_json = json.dumps({
         "add": list_new_posts,

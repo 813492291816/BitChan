@@ -43,7 +43,7 @@ function del_post(post_id) {
     }
 
     // Delete the element with the post ID
-    let el = document.getElementById(post_id);
+    let el = document.getElementById(post_id).parentNode;
     if (el) el.parentNode.removeChild(el);
 }
 
@@ -73,14 +73,17 @@ function add_post(post_id_prev, post_id_new, post_html, post_id_attach) {
     if (post_id_new_found.length) return;  // Post ID already present, don't add
 
     console.log("Add post: " + post_id_new);
+    var new_div_outer = document.createElement("div")
+    new_div_outer.className = "reply-wrap";
     var new_div = document.createElement("div");
     new_div.className = "post plaque new-post";
+    new_div.style.cssText = "display: inline-block;";
     new_div.id = post_id_new;
     new_div.innerHTML = post_html;
+    new_div_outer.appendChild(new_div);
     var div = document.getElementById(post_id_prev);
     if (div) {
-        div.parentNode.insertBefore(new_div, div.nextSibling);
-    <!--    new_div.insertAdjacentHTML("beforebegin", "<br/>");-->
+        div.parentNode.parentNode.insertBefore(new_div_outer, div.parentNode.nextSibling);
         console.log("Added new post " + post_id_new + " after post " + post_id_prev);
     }
 
@@ -100,11 +103,14 @@ function add_post(post_id_prev, post_id_new, post_html, post_id_attach) {
 
 function get_new_posts() {
     console.log("Checking for new posts");
-    const url = '/new_posts/{{thread.thread_hash_short}}/' + thread_post_ids.join("_") + "
+    const url = '/new_posts/{{thread.thread_hash_short}}' + "
         {%- if last -%}?last={{last}}{%- endif -%}
         {%- if pow_filter_value -%}?filter_pow={{pow_filter_value}}{%- endif -%}";
     $.ajax({
         url: url,
+        type: 'POST',
+        data: JSON.stringify(thread_post_ids),
+        contentType: 'application/json;charset=UTF-8',
         dataType: 'json',
         success: function(post_id_resp) {
             new_post_count_prefix = "";
@@ -170,8 +176,8 @@ function reset_new_posts() {
 function reset_new_post_counter() {
     reset_new_posts();
     document.getElementById("new-post-update").innerHTML = "Updating...";
-    console.log("Resetting timer to 30 seconds")
-    new_post_amount = 30000;
+    console.log("Resetting timer to 60 seconds")
+    new_post_amount = 30000;  // Will be doubled right after this to 60000
     new_post_counter = 0;
 }
 

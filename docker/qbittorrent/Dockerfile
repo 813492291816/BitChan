@@ -36,9 +36,10 @@ RUN git clone --progress --verbose https://github.com/mikroskeem/libexecinfo.git
 # Commit 94136262a84293da0d8504724e7143df0d0baa12 v5.0.1
 # Commit d96ab6ba849ae722d2abb1d94c760283f7b51135 v5.1.0beta1
 # Commit bc7d5c1f8f50fe1b4b09c3653eeb490d8733edb4 v5.1.0rc1
+# Commit da87be2b12893dfb769df8124afeb064f099dc71 v5.1.0
 RUN git clone --progress --verbose --shallow-submodules --recurse-submodules https://github.com/qbittorrent/qBittorrent.git ./qbittorrent \
     && cd ./qbittorrent \
-    && git checkout bc7d5c1f8f50fe1b4b09c3653eeb490d8733edb4 \
+    && git checkout da87be2b12893dfb769df8124afeb064f099dc71 \
     && cmake -Wno-dev -G Ninja -B build \
     -D GUI=OFF \
     -D CMAKE_BUILD_TYPE="release" \

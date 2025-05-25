@@ -147,16 +147,19 @@ class Threads(CRUDMixin, db.Model):
     subject = db.Column(db.Text, default=None)
     timestamp_sent = db.Column(db.Integer, default=0)
     timestamp_received = db.Column(db.Integer, default=0)
-    stickied_local = db.Column(db.Boolean, default=False)
-    locked_local = db.Column(db.Boolean, default=False)
     locked_local_ts = db.Column(db.Integer, default=0)
-    anchored_local = db.Column(db.Boolean, default=False)
     anchored_local_ts = db.Column(db.Integer, default=0)
     hide = db.Column(db.Boolean, default=False)
     time_ts = db.Column(db.Integer, default=0)
     orig_op_bm_json_obj = db.Column(MEDIUMTEXT, default=None)
     last_op_json_obj_ts = db.Column(db.Integer, default=0)
     rules = db.Column(MEDIUMTEXT, default="{}")
+
+    # Local settings
+    anchored_local = db.Column(db.Boolean, default=False)
+    stickied_local = db.Column(db.Boolean, default=False)
+    locked_local = db.Column(db.Boolean, default=False)
+    post_max_height_local = db.Column(db.Boolean, default=False)
 
     chan = relationship("Chan", back_populates="threads")
     messages = relationship("Messages", back_populates="thread")

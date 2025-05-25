@@ -1,0 +1,78 @@
+{% extends "layout.html" %}
+
+{% block title %}Page Edit - {% endblock %}
+
+{% block head %}
+    <style>
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
+        }
+
+        tr:nth-child(odd) {
+            background-color: {{themes[get_theme()].posthighlight}};
+        }
+
+        .table-heading {
+            text-decoration: underline;
+            text-align: left;
+        }
+
+        .wrap {
+            text-align: center;
+        }
+        .outer {
+            display: inline-block;
+            margin: 0 auto;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+<div class='wrap'>
+
+    <div class="heading-2 head-center themed">Edit Page</div>
+
+    <div class="themed" style="padding-bottom: 1em"><a class="link" href="/manage_pages">Back</a> | <a class="link" href="/page/{{page_edit.slug}}">View Page</a></div>
+
+    <form method="post" enctype="multipart/form-data">
+    <div class='outer' style="padding-bottom: 1em;">
+        <table class="themed">
+            <tr>
+                <td>Option</td>
+                <td>Value</td>
+            </tr>
+            <tr>
+                <td>Title</td>
+                <td><input type="text" name="name" value="{{page_edit.name}}"/></td>
+            </tr>
+            <tr>
+                <td>URL Slug</td>
+                <td><input type="text" name="slug" value="{{page_edit.slug}}"/></td>
+            </tr>
+        </table>
+    </div>
+    <div style="margin: 0 auto; max-width: 800px; padding-bottom: 3em;">
+        <div class="heading-3 head-center themed">HTML</div>
+        <div style="padding-top: 1em;">
+            <textarea rows="25" maxlength="16000000" class="form" style="width: 100%; box-sizing: border-box;" name="html">{{page_edit.html}}</textarea>
+        </div>
+        <div style="padding-top: 1em;">
+            <input type="submit" name="edit_page" value="Save"/>
+        </div>
+    </div>
+    </form>
+</div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

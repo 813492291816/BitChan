@@ -42,13 +42,13 @@
             <td colspan="2">Board</td>
             <td>Address</td>
         </tr>
-    {% for address in chans_list_info if table_boards.query.filter(table_boards.address == address).count() and
+    {% for address in chans_list_info if table_chan.query.filter(table_chan.address == address).count() and
                                          (global_admin or
                                             (not global_admin and
                                              not chans_list_info[address]["db"].unlisted and
                                              not chans_list_info[address]["db"].restricted)
                                          ) %}
-        {% set board = {"current_chan": table_boards.query.filter(table_boards.address == address).first()} %}
+        {% set board = {"current_chan": table_chan.query.filter(table_chan.address == address).first()} %}
         {% set passphrase_base64, passphrase_base64_with_pgp = get_chan_passphrase(address) %}
         {% set rules = json.loads(board["current_chan"].rules) %}
         {% set primary_addresses = chans_list_info[address]["primary_addresses"] %}

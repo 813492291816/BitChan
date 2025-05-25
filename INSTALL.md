@@ -2,6 +2,24 @@
 
 - [Install BitChan with Docker](#install-bitchan-with-docker)
 - [Install BitChan Without Docker](#install-bitchan-without-docker)
+  - [Install General Dependencies](#install-general-dependencies)
+  - [Create directories](#create-directories)
+  - [Clone BitChan](#clone-bitchan)
+  - [Install & Set Up MySQL](#install--set-up-mysql)
+  - [Compile and install tor](#compile-and-install-tor)
+  - [Compile and install torsocks](#compile-and-install-torsocks)
+  - [Install bitchan and bitmessage dependencies](#install-bitchan-and-bitmessage-dependencies)
+  - [Set Up Python2 and Python3 virtual environments](#set-up-python2-and-python3-virtual-environments)
+  - [Set Up PyBitmessage](#set-up-pybitmessage)
+  - [Set Up nginx](#set-up-nginx)
+  - [Compile and install i2pd](#compile-and-install-i2pd)
+  - [Compile and install qBittorrent](#compile-and-install-qbittorrent)
+  - [Install MiNode](#install-minode)
+  - [Enable services](#enable-services)
+  - [Start BitChan Frontend](#start-bitchan-frontend)
+- [Notes](#notes)
+  - [Initial connection to bitmessage network](#initial-connection-to-bitmessage-network)
+  - [Upgrading No-Docker Install](#upgrading-no-docker-install)
 
 # Install BitChan with Docker
 
@@ -369,10 +387,21 @@ sudo su qb -c "ping yahoo.com"
 # qbittorrent can now be used with i2p without the possibility of connections leaking to the clearnet
 ```
 
+## Install MiNode
+
+```bash
+sudo cp BitChan/docker/minode/minode /usr/local/bitchan/  # If it still exists, this can instead be cloned from https://git.bitmessage.org/Bitmessage/MiNode/commit/a2bf898bca63e380435ad30e5e76fa4409e298cb
+sudo cp BitChan/install_files/minode/minode_run.sh /usr/local/bitchan/minode
+sudo chmod +x /usr/local/bitchan/minode/minode_run.sh
+
+sudo systemctl enable /usr/local/bitchan/BitChan/install_files/bitchan_minode.service
+sudo service bitchan_minode start
+```
+
 ## Enable services
 
 ```bash
-sudo systemctl enable /usr/local/bitchan/BitChan/install_files/bitchan_bitmessage.service
+sudo systemctl enable --now /usr/local/bitchan/BitChan/install_files/bitchan_bitmessage.service
 sudo systemctl enable /usr/local/bitchan/BitChan/install_files/bitchan_frontend.service
 sudo systemctl enable /usr/local/bitchan/BitChan/install_files/bitchan_backend.service
 ```
@@ -411,4 +440,4 @@ sudo service bitchan_backend restart
 sudo service bitchan_frontend restart
 ```
 
-Upgrading tor and i2pd will need to be done manually, by repeating the compilation steps for each, with the new version.
+Upgrading tor, i2pd, minode, qbittorrent, and bitmessage will need to be done manually, by repeating the installation steps for each, with the new version. There may need to be modifications to the steps to ensure no issues are introduced.

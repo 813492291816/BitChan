@@ -41,14 +41,14 @@ $(document).ready(function() {
         <style>
             {% include '/elements/css_theme.css' %}
         </style>
-        {%- block head %}{% endblock -%}
+
         <style>
             {% include '/elements/css_extra.css' %}
         </style>
 
         {% if user_options['options_max_height'] == '1' %}
         <style>
-            .post {
+            blockquote.post {
                 max-height: 25em;
                 overflow-y: auto;
             }
@@ -57,7 +57,7 @@ $(document).ready(function() {
 
         {% if user_options['options_post_horizontal'] == '1' %}
         <style>
-            div.plaque {
+            div.reply-wrap {
                 display: inline-block;
             }
         </style>
@@ -96,6 +96,8 @@ $(document).ready(function() {
         {% if settings.html_head %}
             {{settings.html_head|safe}}
         {% endif %}
+
+        {%- block head %}{% endblock -%}
     </head>
     <body id="body" class="board">
         <nav class="stickynav">
@@ -173,9 +175,21 @@ $(document).ready(function() {
                                             </td>
                                         </tr>
                                         <tr>
+                                            <td>Font Size (pt)</td>
+                                            <td>
+                                                <input type="text" name="options_font_size" value="{% if user_options['options_font_size'] %}{{user_options['options_font_size']}}{% endif %}"/>
+                                            </td>
+                                        </tr>
+                                        <tr>
                                             <td>Post Max Height</td>
                                             <td>
                                                 <input type="checkbox" name="options_max_height" value="y"{% if user_options['options_max_height'] == '1' %} checked{% endif %}/>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>Disable Forced Post Max Height</td>
+                                            <td>
+                                                <input type="checkbox" name="options_disable_forced_max_height" value="y"{% if user_options['options_disable_forced_max_height'] == '1' %} checked{% endif %}/>
                                             </td>
                                         </tr>
                                         <tr>

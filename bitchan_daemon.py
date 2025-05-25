@@ -129,6 +129,9 @@ class BitChan:
         self.bm_pending_download_timer = None
         self.bm_number_messages_processed_last = 0
 
+        # qBittorrent
+        self.qbittorrent_restarted_ts = 0
+
         # Timers
         now = time.time()
         self.timer_check_bm_alive = now
@@ -152,18 +155,19 @@ class BitChan:
         self.timer_new_tor_identity = now + random.randint(10800, 28800)
         self.timer_scheduled_posts = now + random.randint(60, 180)  # 1 - 3 minutes
 
-        self.timer_delete_and_vacuum = now + (60 * 60)     # 1 hour
-        self.timer_check_locked_threads = now + (60 * 20)  # 20 minutes
-        self.timer_delete_msgs = now + (60 * 10)           # 10 minutes
-        self.timer_delete_captchas = now + (60 * 10)       # 10 minutes
-        self.timer_get_msg_expires_time = now + (60 * 10)  # 10 minutes
-        self.timer_remove_deleted_msgs = now + (60 * 10)   # 10 minutes
-        self.timer_send_lists = now + (60 * 5)             # 5 minutes
-        self.timer_send_commands = now + (60 * 5)          # 5 minutes
-        self.timer_clear_session_info = now + (60 * 5)     # 5 minutes
-        self.timer_wipe = now + 120                        # 2 minutes
-        self.timer_sync = now + (60 * 2)                   # 2 minutes
-        self.timer_game = now + (60 * 1)                   # 1 minutes
+        self.timer_qbittorrent_restart = now + (60 * 60 * 6)  # 6 hours
+        self.timer_delete_and_vacuum = now + (60 * 60)        # 1 hour
+        self.timer_check_locked_threads = now + (60 * 20)     # 20 minutes
+        self.timer_delete_msgs = now + (60 * 10)              # 10 minutes
+        self.timer_delete_captchas = now + (60 * 10)          # 10 minutes
+        self.timer_get_msg_expires_time = now + (60 * 10)     # 10 minutes
+        self.timer_remove_deleted_msgs = now + (60 * 10)      # 10 minutes
+        self.timer_send_lists = now + (60 * 5)                # 5 minutes
+        self.timer_send_commands = now + (60 * 5)             # 5 minutes
+        self.timer_clear_session_info = now + (60 * 5)        # 5 minutes
+        self.timer_wipe = now + 120                           # 2 minutes
+        self.timer_sync = now + (60 * 2)                      # 2 minutes
+        self.timer_game = now + (60 * 1)                      # 1 minutes
 
         # Start timer at next top of the hour
         t = datetime.datetime.now()
@@ -689,6 +693,18 @@ class BitChan:
                 self.logger.exception("Could not complete check_scheduled_posts()")
             self.timer_scheduled_posts = time.time() + random.randint(30, 90)
 
+        #
+        # Restart qBittorrent
+        #
+        if self.timer_qbittorrent_restart < now:
+            try:
+                self.logger.debug("Run restart_qbittorrent()")
+                self.restart_qbittorrent()
+                self.logger.debug("End restart_qbittorrent()")
+            except:
+                self.logger.exception("Could not complete restart_qbittorrent()")
+            self.timer_qbittorrent_restart = time.time() + (60 * 60 * 6)
+
         self.first_run = False
 
     def hourly_run(self, timestamp_hour):
@@ -804,6 +820,15 @@ class BitChan:
         self.reset_view_counter()
 
 
+    def restart_qbittorrent(self):
+        self.logger.info("Restarting qbittorrent")
+        conn_info = dict(host=config.QBITTORRENT_HOST, port=8080)
+        qbt_client = qbittorrentapi.Client(**conn_info)
+        qbt_client.auth_log_in()
+        qbt_client.application.shutdown()
+        self.qbittorrent_restarted_ts = time.time()
+
+
     def check_scheduled_posts(self):
         now = time.time()
 
@@ -855,6 +880,13 @@ class BitChan:
     def check_torrents(self):
         """Check torrents that need to be paused or processed after download completes"""
         skip_size_check = False
+
+        if self.qbittorrent_restarted_ts:
+            if self.qbittorrent_restarted_ts < time.time() and time.time() - self.qbittorrent_restarted_ts < 60:
+                self.logger.debug("Waiting for qBittorrent to restart before checking torrents")
+                return
+            else:
+                self.qbittorrent_restarted_ts = 0
 
         with session_scope(config.DB_PATH) as new_session:
             torrents = new_session.query(UploadTorrents).filter(
@@ -1164,69 +1196,170 @@ class BitChan:
                     elif line.startswith("onionbindip"):
                         onionbindip = True
 
+            crudini = "/home/bitchan/env3/bin/crudini"
+
             if not socksproxytype:
-                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
             if not sockshostname:
-                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname none')
+                os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname none')
             if not sockslisten:
-                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten False')
+                os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten False')
             if not onionhostname:
-                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
+                os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
             if not onionport:
-                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionport 8444')
+                os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionport 8444')
             if not onionbindip:
-                os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionbindip {config.BM_HOST}')
+                os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionbindip {config.BM_HOST}')
 
             with session_scope(config.DB_PATH) as new_session:
                 settings = new_session.query(GlobalSettings).first()
                 self.logger.info(f"Changing connection settings based on setting: {settings.bm_connections_in_out}")
 
-                if settings.bm_connections_in_out in [
-                        "minode_ip_and_i2p", "minode_ip2_only", "minode_ip_only",
-                        "minode_ip_and_i2p_tor_in", "minode_ip2_only_tor_in", "minode_ip_only_tor_in"]:
-                    # edit MiNode startup arguments
+                if settings.bm_connections_in_out == "minode_i2p_only":
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings trustedpeer 172.28.1.10:8446')
                     with open(config.MINODE_ARGS_PATH, "w") as run_args:
-                        if settings.bm_connections_in_out == "minode_ip_and_i2p":
-                            run_args.write("--i2p --i2p-transient --i2p-tunnel-length 3 --i2p-sam-host 172.28.1.6 --host 0.0.0.0 --port 8446")
-                        elif settings.bm_connections_in_out == "minode_ip2_only":
-                            run_args.write("--i2p --no-ip --i2p-transient --i2p-tunnel-length 3 --i2p-sam-host 172.28.1.6 --host 0.0.0.0 --port 8446")
-                        elif settings.bm_connections_in_out == "minode_ip_only":
-                            run_args.write("--host 0.0.0.0 --port 8446")
+                        run_args.write("--host 0.0.0.0 --port 8446 --no-ip --i2p --i2p-transient --i2p-tunnel-length 3 --i2p-sam-host 172.28.1.6")
 
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings trustedpeer 172.28.1.10:8446')
-                else:
-                    os.system(f'/home/bitchan/env3/bin/crudini --del {config.BM_KEYS_DAT} bitmessagesettings trustedpeer')
+                elif settings.bm_connections_in_out == "minode_ip_only":
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings trustedpeer 172.28.1.10:8446')
+                    with open(config.MINODE_ARGS_PATH, "w") as run_args:
+                        run_args.write("--host 0.0.0.0 --port 8446")
 
-                # Allow tor incoming connections
-                if settings.bm_connections_in_out in [
-                        "minode_ip_and_i2p_tor_in", "minode_ip2_only_tor_in", "minode_ip_only_tor_in",
-                        "in_tor+clear_out_clear", "in_tor_out_clear", "in_tor+clear_out_tor", "in_tor_out_tor"]:
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname bitchan_tor')
-                else:
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname none')
+                elif settings.bm_connections_in_out == "minode_ip_and_i2p":
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings trustedpeer 172.28.1.10:8446')
+                    with open(config.MINODE_ARGS_PATH, "w") as run_args:
+                        run_args.write("--host 0.0.0.0 --port 8446 --i2p --i2p-transient --i2p-tunnel-length 3 --i2p-sam-host 172.28.1.6")
 
-                if settings.bm_connections_in_out in ["in_clear_out_clear", "in_tor+clear_out_clear", "in_tor_out_clear"]:
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                elif settings.bm_connections_in_out == "minode_i2p_only_tor_in":
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname bitchan_tor')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings trustedpeer 172.28.1.10:8446')
+                    with open(config.MINODE_ARGS_PATH, "w") as run_args:
+                        run_args.write("--host 0.0.0.0 --port 8446 --no-ip --i2p --i2p-transient --i2p-tunnel-length 3 --i2p-sam-host 172.28.1.6")
 
-                if settings.bm_connections_in_out in ["in_clear_out_tor", "in_tor+clear_out_tor", "in_tor_out_tor"]:
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype SOCKS5')
+                elif settings.bm_connections_in_out == "minode_ip_only_tor_in":
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname bitchan_tor')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings trustedpeer 172.28.1.10:8446')
+                    with open(config.MINODE_ARGS_PATH, "w") as run_args:
+                        run_args.write("--host 0.0.0.0 --port 8446")
 
-                # No incoming tor
-                if settings.bm_connections_in_out in ["minode_ip_and_i2p", "minode_ip2_only", "minode_ip_only", "in_clear_out_clear", "in_clear_out_tor"]:
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
+                elif settings.bm_connections_in_out == "minode_ip_and_i2p_tor_in":
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname bitchan_tor')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings trustedpeer 172.28.1.10:8446')
+                    with open(config.MINODE_ARGS_PATH, "w") as run_args:
+                        run_args.write("--host 0.0.0.0 --port 8446 --i2p --i2p-transient --i2p-tunnel-length 3 --i2p-sam-host 172.28.1.6")
 
-                if settings.bm_connections_in_out in ["in_clear_out_tor", "in_tor+clear_out_clear", "in_tor+clear_out_tor"]:
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten True')
-
-                if settings.bm_connections_in_out in ["in_tor+clear_out_clear", "in_tor_out_clear", "in_tor+clear_out_tor", "in_tor_out_tor"]:
+                elif settings.bm_connections_in_out == "in_tor+clear_out_clear":
                     self.get_bm_onion_address()
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname {self.bm_onion_address}')
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionport 8444')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname bitchan_tor')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten True')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname {self.bm_onion_address}')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionport 8444')
+                    os.system(f'{crudini} --del {config.BM_KEYS_DAT} bitmessagesettings trustedpeer')
 
-                if settings.bm_connections_in_out in ["in_tor_out_clear", "in_tor_out_tor"]:
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings onionbindip {config.BM_HOST}')
-                    os.system(f'/home/bitchan/env3/bin/crudini --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten False')
+                elif settings.bm_connections_in_out == "in_tor_out_clear":
+                    self.get_bm_onion_address()
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname bitchan_tor')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionbindip {config.BM_HOST}')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten False')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname {self.bm_onion_address}')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionport 8444')
+                    os.system(f'{crudini} --del {config.BM_KEYS_DAT} bitmessagesettings trustedpeer')
+
+                elif settings.bm_connections_in_out == "in_tor+clear_out_tor":
+                    self.get_bm_onion_address()
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname bitchan_tor')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype SOCKS5')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten True')
+                    os.system(f'{crudini} --del {config.BM_KEYS_DAT} bitmessagesettings trustedpeer')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname {self.bm_onion_address}')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionport 8444')
+
+                elif settings.bm_connections_in_out == "in_tor_out_tor":
+                    self.get_bm_onion_address()
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname bitchan_tor')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype SOCKS5')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionbindip {config.BM_HOST}')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten False')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname {self.bm_onion_address}')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionport 8444')
+                    os.system(f'{crudini} --del {config.BM_KEYS_DAT} bitmessagesettings trustedpeer')
+
+                elif settings.bm_connections_in_out == "in_clear_out_clear":
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
+                    os.system(f'{crudini} --del {config.BM_KEYS_DAT} bitmessagesettings trustedpeer')
+
+                elif settings.bm_connections_in_out == "in_clear_out_tor":
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname none')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype SOCKS5')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten True')
+                    os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
+                    os.system(f'{crudini} --del {config.BM_KEYS_DAT} bitmessagesettings trustedpeer')
+
+                else:
+                    self.logger.error(f"Unknown Bitmessage Connection option '{settings.bm_connections_in_out}'")
+
+                # if settings.bm_connections_in_out in [
+                #         "minode_ip_and_i2p", "minode_i2p_only", "minode_ip_only",
+                #         "minode_ip_and_i2p_tor_in", "minode_i2p_only_tor_in", "minode_ip_only_tor_in"]:
+                #     # Edit MiNode startup arguments
+                #     with open(config.MINODE_ARGS_PATH, "w") as run_args:
+                #         if settings.bm_connections_in_out in ["minode_ip_and_i2p", "minode_ip_and_i2p_tor_in"]:
+                #             run_args.write("--i2p --i2p-transient --i2p-tunnel-length 3 --i2p-sam-host 172.28.1.6 --host 0.0.0.0 --port 8446")
+                #         elif settings.bm_connections_in_out in ["minode_i2p_only", "minode_i2p_only_tor_in"]:
+                #             run_args.write("--i2p --no-ip --i2p-transient --i2p-tunnel-length 3 --i2p-sam-host 172.28.1.6 --host 0.0.0.0 --port 8446")
+                #         elif settings.bm_connections_in_out in ["minode_ip_only", "minode_ip_only_tor_in"]:
+                #             run_args.write("--host 0.0.0.0 --port 8446")
+                #
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings trustedpeer 172.28.1.10:8446')
+                # else:
+                #     os.system(f'{crudini} --del {config.BM_KEYS_DAT} bitmessagesettings trustedpeer')
+                #
+                # # Allow tor incoming connections
+                # if settings.bm_connections_in_out in [
+                #         "minode_ip_and_i2p_tor_in", "minode_i2p_only_tor_in", "minode_ip_only_tor_in",
+                #         "in_tor+clear_out_clear", "in_tor_out_clear", "in_tor+clear_out_tor", "in_tor_out_tor"]:
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname bitchan_tor')
+                # else:
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockshostname none')
+                #
+                # if settings.bm_connections_in_out in ["in_clear_out_clear", "in_tor+clear_out_clear", "in_tor_out_clear"]:
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype none')
+                #
+                # if settings.bm_connections_in_out in ["in_clear_out_tor", "in_tor+clear_out_tor", "in_tor_out_tor"]:
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings socksproxytype SOCKS5')
+                #
+                # # No incoming tor
+                # if settings.bm_connections_in_out in ["minode_ip_and_i2p", "minode_i2p_only", "minode_ip_only", "in_clear_out_clear", "in_clear_out_tor"]:
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname none')
+                #
+                # if settings.bm_connections_in_out in ["in_clear_out_tor", "in_tor+clear_out_clear", "in_tor+clear_out_tor"]:
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten True')
+                #
+                # if settings.bm_connections_in_out in ["in_tor+clear_out_clear", "in_tor_out_clear", "in_tor+clear_out_tor", "in_tor_out_tor"]:
+                #     self.get_bm_onion_address()
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionhostname {self.bm_onion_address}')
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionport 8444')
+                #
+                # if settings.bm_connections_in_out in ["in_tor_out_clear", "in_tor_out_tor"]:
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings onionbindip {config.BM_HOST}')
+                #     os.system(f'{crudini} --set {config.BM_KEYS_DAT} bitmessagesettings sockslisten False')
 
             # Set owner/group after modification
             if uid and pwd:
@@ -1343,14 +1476,14 @@ class BitChan:
                                 settings = new_session.query(GlobalSettings).first()
                                 if (check_address != self.bm_onion_address and
                                         settings.bm_connections_in_out not in ["minode_ip_and_i2p",
-                                                                               "minode_ip2_only",
+                                                                               "minode_i2p_only",
                                                                                "minode_ip_only",
                                                                                "in_clear_out_clear",
                                                                                "in_clear_out_tor"]):
                                     set_onionhostname = self.bm_onion_address
                                 elif (check_address != "none" and  # settings require onionhostname = none
                                         settings.bm_connections_in_out in ["minode_ip_and_i2p",
-                                                                           "minode_ip2_only",
+                                                                           "minode_i2p_only",
                                                                            "minode_ip_only",
                                                                            "in_clear_out_clear",
                                                                            "in_clear_out_tor"]):

@@ -1,0 +1,77 @@
+{% extends "layout.html" %}
+
+{% block title %}Thread Attributes - {% endblock %}
+
+{% block head %}
+<style>
+    table {
+        border: 1px solid black;
+    }
+    th, td {
+        border: 1px solid black;
+        padding: 0.5em;
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div class="themed" style="width: 100%; text-align: center; padding-bottom: 2em">
+                <form method="post">
+                <h1 class="title themed bold">Set Attributes for Thread "{{thread.subject|safe}}"</h1>
+
+                <table class="table themed">
+                    <tr>
+                        <td colspan="2" style="padding: 0.5em; text-align: center; font-size: 1.5em">Locally Applied Attributes</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: bold; text-align: left"><label for="thread_lock">Lock</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="thread_lock" name="thread_lock" value="y"{% if thread.locked_local %} checked{% endif %}/></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: left">Locked threads cannot have additional replies made to it. Any received after the lock will be automatically deleted.</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: bold; text-align: left"><label for="thread_anchor">Anchor</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="thread_anchor" name="thread_anchor" value="y"{% if thread.anchored_local %} checked{% endif %}/></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: left">Anchored threads will not move to the top of the board when a reply is made.</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: bold; text-align: left"><label for="thread_sticky">Sticky</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="thread_sticky" name="thread_sticky" value="y"{% if thread.stickied_local %} checked{% endif %}/></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: left">Stickied threads will remain at the top of the board, even if threads with newer posts exist.</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: bold; text-align: left"><label for="thread_max_height">Force Post Max Height</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="thread_max_height" name="thread_max_height" value="y"{% if thread.post_max_height_local %} checked{% endif %}/></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: left">All posts in the thread will have a forced max height.</td>
+                    </tr>
+                </table>
+
+                <div class="themed" style="padding-top: 1em; padding-bottom: 2em">
+                    <input type="submit" name="save_attributes" value="Save Thread Attributes"/>
+                </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

@@ -79,6 +79,15 @@
                 <td colspan="2">Sets the colors and CSS style for all pages.</td>
             </tr>
             <tr>
+                <td>{{form_settings.font_size.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="font_size" value="{{settings.font_size}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The base font size (pt).</td>
+            </tr>
+            <tr>
                 <td>{{form_settings.chan_update_display_number.label(class_='heading-bold')}}</td>
                 <td>
                     <input type="number" name="chan_update_display_number" value="{{settings.chan_update_display_number}}"/>
@@ -105,6 +114,24 @@
             <tr>
                 <td colspan="2">Max size (MB) of uncompressed post attachments. If during extraction/decryption, the size surpasses this value, extraction/decryption will be cancelled. This setting also restricts the size of attachments when creating posts.</td>
             </tr>
+
+            <tr>
+                <td>{{form_settings.form_default_upload_method.label(class_='heading-bold')}}</td>
+                <td>
+                     <select name="form_default_upload_method">
+                         <option value=""></option>
+                         <option value="bitmessage"{% if settings.form_default_upload_method == "bitmessage" %} selected{% endif %}>Bitmessage</option>
+                         <option value="i2p_torrent"{% if settings.form_default_upload_method == "i2p_torrent" %} selected{% endif %}>I2P Torrent</option>
+            {% for each_server in upload_sites if each_server.enabled %}
+                          <option value="{{each_server.id}}"{% if settings.form_default_upload_method == each_server.id|string %} selected{% endif %}>Upload Site: {{each_server.form_name}}</option>
+            {% endfor %}
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Set the default post upload method. This simply sets which dropdown option is selected by default.</td>
+            </tr>
+
             <tr>
                 <td>{{form_settings.always_allow_my_i2p_bittorrent_attachments.label(class_='heading-bold')}}</td>
                 <td>
@@ -172,7 +199,7 @@
                 <td>{{form_settings.post_timestamp.label(class_='heading-bold')}}</td>
                 <td>
                      <select name="post_timestamp">
-                        <option value="sent"{% if settings.post_timestamp == "sent" %} selected{% endif %}>Sent</option>
+                         <option value="sent"{% if settings.post_timestamp == "sent" %} selected{% endif %}>Sent</option>
                          <option value="received"{% if settings.post_timestamp == "received" %} selected{% endif %}>Received</option>
                     </select>
                 </td>
@@ -330,10 +357,11 @@
                 <td>{{form_settings.bm_connections_in_out.label(class_='heading-bold')}}</td>
                 <td>
                      <select name="bm_connections_in_out">
-                         <option value="minode_ip2_only"{% if settings.bm_connections_in_out == "minode_ip2_only" %} selected{% endif %}>MiNode: I2P Only</option>
+                         <option value=""></option>
+                         <option value="minode_i2p_only"{% if settings.bm_connections_in_out == "minode_i2p_only" %} selected{% endif %}>MiNode: I2P Only</option>
                          <option value="minode_ip_only"{% if settings.bm_connections_in_out == "minode_ip_only" %} selected{% endif %}>MiNode: IP Only</option>
                          <option value="minode_ip_and_i2p"{% if settings.bm_connections_in_out == "minode_ip_and_i2p" %} selected{% endif %}>MiNode: IP and I2P</option>
-                         <option value="minode_ip2_only_tor_in"{% if settings.bm_connections_in_out == "minode_ip2_only_tor_in" %} selected{% endif %}>MiNode: I2P Only, In: Tor</option>
+                         <option value="minode_i2p_only_tor_in"{% if settings.bm_connections_in_out == "minode_i2p_only_tor_in" %} selected{% endif %}>MiNode: I2P Only, In: Tor</option>
                          <option value="minode_ip_only_tor_in"{% if settings.bm_connections_in_out == "minode_ip_only_tor_in" %} selected{% endif %}>MiNode: IP Only, In: Tor</option>
                          <option value="minode_ip_and_i2p_tor_in"{% if settings.bm_connections_in_out == "minode_ip_and_i2p_tor_in" %} selected{% endif %}>MiNode: IP and I2P, In: Tor</option>
                          <option value="in_clear_out_clear"{% if settings.bm_connections_in_out == "in_clear_out_clear" %} selected{% endif %}>In: Clearnet, Out: Clearnet</option>

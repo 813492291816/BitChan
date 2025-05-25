@@ -14,4 +14,4 @@ else
     printf " Yes. Not making.\n"
 fi
 
-"$LOC"/env/bin/pip3 install -r "$LOC"/requirements.txt
+"$LOC"/env/bin/pip3 install -r "$LOC"/install_files/bitchan/requirements.txt

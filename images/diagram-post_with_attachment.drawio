@@ -1,0 +1,120 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/27.0.5 Chrome/134.0.6998.205 Electron/35.3.0 Safari/537.36" version="27.0.5">
+  <diagram name="Page-1" id="PkUseeem77zjwrjvqu_d">
+    <mxGraphModel dx="1638" dy="854" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-1" target="UbsgjBIZcTQI4CFba_uk-2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ufXEF4a1U3KHF5ziQuHC-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-1" target="UbsgjBIZcTQI4CFba_uk-9" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-1" value="BitChan A:&lt;br&gt;Text post with attachments sent" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#009900;" parent="1" vertex="1">
+          <mxGeometry x="100" y="190" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-2" target="UbsgjBIZcTQI4CFba_uk-3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-2" value="Attachment files compressed into ZIP archive" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#00CCCC;" parent="1" vertex="1">
+          <mxGeometry x="110" y="290" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-3" target="UbsgjBIZcTQI4CFba_uk-4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-3" value="Archive PGP-encrypted" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#00CCCC;" parent="1" vertex="1">
+          <mxGeometry x="110" y="390" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-4" target="UbsgjBIZcTQI4CFba_uk-9" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-4" target="UbsgjBIZcTQI4CFba_uk-8" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-4" value="Random parts of random sizes removed from encrypted archive" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#00CCCC;" parent="1" vertex="1">
+          <mxGeometry x="110" y="490" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-8" value="Torrent created with encrypted/modified file and added to qBittorrent to seed over I2P" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#CC6600;" parent="1" vertex="1">
+          <mxGeometry x="110" y="610" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-9" target="UbsgjBIZcTQI4CFba_uk-15" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-9" value="Text and file parts PGP-encrypted and added to message" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#00CCCC;" parent="1" vertex="1">
+          <mxGeometry x="275" y="490" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-12" value="I2P" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#CC6600;" parent="1" vertex="1">
+          <mxGeometry x="110" y="830" width="610" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-15" value="Bitmessage encrypts message and sends over the Bitmessage network" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#CC0000;" parent="1" vertex="1">
+          <mxGeometry x="275" y="610" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-25" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;exitX=0.789;exitY=0.017;exitDx=0;exitDy=0;exitPerimeter=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-19" target="UbsgjBIZcTQI4CFba_uk-23" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-19" value="I2P, tor, and/or Clearnet" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#CC0000;" parent="1" vertex="1">
+          <mxGeometry x="275" y="730" width="285" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.211;entryY=-0.033;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-15" target="UbsgjBIZcTQI4CFba_uk-19" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-28" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-23" target="UbsgjBIZcTQI4CFba_uk-27" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-33" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-23" target="UbsgjBIZcTQI4CFba_uk-26" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-23" value="Bitmessage receives and decrypts message from the Bitmessage network" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#CC0000;" parent="1" vertex="1">
+          <mxGeometry x="440" y="610" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ufXEF4a1U3KHF5ziQuHC-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-26" target="ufXEF4a1U3KHF5ziQuHC-4" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="500" y="210" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="500" y="220" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ufXEF4a1U3KHF5ziQuHC-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-26" target="UbsgjBIZcTQI4CFba_uk-31" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-26" value="Message PGP-decrypted, yielding plain text and file parts" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#00CCCC;" parent="1" vertex="1">
+          <mxGeometry x="440" y="490" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-32" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-27" target="UbsgjBIZcTQI4CFba_uk-31" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-27" value="Torrent extracted from message and added to qBittorrent to download" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#CC6600;" parent="1" vertex="1">
+          <mxGeometry x="600" y="610" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-37" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-31" target="UbsgjBIZcTQI4CFba_uk-35" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-31" value="Downloaded file combined with file parts to yield encrypted archive" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#00CCCC;" parent="1" vertex="1">
+          <mxGeometry x="600" y="490" width="120" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="ufXEF4a1U3KHF5ziQuHC-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-35" target="ufXEF4a1U3KHF5ziQuHC-5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="UbsgjBIZcTQI4CFba_uk-35" value="Encrypted archive PGP-decrypted" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#00CCCC;" parent="1" vertex="1">
+          <mxGeometry x="600" y="390" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ufXEF4a1U3KHF5ziQuHC-4" value="BitChan B:&lt;br&gt;Text post with attachments received" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#009900;" parent="1" vertex="1">
+          <mxGeometry x="590" y="190" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ufXEF4a1U3KHF5ziQuHC-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="ufXEF4a1U3KHF5ziQuHC-5" target="ufXEF4a1U3KHF5ziQuHC-4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ufXEF4a1U3KHF5ziQuHC-5" value="Attachment files extracted from ZIP archive" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#00CCCC;" parent="1" vertex="1">
+          <mxGeometry x="600" y="290" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="OqsREBI6QU1KbIeQzdC7-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.902;entryY=-0.02;entryDx=0;entryDy=0;entryPerimeter=0;endArrow=none;endFill=0;startArrow=classic;startFill=1;" parent="1" source="UbsgjBIZcTQI4CFba_uk-27" target="UbsgjBIZcTQI4CFba_uk-12" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="OqsREBI6QU1KbIeQzdC7-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.097;entryY=-0.02;entryDx=0;entryDy=0;entryPerimeter=0;" parent="1" source="UbsgjBIZcTQI4CFba_uk-8" target="UbsgjBIZcTQI4CFba_uk-12" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

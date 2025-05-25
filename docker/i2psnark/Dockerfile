@@ -29,9 +29,9 @@ ENV I2CP_PORT=${I2CP_PORT}
 RUN addgroup -g ${HOST_GID} i2psnark \
     && adduser -h /i2psnark -G i2psnark -u ${HOST_UID} -D i2psnark
 
-RUN wget "https://i2pplus.github.io/installers/I2P+_2.6.0+_i2psnark-standalone.zip" \
-    && unzip I2P+_2.6.0+_i2psnark-standalone.zip \
-    && rm -rf II2P+_2.6.0+_i2psnark-standalone.zip \
+RUN wget "https://i2pplus.github.io/installers/i2psnark-standalone.zip" \
+    && unzip i2psnark-standalone.zip \
+    && rm -rf i2psnark-standalone.zip \
     && mkdir -p /i2psnark/i2psnark.config.d \
     && sed -i "s|127.0.0.1|$HOST_IP|g" /i2psnark/jetty-i2psnark.xml \
     && echo "i2psnark.dir=/i2psnark/downloads" > /i2psnark/i2psnark.config.default \

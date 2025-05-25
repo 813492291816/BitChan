@@ -2,7 +2,7 @@
 BitChan
 =======
 
-Version: 1.4.0
+Version: 1.4.1
 
 BitChan is a decentralized anonymous imageboard inspired by `BitBoard <https://github.com/michrob/bitboard>`__ and built on top of `Bitmessage <https://bitmessage.org>`__ with `Tor <https://www.torproject.org>`__, `I2P <https://i2pd.website>`__, and `GnuPG <https://gnupg.org>`__.
 
@@ -34,17 +34,21 @@ Quick Links: `Manual <MANUAL.md>`__, `Changelog <CHANGELOG.md>`__, `Screenshots 
    :depth: 4
 ..
 
-Screenshots
-===========
+Screenshots & Diagrams
+======================
 
-See `Screenshots <SCREENSHOTS.md>`__
+See `Screenshots <SCREENSHOTS.md>`__ for what BitChan looks like running (these are very old at this point, but give an idea of what to expect).
+
+Diagram of how BitChan leverages Bitmessage, tor, I2P, and qBittorrent to communicate securely and privately:
+
+.. image:: images/diagram-post_with_attachment.png
 
 Features
 ========
 
 - Security
   - All essential functionality without JavaScript
-  - All internet traffic (Bitmessage/uploads/downloads/attachments) routed through tor and i2p
+  - All internet traffic (Bitmessage/uploads/downloads/attachments) routed through tor and/or i2p
   - All messages PGP-encrypted with user-selectable ciphers, key lengths, and passphrases
 
 - Board Features
@@ -59,10 +63,11 @@ Features
   - Support for post text replacements: dice (#3D20), cards (#C5), flip (#flip), 8ball (#8ball), tarot card (#t5), Crowley tarot (#ct5), random book quote (#stich)
   - Support for games: checkers, chess
   - Rules to allow board/list Owners to enable certain board/list-specific features
+  - Thread-specific rules, such as require additional proof of work (POW) to post, for mitigating spam
   - Address Book to set labels for addresses that will appear on posts (for those that choose to not post anonymously)
   - Post popup previews for post links (no need to open the link)
   - Live updating of new posts in a thread (no need to refresh the page)
-  - Sticky/pin/anchor/sage attributes for threads
+  - Sticky/pin/anchor/sage/+more attributes for threads
 
 - Board and List Ownership and Administration
   - Boards and Lists can have Owners, Admins, White- and Black-listed Users
@@ -80,15 +85,15 @@ Features
 - Misc
   - Public access where anyone can post on a board or add to a list
   - Private access where only select addresses can post or modify a list
+  - Schedule posts to automatically be made in the future, to reduce the likelihood of divulging your time zone
+  - Create HTML pages with Jinja2 support, for instance to create a Rules or auto-updating Popular Threads page
   - Mod log to track moderation and other changes
   - Mailbox system for reading and sending using Bitmessage addresses
 
 Install
 =======
 
-BitChan runs among several docker containers orchestrated by docker's compose plugin. This allows cross-platform compatibility and a level of isolation of your install from your operating system. For a consistent install environment, installing BitChan within a virtual machine running Xubuntu 22.04 is described below, however you can install BitChan in many operating system of your choice that support the install of docker and docker compose. Alternatively, BitChan can be installed natively in a Debian-based operating system (without Docker). Currently, the only issue you may encounter is selecting an environment that supports the Python2 requirement, as Bitmessage is still in the process of being ported from Python 2 to Python 3.
-
-See `INSTALL <INSTALL.md>`__ for detailed install instructions.
+BitChan runs among several docker containers orchestrated by docker's compose plugin. This allows cross-platform compatibility and a level of isolation of your install from your operating system. For a consistent install environment, installing BitChan within a virtual machine running Xubuntu 22.04 is described below, however you can install BitChan in many operating system of your choice that support the install of docker and docker compose. Alternatively, BitChan can be installed natively in a Debian-based operating system (without Docker). Currently, the only issue you may encounter is selecting an environment that supports the Python2 requirement, as Bitmessage is still in the process of being ported from Python 2 to Python 3. See `INSTALL <INSTALL.md#install-bitchan-without-docker>`__ for detailed native (non-docker) install instructions.
 
 Install BitChan with Docker
 ---------------------------

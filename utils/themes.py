@@ -38,6 +38,8 @@ class DarkTheme:
         self.shadow = "#000000"
         self.gpg_outer = "#555"
         self.gpg_inner = "#5e3232"
+        self.code_text = "#c2e12a"
+        self.code_bg = "#25261e"
 
 class ClassicTheme:
     def __init__(self):
@@ -79,6 +81,8 @@ class ClassicTheme:
         self.shadow = "#000000"
         self.gpg_outer = "#D9BFB7"
         self.gpg_inner = "#D9BFB7"
+        self.code_text = "#221e1e"
+        self.code_bg = "#f4f4f4"
 
 
 class BlueTheme:
@@ -121,6 +125,8 @@ class BlueTheme:
         self.shadow = "#000000"
         self.gpg_outer = "#B7C5DA"
         self.gpg_inner = "#B7C5DA"
+        self.code_text = "#221e1e"
+        self.code_bg = "#f4f4f4"
 
 
 class ConsoleTheme:
@@ -163,6 +169,8 @@ class ConsoleTheme:
         self.shadow = "#FFF"
         self.gpg_outer = "#373A40;"
         self.gpg_inner = "#373A40"
+        self.code_text = "#c2e12a"
+        self.code_bg = "#25261e"
 
 
 themes = {"Dark": DarkTheme(), "Classic": ClassicTheme(), "Frosty": BlueTheme(), "Console": ConsoleTheme()}

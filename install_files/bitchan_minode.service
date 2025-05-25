@@ -1,0 +1,17 @@
+[Unit]
+Description=MiNode
+After=network.target
+
+[Service]
+User=bitchan
+Group=bitchan
+Type=forking
+Restart=on-failure
+KillMode=process
+WorkingDirectory=/usr/local/bitchan/minode
+ExecStart=/usr/local/bitchan/minode/minode_run.sh
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
+Alias=bitchan_minode.service

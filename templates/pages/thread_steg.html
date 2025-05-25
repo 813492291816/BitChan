@@ -57,12 +57,67 @@ Board
  - {% endblock %}
 
 {% block head %}
+    <style>
+        .image_thumb {
+            max-height: 50px;
+            max-width: 100px;
+        }
 
-    {% include '/elements/js_post_paste_attachment.html' %}
+        .large_image_wrp {
+          display: flex;
+          font-weight: normal;
+          max-width: 850px;
+          margin: 5px 0 0 5px;
+          color: black;
+          position: fixed;
+          top: 0%;
+          left: 0%;
+          pointer-events: none;
+          flex-flow: row wrap;
+          align-content: space-between;
+          overflow: hidden;
+          z-index: 999;
+        }
+
+        .image_thumb + .large_image_wrp {
+            z-index: 10;
+            display: none;
+        }
+
+        .image_thumb:hover + .large_image_wrp {
+            display: flex;
+        }
+
+        .large-image {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 4px;
+            box-shadow: 1px 1px 3px 3px rgba(127, 127, 127, 0.15);
+        }
+    </style>
 
     <script>
-    {% include '/elements/js_reply_popup.html' %}
+        {% include '/elements/js_post_paste_attachment.js' %}
     </script>
+
+    <script>
+        {% include '/elements/js_reply_popup.js' %}
+    </script>
+
+    {% if settings.enable_kiosk_mode and settings.kiosk_post_rate_limit %}
+    <script>
+        {% include '/elements/js_post_countdown.js' %}
+    </script>
+    {% endif %}
+
+    {% if thread.post_max_height_local and user_options['options_disable_forced_max_height'] != '1' %}
+        <style>
+            blockquote.post {
+                max-height: 25em;
+                overflow-y: auto;
+            }
+        </style>
+    {% endif %}
 
     <style>
         .overlay {
@@ -270,8 +325,10 @@ Board
         {% for each_message in message_replies_steg %}
             {% set post = each_message %}
             {% set text = format_message_steg(each_message.message_id) %}
-        <div class="post plaque" id="{{post.post_id}}">
-            {% include '/elements/board/post_reply.html' %}
+        <div class="reply-wrap">
+            <div class="post plaque" style="display: inline-block" id="{{post.post_id}}">
+              {% include '/elements/board/post_reply.html' %}
+            </div>
         </div>
         {% endfor %}
     </div>

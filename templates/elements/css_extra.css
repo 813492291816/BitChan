@@ -19,7 +19,8 @@ a.reply-tooltip div {
 }
 
 a.reply-tooltip:hover div {
-  display: flex;
+  display: block;
+  max-width: 95%;
 }
 
 .under-wavy {
@@ -43,10 +44,9 @@ a.reply-tooltip:hover div {
 }
 
 .reply-main {
-  display: flex;
   font-weight: normal;
   background: {{theme.postbg}};
-  max-width: 850px;
+  min-width: 400px;
   margin: 5px 0 0 5px;
   outline: 2px solid {{theme.reply_outline}};
   color: black;
@@ -54,10 +54,8 @@ a.reply-tooltip:hover div {
   top: 0%;
   left: 0%;
   pointer-events: none;
-  flex-flow: row wrap;
   align-content: space-between;
   overflow: hidden;
-  z-index: 999;
 }
 
 .reply-attach {
@@ -265,7 +263,8 @@ input:checked + label + .content {
 }
 
 .language-ascii-art {
-    display: inline-block;
+    display: block;
+    overflow: auto;
     padding: 1em;
     background: #282828;
     width: auto;
@@ -287,7 +286,8 @@ input:checked + label + .content {
 }
 
 .language-ascii-art-s {
-    display: inline-block;
+    display: block;
+    overflow: auto;
     padding: 1em;
     background: #282828;
     width: auto;
@@ -311,7 +311,8 @@ input:checked + label + .content {
 }
 
 .language-ascii-art-xs {
-    display: inline-block;
+    display: block;
+    overflow: auto;
     padding: 1em;
     background: #282828;
     width: auto;
@@ -335,20 +336,15 @@ input:checked + label + .content {
 }
 
 .code {
-    background: #f4f4f4;
-    border: 1px solid #ddd;
-    color: #666;
-    page-break-inside: avoid;
-    font-family: monospace;
-    font-size: 15px;
-    line-height: 1.6;
-    margin-bottom: 1.6em;
-    max-width: 100%;
-    max-height: 20em;
-    padding: 1em 1.5em;
-    display: block;
-    overflow-x: auto;
-    overflow-y: auto;
+    overflow: auto;
+    padding: .5em;
+    background: {{theme.code_bg}};
+    width: auto;
+    z-index: auto;
+    font-family: "Lucida Console", Monaco, monospace;
+    color: {{theme.code_text}};
+    white-space: pre;
+    border: 1px solid #ddd;co
 }
 
 .code a {
@@ -407,15 +403,29 @@ input:checked + label + .content {
   opacity: 1;
 }
 
-.optionspopup {
-  margin: 70px auto;
-  padding: 20px;
-  background: {{theme.bgcolor}};
-  border-radius: 5px;
-  max-width: 400px;
-  position: relative;
-  border-style: solid;
-  border-color: {{theme.options_border}};
+@media only screen and (max-width: 600px) {
+  .optionspopup {
+    padding: 20px;
+    background: {{theme.bgcolor}};
+    border-radius: 5px;
+    max-width: 400px;
+    position: relative;
+    border-style: solid;
+    border-color: {{theme.options_border}};
+  }
+}
+
+@media all and (min-width:600px) {
+  .optionspopup {
+    margin: 70px auto;
+    padding: 20px;
+    background: {{theme.bgcolor}};
+    border-radius: 5px;
+    max-width: 400px;
+    position: relative;
+    border-style: solid;
+    border-color: {{theme.options_border}};
+  }
 }
 
 .optionspopup h2 {

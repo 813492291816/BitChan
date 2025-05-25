@@ -816,7 +816,6 @@ def list_bulk_add(list_address):
                            passphrase_base64=passphrase_base64,
                            passphrase_base64_with_pgp=passphrase_base64_with_pgp,
                            status_msg=status_msg,
-                           table_chan=Chan,
                            url=url,
                            url_text=url_text)
 

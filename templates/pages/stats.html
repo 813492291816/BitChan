@@ -147,10 +147,10 @@
                         <tr>
                             <td>{{pri}}</td>
                             <td>
-                {% if table_thread.query.filter(table_thread.thread_hash == sec).first() %}
-                    {% set thread = table_thread.query.filter(table_thread.thread_hash == sec).first() %}
-                {% elif table_thread.query.filter(table_thread.thread_hash_short == sec).first() %}
-                    {% set thread = table_thread.query.filter(table_thread.thread_hash_short == sec).first() %}
+                {% if table_threads.query.filter(table_threads.thread_hash == sec).first() %}
+                    {% set thread = table_threads.query.filter(table_threads.thread_hash == sec).first() %}
+                {% elif table_threads.query.filter(table_threads.thread_hash_short == sec).first() %}
+                    {% set thread = table_threads.query.filter(table_threads.thread_hash_short == sec).first() %}
                 {% endif %}
 
                 {% if sec in chans_board_info %}

@@ -71,12 +71,12 @@ def post_message(form_post, status_msg):
     thread = None
 
     if settings.maintenance_mode:
-        status_msg['status_message'].append("Maintenance Mode is Active. Disabled: creating new posts.")
+        status_msg['status_message'].append("Maintenance Mode is Active- cannot create new posts.")
 
     chan = Chan.query.filter(
         Chan.address == form_post.board_id.data).first()
     if not chan:
-        status_msg['status_message'].append("Cannot find chan.")
+        status_msg['status_message'].append("Cannot find chan")
 
     # Thread Rules
     if form_post.sort_replies_by_pow.data and "sort_replies_by_pow" not in DICT_THREAD_RULES:
@@ -99,7 +99,7 @@ def post_message(form_post, status_msg):
                 last_post_ts = daemon_com.get_last_post_ts()
                 if now < last_post_ts + settings.kiosk_post_rate_limit:
                     status_msg['status_message'].append(
-                        "Posting is limited to 1 post per {} second period. Wait {:.0f} more seconds.".format(
+                        "Posting is limited to 1 post per {} second period- wait {:.0f} more seconds".format(
                             settings.kiosk_post_rate_limit,
                             (last_post_ts + settings.kiosk_post_rate_limit) - now))
 
@@ -107,8 +107,9 @@ def post_message(form_post, status_msg):
                 status_msg['status_message'].append("Only Admins can post to a read-only board.")
 
             # Only admins can schedule posts
-            if form_post.schedule_post_epoch.data and form_post.schedule_post_epoch.data > time.time():
-                status_msg['status_message'].append("Scheduling posts to be made in the future is not permitted")
+            schedule_post_epoch, _ = check_post_schedule([], None, form_post.schedule_post_epoch.data)
+            if schedule_post_epoch:
+                status_msg['status_message'].append("Scheduling posts is not permitted")
 
             # Can additional POW be performed
             if form_post.pow_method.data and not settings.kiosk_allow_pow:
@@ -121,14 +122,12 @@ def post_message(form_post, status_msg):
                     "Encrypting or signing PGP messages in posts is not allowed in kiosk mode")
 
         if settings.kiosk_disable_bm_attach and form_post.upload.data == "bitmessage":
-            status_msg['status_message'].append(
-                "The Bitmessage upload method is not permitted while in Kiosk Mode")
+            status_msg['status_message'].append("The Bitmessage upload method is not permitted while in Kiosk Mode")
         if settings.kiosk_disable_i2p_torrent_attach and form_post.upload.data == "i2p_torrent":
-            status_msg['status_message'].append(
-                "The I2P Torrent upload method is not permitted while in Kiosk Mode")
+            status_msg['status_message'].append("The I2P Torrent upload method is not permitted while in Kiosk Mode")
 
     if not form_post.from_address.data:
-        status_msg['status_message'].append("A From Address is required.")
+        status_msg['status_message'].append("A From Address is required")
 
     # Check if thread currently locked
     if form_post.thread_id.data and form_post.board_id.data:
@@ -136,11 +135,11 @@ def post_message(form_post, status_msg):
             Threads.thread_hash == form_post.thread_id.data).first()
 
         if not thread:
-            status_msg['status_message'].append("Cannot post to nonexistent thread.")
+            status_msg['status_message'].append("Cannot post to nonexistent thread")
         else:
             if thread.hide:
                 status_msg['status_message'].append(
-                    "Cannot post to a hidden thread. Restore the thread before posting.")
+                    "Cannot post to a hidden thread- restore the thread before posting")
 
             if thread.chan:
                 admin_cmd = Command.query.filter(and_(
@@ -154,19 +153,18 @@ def post_message(form_post, status_msg):
                 if ("lock" in options and options["lock"]) or thread.locked_local:
                     access = get_access(thread.chan.address)
                     if form_post.from_address.data not in access["primary_addresses"]:
-                        status_msg['status_message'].append(
-                            "Only Owner address can post to a locked thread.")
+                        status_msg['status_message'].append("Only Owner address can post to a locked thread")
 
     if form_post.is_op.data == "yes":
         if len(form_post.subject.data.strip()) == 0:
-            status_msg['status_message'].append("A Subject is required.")
+            status_msg['status_message'].append("A Subject is required")
         if not form_post.body.data:
-            status_msg['status_message'].append("A Comment is required.")
+            status_msg['status_message'].append("A Comment is required")
     else:
         if (not form_post.body.data and
                 form_post.gpg_body.data and
                 (not form_post.gpg_encrypt_msg.data and not form_post.gpg_sign_post.data)):
-            status_msg['status_message'].append("Must select Encrypt Message or Sign Message if no Comment is provided.")
+            status_msg['status_message'].append("Must select Encrypt Message or Sign Message if no Comment is provided")
 
         if form_post.game_player_move.data or form_post.game.data:
             # A comment is not required if a game command is given
@@ -177,13 +175,13 @@ def post_message(form_post, status_msg):
                  not form_post.file2.data[0] and
                  not form_post.file3.data[0] and
                  not form_post.file4.data[0])):
-            status_msg['status_message'].append("A Comment, GPG Message, or Attachment is required.")
+            status_msg['status_message'].append("A Comment, GPG Message, or Attachment is required")
 
     # Ensure required fields are present for PGP message
     if (form_post.gpg_body.data and
             (form_post.gpg_encrypt_msg.data or form_post.gpg_sign_post.data) and
             (not form_post.gpg_select_from.data or not form_post.gpg_select_to.data)):
-        status_msg['status_message'].append("Both From and To fields required to encrypt a PGP Message.")
+        status_msg['status_message'].append("Both From and To fields required to encrypt a PGP Message")
 
     gpg_body = ""
     if form_post.gpg_body.data:
@@ -248,7 +246,7 @@ def post_message(form_post, status_msg):
                         int(form_post.image_steg_insert.data) == i and
                         form_post.steg_message.data):
                     status_msg['status_message'].append(
-                        "Steg Comment requires Image to Insert Steg to select a JPG image attachment.")
+                        "Steg Comment requires selection of a JPG image attachment with Steg Image")
                 continue
             try:
                 filenames.append(each_file.filename)
@@ -259,26 +257,26 @@ def post_message(form_post, status_msg):
                 if (int(form_post.image_steg_insert.data) == i and
                         form_post.steg_message.data and
                         file_extension not in ["jpg", "jpeg"]):
-                    status_msg['status_message'].append("Steg Comment requires a JPG image attachment.")
+                    status_msg['status_message'].append("Steg Comment requires a JPG image attachment")
             except Exception as e:
-                status_msg['status_message'].append("Error determining file extension. {}".format(e))
+                status_msg['status_message'].append("Error determining file extension '{}'".format(e))
 
     if len(filenames) > 1 and len(filenames) != len(set(filenames)):
-        status_msg['status_message'].append("Attachment filenames must be unique.")
+        status_msg['status_message'].append("Attachment filenames must be unique")
 
     # Check game password conditions
     if form_post.game_password_a.data and len(form_post.game_password_a.data) > 512:
-        status_msg['status_message'].append("Game Previous Password too long. Max characters is 512.")
+        status_msg['status_message'].append("Game Previous Password too long (max characters is 512)")
     if form_post.game_password_b.data and len(form_post.game_password_b.data) > 512:
-        status_msg['status_message'].append("Game New Password too long. Max characters is 512.")
+        status_msg['status_message'].append("Game New Password too long (max characters is 512)")
     if form_post.game_termination_password.data and len(form_post.game_termination_password.data) > 512:
-        status_msg['status_message'].append("Game Termination Password too long. Max characters is 512.")
+        status_msg['status_message'].append("Game Termination Password too long (max characters is 512)")
 
     if form_post.preview_post.data:
         return_str = ""
         if 'status_title' not in status_msg:
             status_msg['status_title'] = "Preview"
-            status_msg['status_message'].append("Post Preview generated.")
+            status_msg['status_message'].append("Post Preview generated")
         form_populate = generate_post_form_populate(form_post)
         form_populate["preview"] = process_replacements(
             html.escape(form_populate["comment"].encode('utf-8').strip().decode()),
@@ -331,6 +329,7 @@ def generate_post_form_populate(form_post):
             "file4": bool(form_post.file4.data),
             "upload": form_post.upload.data,
             "strip_exif": form_post.strip_exif.data,
+            "hash_filenames": form_post.hash_filenames.data,
             "image1_spoiler": form_post.image1_spoiler.data,
             "image2_spoiler": form_post.image2_spoiler.data,
             "image3_spoiler": form_post.image3_spoiler.data,
@@ -392,6 +391,10 @@ def submit_post(form_post):
         "file_enc_key_bytes": None,
         "file_enc_password": None,
         "file_order": [],
+        "hash_filenames": None,
+        "strip_exif": None,
+        "steg_message": None,
+        "image_steg_insert": None,
         "media_height": None,
         "media_width": None,
         "file_base64": None,
@@ -614,6 +617,12 @@ def submit_post(form_post):
     else:
         file_list.append(None)
 
+    post_options["board_id"] = form_post.board_id.data
+    post_options["hash_filenames"] = form_post.hash_filenames.data
+    post_options["strip_exif"] = form_post.strip_exif.data
+    post_options["steg_message"] = form_post.steg_message.data
+    post_options["image_steg_insert"] = form_post.image_steg_insert.data
+
     #
     # Check rules
     #
@@ -645,7 +654,19 @@ def submit_post(form_post):
             logger.exception("{}: {}".format(post_options["post_id"], msg))
             return "Error", errors
 
+    #
+    # Scheduled Post
+    #
+
+    schedule_post_epoch, errors = check_post_schedule(errors, post_options['post_id'], form_post.schedule_post_epoch.data)
+
+    if errors:
+        return "Error", errors
+
+    #
     # Attachments
+    #
+
     if file_list:
         file_upload = True
         for each_file in file_list:
@@ -653,7 +674,7 @@ def submit_post(form_post):
                 continue
             try:
                 file_filename = html.escape(each_file.filename)
-                file_extension = html.escape(os.path.splitext(file_filename)[1].split(".")[-1].lower())
+                file_extension = os.path.splitext(file_filename)[1].split(".")[-1].lower()
             except Exception as e:
                 msg = "Error determining file extension: {}".format(e)
                 logger.error("{}: {}".format(post_options["post_id"], msg))
@@ -668,37 +689,84 @@ def submit_post(form_post):
                                         bool(form_post.file3.data[0]),
                                         bool(form_post.file4.data[0])])
 
-        if form_post.schedule_post_epoch.data and form_post.schedule_post_epoch.data > time.time():
+        if schedule_post_epoch:
             # Post scheduled to be sent in the future, save to non-volatile tmp volume
             post_options["save_dir"] = f"/usr/local/bitchan-tmp/{upload_id}"
         else:
             # Post is occurring now, save to volatile tmpfs
             post_options["save_dir"] = f"/tmp/{upload_id}"
-
         os.mkdir(post_options["save_dir"])
-        for each_file in file_list:
+
+        steg_inserted = False
+        for i, each_file in enumerate(file_list):
             if not each_file:
                 post_options["file_order"].append(None)
                 continue
-            save_file_path = "{}/{}".format(post_options["save_dir"], each_file.filename)
+
+            file_extension = os.path.splitext(html.escape(each_file.filename))[1].split(".")[-1].lower()
+
+            if post_options["hash_filenames"]:
+                # Prevents saving file with original filename if randomize filename selected
+                # Prevents file recovery from possibly discovering original filename
+                filename = "{}.{}".format(
+                    get_random_alphanumeric_string(
+                32, with_punctuation=False, with_digits=True, with_spaces=False),
+                    file_extension)
+            else:
+                filename = each_file.filename
+
+            save_file_path = os.path.join(post_options["save_dir"], filename)
+
             delete_file(save_file_path)
-            # Save file to disk
-            # logger.info("{}: Saving file to {}".format(post_options["post_id"], save_file_path))
-            each_file.save(save_file_path)
-            post_options["file_order"].append(each_file.filename)
+            each_file.save(save_file_path)  # Save file to disk
 
-        def get_size(start_path):
-            total_size = 0
-            for dirpath, dirnames, filenames in os.walk(start_path):
-                for f in filenames:
-                    fp = os.path.join(dirpath, f)
-                    # skip if it is symbolic link
-                    if not os.path.islink(fp):
-                        total_size += os.path.getsize(fp)
+            # Alter file with steg or stripping EXIF, before calculating hash
+            try:
+                if post_options["strip_exif"] and file_extension in ["png", "jpeg", "jpg"]:
+                    PIL.Image.MAX_IMAGE_PIXELS = 500000000
+                    im = Image.open(save_file_path)
+                    logger.info(f"{post_options['post_id']}: Stripping image metadata/exif from {save_file_path}")
+                    im.save(save_file_path)
+            except Exception as e:
+                msg = f"{post_options['post_id']}: Error opening image/stripping exif: {e}"
+                errors.append(msg)
+                logger.exception(msg)
 
-            return total_size
+            # encrypt steg message into image
+            # Get first image that steg can be inserted into
+            if (post_options["steg_message"] and i + 1 == post_options["image_steg_insert"] and
+                    file_extension in ["jpg", "jpeg"] and
+                    not steg_inserted):
+                logger.info(f"{post_options['post_id']}: Adding steg message to image {file_extension}")
 
-        save_file_size = get_size(post_options["save_dir"])
+                pgp_passphrase_steg = config.PGP_PASSPHRASE_STEG
+                with session_scope(config.DB_PATH) as new_session:
+                    chan = new_session.query(Chan).filter(Chan.address == post_options["board_id"]).first()
+                    if chan and chan.pgp_passphrase_steg:
+                        pgp_passphrase_steg = chan.pgp_passphrase_steg
+
+                steg_status = steg_encrypt(
+                    save_file_path,
+                    save_file_path,
+                    post_options["steg_message"],
+                    pgp_passphrase_steg)
+
+                if steg_status != "success":
+                    errors.append(steg_status)
+                    logger.exception(steg_status)
+                else:
+                    steg_inserted = True
+
+            if post_options["hash_filenames"]:
+                # get hash of file and rename file
+                new_filename = f"{generate_hash_sha256(save_file_path)}.{file_extension}"
+                new_file_path = os.path.join(post_options["save_dir"], new_filename)
+                shutil.move(save_file_path, new_file_path)
+                post_options["file_order"].append(new_filename)
+            else:
+                post_options["file_order"].append(filename)
+
+        save_file_size = get_path_files_size(post_options["save_dir"])
         if save_file_size:
             logger.info("{}: Upload size is {}".format(
                 post_options["post_id"], human_readable_size(save_file_size)))
@@ -842,10 +910,6 @@ def submit_post(form_post):
         except:
             errors.append("Error parsing attachment options. Check for valid entries.")
 
-    post_options["strip_exif"] = form_post.strip_exif.data
-    post_options["steg_message"] = form_post.steg_message.data
-    post_options["image_steg_insert"] = form_post.image_steg_insert.data
-    post_options["board_id"] = form_post.board_id.data
     post_options["upload"] = form_post.upload.data
     post_options["thread_id"] = form_post.thread_id.data
     post_options["from_address"] = form_post.from_address.data
@@ -858,15 +922,14 @@ def submit_post(form_post):
     if errors:
         return "", errors
 
-    if form_post.schedule_post_epoch.data and form_post.schedule_post_epoch.data > time.time():
-        logger.info(f"{post_options['post_id']}: Posting in the future.")
+    if schedule_post_epoch:
         new_schedule_post = SchedulePost()
         new_schedule_post.schedule_id = upload_id
         new_schedule_post.post_options = json.dumps(post_options)
         new_schedule_post.dict_message = json.dumps(dict_message)
-        new_schedule_post.schedule_post_epoch = form_post.schedule_post_epoch.data
+        new_schedule_post.schedule_post_epoch = schedule_post_epoch
         new_schedule_post.save()
-        return f"Post scheduled to be sent in the future at {form_post.schedule_post_epoch.data}.", []
+        return f"Post scheduled to be sent in the future.", []
 
     elif spawn_send_thread:
         # Spawn a thread to send the message if the file is large.
@@ -915,49 +978,6 @@ def send_message(post_options, dict_message, upload_id=None):
         get_random_alphanumeric_string(15, with_punctuation=False, with_spaces=False))
 
     if "save_dir" in post_options and post_options["save_dir"]:
-        steg_inserted = False
-        for i, f in enumerate(post_options["file_order"], start=1):
-            if not f:
-                continue
-
-            fp = os.path.join(post_options["save_dir"], f)
-            file_extension = html.escape(os.path.splitext(f)[1].split(".")[-1].lower())
-            try:
-                if post_options["strip_exif"] and file_extension in ["png", "jpeg", "jpg"]:
-                    PIL.Image.MAX_IMAGE_PIXELS = 500000000
-                    im = Image.open(fp)
-                    logger.info("{}: Stripping image metadata/exif from {}".format(post_options["post_id"], fp))
-                    im.save(fp)
-            except Exception as e:
-                msg = "{}: Error opening image/stripping exif: {}".format(post_options["post_id"], e)
-                errors.append(msg)
-                logger.exception(msg)
-
-            # encrypt steg message into image
-            # Get first image that steg can be inserted into
-            if (post_options["steg_message"] and i == post_options["image_steg_insert"] and
-                    file_extension in ["jpg", "jpeg"] and
-                    not steg_inserted):
-                logger.info("{}: Adding steg message to image {}".format(post_options["post_id"], fp))
-
-                pgp_passphrase_steg = config.PGP_PASSPHRASE_STEG
-                with session_scope(config.DB_PATH) as new_session:
-                    chan = new_session.query(Chan).filter(Chan.address == post_options["board_id"]).first()
-                    if chan and chan.pgp_passphrase_steg:
-                        pgp_passphrase_steg = chan.pgp_passphrase_steg
-
-                steg_status = steg_encrypt(
-                    fp,
-                    fp,
-                    post_options["steg_message"],
-                    pgp_passphrase_steg)
-
-                if steg_status != "success":
-                    errors.append(steg_status)
-                    logger.exception(steg_status)
-                else:
-                    steg_inserted = True
-
         # Create zip archive of files
         def zipdir(path, ziph):
             # ziph is zipfile handle
@@ -1754,3 +1774,59 @@ def create_encrypted_upload_zip(errors, dict_message, dict_send, save_encrypted_
         dict_send["post_id"], dict_message["file_size"]))
 
     return errors, dict_message, dict_send
+
+
+def check_post_schedule(errors, post_id, form_epoch):
+    now = time.time()
+    schedule_post_epoch = None
+    ignore_epoch = False
+    try:
+        if "-" not in form_epoch:
+            epoch_test = int(form_epoch)
+            if epoch_test < now:
+                ignore_epoch = True
+    except:
+        pass
+
+    if form_epoch and not ignore_epoch:
+        if "-" in form_epoch:
+            # Check if epoch string is an integer range
+            try:
+                epoch_start = int(form_epoch.split("-")[0])
+                epoch_end = int(form_epoch.split("-")[1])
+                if epoch_start < now or epoch_end < now:
+                    errors.append("Epochs for scheduled post must be in the future")
+                elif epoch_start >= epoch_end:
+                    errors.append("Start epoch must be less than end epoch")
+                else:
+                    schedule_post_epoch = random.randint(epoch_start, epoch_end)
+                    if post_id:
+                        logger.info(f"{post_id}: Post scheduled at "
+                                    f"random time between {epoch_start} and {epoch_end} = {schedule_post_epoch}")
+            except:
+                errors.append("Epoch range not properly formatted")
+        else:
+            # Check if epoch string is an integer
+            try:
+                schedule_post_epoch = int(form_epoch)
+                if schedule_post_epoch > now:
+                    if post_id:
+                        logger.info(f"{post_id}: Post scheduled at {schedule_post_epoch}")
+                else:
+                    schedule_post_epoch = None
+            except:
+                errors.append("Epoch not properly formatted")
+
+    return schedule_post_epoch, errors
+
+
+def get_path_files_size(start_path):
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(start_path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            # skip if it is symbolic link
+            if not os.path.islink(fp):
+                total_size += os.path.getsize(fp)
+
+    return total_size

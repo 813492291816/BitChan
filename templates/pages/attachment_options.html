@@ -5,6 +5,18 @@
 
 {% block title %}Attachment Options - {% endblock %}
 
+{% block head %}
+<style>
+    table {
+        border: 1px solid black;
+    }
+    th, td {
+        border: 1px solid black;
+        padding: 0.5em;
+    }
+</style>
+{% endblock %}
+
 {% block body %}
     {% include '/elements/banner.html' %}
     <br/>
@@ -29,10 +41,9 @@
                 </div>
     {% else %}
 
-                <table class="table themed" style="padding-bottom: 0.5em">
-
-
         {% for each_file in dict_files %}
+
+                <table class="table themed" style="margin-top: 1em; margin-bottom: 1em">
 
                     <tr>
                         <td colspan="2">
@@ -74,7 +85,7 @@
                     </tr>
 
                     <tr>
-                        <td colspan="2" style="padding-top: 0.5em; padding-bottom:0.2em; text-align: center; font-size: 1.5em">Ban Options</td>
+                        <td colspan="2" style="padding-top: 0.5em; padding-bottom:0.5em; text-align: center; font-size: 1.5em">Ban Options</td>
                     </tr>
                     <tr>
                         <td style="text-align: left"><label for="ban_{{dict_files[each_file]['number']}}">Ban Attachment</label></td>
@@ -161,7 +172,7 @@
 
             {% if dict_files[each_file]["extension"] in config.FILE_EXTENSIONS_IMAGE or dict_files[each_file]["extension"] in config.FILE_EXTENSIONS_VIDEO %}
                     <tr>
-                        <td colspan="2" style="padding-top: 0.5em; padding-bottom:0.2em; text-align: center; font-size: 1.5em">Spoiler Options</td>
+                        <td colspan="2" style="padding-top: 0.5em; padding-bottom: 0.5em; text-align: center; font-size: 1.5em">Spoiler Options</td>
                     </tr>
                     <tr>
                         <td style="text-align: left"><label for="spoiler_{{dict_files[each_file]['number']}}">Enable Spoiler</label></td>
@@ -169,15 +180,11 @@
                     </tr>
             {% endif %}
 
-                    <tr>
-                        <td colspan="2"><hr></td>
-                    </tr>
+                </table>
 
         {% endfor %}
 
-                </table>
-
-                <div class="themed" style="padding-bottom: 2em">
+                <div class="themed" style="padding-top: 1em; padding-bottom: 2em">
                     <input type="submit" name="save_attachment_options" value="Save Attachment Options"/>
                 </div>
 

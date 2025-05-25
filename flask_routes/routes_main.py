@@ -17,6 +17,7 @@ from threading import Thread
 import matplotlib.pyplot as plt
 import numpy as np
 import pytz
+import qbittorrentapi
 from PIL import Image
 from feedgen.feed import FeedGenerator
 from flask import current_app
@@ -459,11 +460,17 @@ def options_save():
             response.set_cookie('options_js', request.form.get('options_js'))
         elif request.form.get('options_save_misc'):
             response.set_cookie('theme', request.form.get('options_theme'))
+            response.set_cookie('options_font_size', request.form.get('options_font_size'))
 
             if request.form.get('options_max_height'):
                 response.set_cookie('options_max_height', '1')
             else:
                 response.set_cookie('options_max_height', '0')
+
+            if request.form.get('options_disable_forced_max_height'):
+                response.set_cookie('options_disable_forced_max_height', '1')
+            else:
+                response.set_cookie('options_disable_forced_max_height', '0')
 
             if request.form.get('options_post_horizontal'):
                 response.set_cookie('options_post_horizontal', '1')
@@ -474,6 +481,7 @@ def options_save():
                 response.set_cookie('options_hide_authors', '1')
             else:
                 response.set_cookie('options_hide_authors', '0')
+
         elif request.form.get('options_export'):
             from io import StringIO
             from flask import send_file
@@ -481,7 +489,9 @@ def options_save():
                 "options_css": request.cookies.get('options_css'),
                 "options_js": request.cookies.get('options_js'),
                 "options_theme": request.cookies.get('theme'),
+                "options_font_size": request.cookies.get('options_font_size'),
                 "options_max_height": request.cookies.get('options_max_height'),
+                "options_disable_forced_max_height": request.cookies.get('options_disable_forced_max_height'),
                 "options_post_horizontal": request.cookies.get('options_post_horizontal'),
                 "options_hide_authors": request.cookies.get('options_hide_authors')
             }
@@ -505,10 +515,16 @@ def options_save():
                     response.set_cookie('options_css', file_cont['options_css'])
                     response.set_cookie('options_js', file_cont['options_js'])
                     response.set_cookie('theme', file_cont['options_theme'])
+                    response.set_cookie('options_font_size', file_cont['options_font_size'])
                     if file_cont['options_max_height']:
                         response.set_cookie('options_max_height', '1')
                     else:
                         response.set_cookie('options_max_height', '0')
+
+                    if file_cont['options_disable_forced_max_height']:
+                        response.set_cookie('options_disable_forced_max_height', '1')
+                    else:
+                        response.set_cookie('options_disable_forced_max_height', '0')
 
                     if file_cont['options_post_horizontal']:
                         response.set_cookie('options_post_horizontal', '1')
@@ -527,7 +543,9 @@ def options_save():
             response.set_cookie('options_css', "")
             response.set_cookie('options_js', "")
             response.set_cookie('theme', "")
+            response.set_cookie('options_font_size', "0")
             response.set_cookie('options_max_height', '0')
+            response.set_cookie('options_disable_forced_max_height', '0')
             response.set_cookie('options_post_horizontal', '0')
             response.set_cookie('options_hide_authors', '0')
 
@@ -1405,6 +1423,9 @@ def configure():
             if form_settings.theme.data:
                 settings.theme = form_settings.theme.data
 
+            if 4 < form_settings.font_size.data < 32:
+                settings.font_size = form_settings.font_size.data
+
             if settings.maintenance_mode is False and form_settings.maintenance_mode.data is True:
                 logger.info("Enabling maintenance mode. Stopping Bitmessage")
                 if config.DOCKER:
@@ -1423,6 +1444,7 @@ def configure():
             settings.maintenance_mode = form_settings.maintenance_mode.data
             settings.max_download_size = form_settings.max_download_size.data
             settings.max_extract_size = form_settings.max_extract_size.data
+            settings.form_default_upload_method = form_settings.form_default_upload_method.data
             settings.always_allow_my_i2p_bittorrent_attachments = form_settings.always_allow_my_i2p_bittorrent_attachments.data
             settings.allow_net_file_size_check = form_settings.allow_net_file_size_check.data
             settings.allow_net_book_quote = form_settings.allow_net_book_quote.data
@@ -1452,7 +1474,9 @@ def configure():
             # Bitmessage
             update_bm_settings = False
             update_bm_onion = False
-            if settings.bm_connections_in_out != form_settings.bm_connections_in_out.data:
+            if not form_settings.bm_connections_in_out.data:
+                status_msg['status_message'].append("Must set Bitmessage Connection, it cannot be left blank.")
+            elif form_settings.bm_connections_in_out.data and settings.bm_connections_in_out != form_settings.bm_connections_in_out.data:
                 settings.bm_connections_in_out = form_settings.bm_connections_in_out.data
                 update_bm_settings = True
             if bool(settings.bitmessage_onion_services_only) != bool(form_settings.bitmessage_onion_services_only.data):
@@ -1555,7 +1579,7 @@ def configure():
                         target=daemon_com.bm_change_connection_settings)
                     change_bm_settings.start()
                     successes.append(
-                        f"Applying changed bitmessage connection settings. Give at least 60 seconds for the changes to take effect.")
+                        f"Applying changed bitmessage connection setting. Give at least 60 seconds for the changes to take effect.")
 
                 if update_bm_onion:
                     change_onion = Thread(
@@ -1563,7 +1587,7 @@ def configure():
                         args=(form_settings.bitmessage_onion_services_only.data,))
                     change_onion.start()
                     successes.append(
-                        f"Applying changed bitmessage onion settings. Give at least 60 seconds for the changes to take effect.")
+                        f"Applying changed bitmessage onion setting. Give at least 60 seconds for the changes to take effect.")
 
                 for each_success in successes:
                     status_msg['status_message'].append(each_success)
@@ -2379,12 +2403,10 @@ def status():
         i2pd_version = "Error getting i2pd version"
 
     try:
-        if config.DOCKER:
-            qbittorrent_version = subprocess.check_output(
-                'docker exec -i bitchan_qbittorrent qbittorrent-nox --version', shell=True, text=True)
-        else:
-            qbittorrent_version = subprocess.check_output(
-                'i2pd --version', shell=True, text=True)
+        conn_info = dict(host=config.QBITTORRENT_HOST, port=8080)
+        qbt_client = qbittorrentapi.Client(**conn_info)
+        qbt_client.auth_log_in()
+        qbittorrent_version = f"{qbt_client.application.version}, {qbt_client.application.build_info}"
     except:
         logger.exception("getting qbittorrent version")
         qbittorrent_version = "Error getting qbittorrent version"

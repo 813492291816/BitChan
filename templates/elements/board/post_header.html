@@ -40,9 +40,7 @@
         {% if post.hide -%}
             {% include '/elements/board/post_header_options/restore_post.html' %}
         {%- endif %}
-        {% include '/elements/board/post_header_options/sticky_thread_for_you.html' %}
-		{% include '/elements/board/post_header_options/lock_thread_for_you.html' %}
-        {% include '/elements/board/post_header_options/anchor_thread_for_you.html' %}
+        {% include '/elements/board/post_header_options/thread_attributes_for_you.html' %}
         {% if post.file_amount %}
             {% include '/elements/board/post_header_options/attachment_options.html' %}
         {% endif %}

@@ -451,7 +451,7 @@ def get_post_id_string(post_id=None, message_id=None):
 
     if not post:
         logger.info(f"Message not found. post_id: {post_id}, message_id: {message_id}")
-        return
+        return None
 
     if post.file_amount:
         if post.file_download_successful:
@@ -463,6 +463,7 @@ def get_post_id_string(post_id=None, message_id=None):
         return post_id_string
     elif post and post.post_id:
         return post.post_id
+    return None
 
 
 def get_user_name_info(address_from, full_address=False):
@@ -966,8 +967,10 @@ def page_dict():
         "options_css": request.cookies.get('options_css', default=""),
         "options_js": request.cookies.get('options_js', default=""),
         "options_max_height": request.cookies.get('options_max_height'),
+        "options_disable_forced_max_height": request.cookies.get('options_disable_forced_max_height'),
         "options_post_horizontal": request.cookies.get('options_post_horizontal'),
-        "options_hide_authors": request.cookies.get('options_hide_authors')
+        "options_hide_authors": request.cookies.get('options_hide_authors'),
+        "options_font_size": request.cookies.get('options_font_size')
     }
 
     admin_cmd = Command.query.filter(and_(
@@ -1036,6 +1039,9 @@ def page_dict():
                 display_time=display_time,
                 format_body=format_body,
                 format_message_steg=format_message_steg,
+                generate_popup_post_body_message=generate_popup_post_body_message,
+                generate_post_html=generate_post_html,
+                generate_reply_link_and_popup_html=generate_reply_link_and_popup_html,
                 get_access=get_access,
                 get_card_link_html=get_card_link_html,
                 get_chan_from_board_address=get_chan_from_board_address,
@@ -1043,11 +1049,10 @@ def page_dict():
                 get_chan_passphrase=get_chan_passphrase,
                 get_max_ttl=get_max_ttl,
                 get_op_and_thread_from_thread_hash=get_op_and_thread_from_thread_hash,
-                generate_post_html=generate_post_html,
                 get_post_id=get_post_id,
                 get_post_id_string=get_post_id_string,
                 get_post_replies_dict=get_post_replies_dict,
-                generate_reply_link_and_popup_html=generate_reply_link_and_popup_html,
+                get_theme=get_theme,
                 get_thread_options=get_thread_options,
                 get_thread_subject=get_thread_subject,
                 get_user_name=get_user_name,
@@ -1061,18 +1066,16 @@ def page_dict():
                 logged_in=is_logged_in(),
                 message_has_images=message_has_images,
                 nations=dict(nations),
-                generate_popup_post_body_message=generate_popup_post_body_message,
                 post_has_image=post_has_image,
                 process_passphrase=process_passphrase,
                 quote=quote,
                 replace_lt_gt=replace_lt_gt,
                 session=session,
                 settings=GlobalSettings.query.first(),
-                table_boards=Chan,
+                table_chan=Chan,
                 table_messages=Messages,
                 table_pages=Pages,
-                table_thread=Threads,
-                get_theme=get_theme,
+                table_threads=Threads,
                 themes=themes.themes,
                 time=time,
                 timestamp_to_date=timestamp_to_date,
@@ -1117,3 +1120,4 @@ def rate_limit_check(number_requests, time_period_seconds, rate_id):
 
     if rl_valid > number_requests:
         return True  # Rate limited
+    return None

@@ -33,7 +33,7 @@ function send_post(form, form_data) {
                 timeout: 800000,
                 success: function (data) {
 
-                    let output_str = '<a class="close_reply_return themed" href="#popup_reply" onclick="document.getElementById(\'reply_submit_output\').style.display = \'none\'">X</a><span style="word-break: break-all" class="themed';
+                    let output_str = '<a class="close_reply_return themed" href="#popup_reply" onclick="document.getElementById(\'reply_submit_output\').style.display = \'none\'">X</a> <span style="word-break: break-all" class="themed';
                     if ("status_title" in data) {
                         if (data.status_title === "Success" || data.status_title === "Preview") {
                             output_str += ' success">Success: ';
@@ -46,7 +46,7 @@ function send_post(form, form_data) {
                         }
                     }
                     if ("status_message" in data) {
-                        output_str += data.status_message;
+                        output_str += data.status_message.join("; ");
                     }
                     if ("preview" in data) {
                         document.getElementById("post_preview").style.display = '';
@@ -189,7 +189,3 @@ function reply_link_to_comment(text_reply) {
         myField.value = str_value;
     }
 }
-
-{% if settings.enable_kiosk_mode and settings.kiosk_post_rate_limit %}
-    {% include '/elements/js_post_countdown.html' %}
-{% endif %}

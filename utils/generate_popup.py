@@ -66,10 +66,10 @@ def generate_reply_link_and_popup_html(
             link_str = link_text
         elif external_thread:
             # The generated link text for external threads (e.g. >>>ASDF1234)
-            link_str = '&gt;&gt;&gt;{}'.format(message.post_id)
+            link_str = f'&gt;&gt;&gt;{message.post_id}'
         else:
             # The generated link text for same thread (e.g. >>ASDF1234)
-            link_str = '&gt;&gt;{}'.format(message.post_id)
+            link_str = f'&gt;&gt;{message.post_id}'
 
         if name_str:
             link_str += name_str
@@ -89,43 +89,32 @@ def generate_reply_link_and_popup_html(
             classes_str += ' under-solid'
 
         style_str = ''
-        if font_size:
-            style_str += ' font-size: {}'.format(font_size)
+        if font_size or extra_style:
+            style_str += f' style="'
+            if font_size:
+                style_str += f'font-size: {font_size};'
+            if extra_style:
+                style_str += f'{extra_style}'
+            style_str += '"'
 
         # If board is unlisted/restricted, don't link from outside the board to the unlisted board's post (non-link post)
         if external_board and (message.thread.chan.unlisted or message.thread.chan.restricted):
-            ret_str += '<span class="crosslink reply-tooltip{cls}" style="{sty};{esty}" title="Unlisted/Restricted">{lstr}</span>'.format(
-                cls=classes_str,
-                sty=style_str,
-                esty=extra_style,
-                lstr=link_str)
+            ret_str += f'<span class="crosslink reply-tooltip{classes_str}"{style_str} title="Unlisted/Restricted">{link_str}</span>'
             return ret_str
 
         if use_thread_id or board_view or external_thread:
-            post_url = "/thread/{ch}/{tp}#{pi}".format(
-                ch=message.thread.chan.address,
-                tp=message.thread.thread_hash_short,
-                pi=message.post_id)
+            post_url = f"/thread/{message.thread.chan.address}/{message.thread.thread_hash_short}#{message.post_id}"
         else:
-            post_url = "#{}".format(message.post_id)
+            post_url = f"#{message.post_id}"
 
-        ret_str += '<a class="crosslink reply-tooltip{cls}" style="{sty};{esty}" href="{url}">{lstr}' \
-                   '<div class="reply-main">'.format(
-            cls=classes_str,
-            sty=style_str,
-            esty=extra_style,
-            url=post_url,
-            lstr=link_str)
+        ret_str += f'<a class="crosslink reply-tooltip{classes_str}"{style_str} href="{post_url}">{link_str}<div class="reply-main">'
 
         if external_thread:
-            ret_str += '<div class="reply-header link">/{}/ - {}</div>' \
-                       '<div class="reply-break"></div>'.format(
-                        message.thread.chan.label,
-                        message.thread.chan.description)
+            ret_str += (f'<div class="reply-header link">/{message.thread.chan.label}/ - {message.thread.chan.description}</div>'
+                        f'<div class="reply-break"></div>')
 
-        ret_str += '<div class="reply-header themed">{}</div>' \
-                   '<div class="reply-break"></div>'.format(
-                    generate_popup_post_header(message, external_thread=external_thread))
+        ret_str += f'<div class="reply-header themed">{generate_popup_post_header(message, external_thread=external_thread)}</div>' \
+                   '<div class="reply-break"></div>'
 
         ret_str += generate_popup_post_body_file_info(message)
 
@@ -189,16 +178,11 @@ def generate_popup_post_html(message, moderating=False):
                         width = w_to_h_ratio * 200
 
                 ret_str += '<div class="reply-attach" ' \
-                           'style="width: {w}px; height: {h}px; ' \
-                           'background-image: url(\'/files/thumb/{mid}/{fn}\');"></div>'.format(
-                            w=width,
-                            h=height,
-                            mid=message.message_id,
-                            fn=quote(file_name))
+                           f'style="width: {width}px; height: {height}px; ' \
+                           f'background-image: url(\'/files/thumb/{message.message_id}/{quote(file_name)}\');"></div>'
         ret_str += '<div class="reply-break"></div>'
 
-    ret_str += '<div class="reply-text themed">{}</div>'.format(
-        generate_popup_post_body_message(message, moderating=moderating))
+    ret_str += f'<div class="reply-text themed">{generate_popup_post_body_message(message, moderating=moderating)}</div>'
 
     return ret_str
 
@@ -219,13 +203,12 @@ def generate_popup_post_header(message, external_thread=False):
                 subject += '<span class="themed bold">[Steg]</span>&nbsp;'
 
             if len(message.thread.subject) > 60:
-                subject += '{}...'.format(message.thread.subject[0:57])
+                subject += f'{message.thread.subject[0:57]}...'
             else:
                 subject += message.thread.subject
-            str_return += '<span class="themed reply-subject bold">{}</span>'.format(subject)
+            str_return += f'<span class="themed reply-subject bold">{subject}</span>'
 
-        str_return += '&nbsp;<img style="position: relative; width: 15px; height: 15px" ' \
-                      'src="/icon/{}">'.format(message.address_from)
+        str_return += f'&nbsp;<img style="position: relative; width: 15px; height: 15px" src="/icon/{message.address_from}">'
 
         access = get_access(message.thread.chan.address)
         identities = daemon_com.get_identities()
@@ -239,24 +222,19 @@ def generate_popup_post_header(message, external_thread=False):
         elif message.address_from in identities:
             address_style = "font-family: 'Lucida Console', Monaco, monospace; color: #047841; background-color: white;"
 
-        str_return += '&nbsp;<span class="poster bold" style="{}">{}</span>'.format(
-            address_style, get_user_name(message.address_from, message.thread.chan.address))
+        str_return += f'&nbsp;<span class="poster bold" style="{address_style}">{get_user_name(message.address_from, message.thread.chan.address)}</span>'
 
         nations_dict = dict(nations)
         if message.nation and message.nation in nations_dict:
             str_return += '&nbsp;<img style="position: relative;"'
             if nations_dict and message.nation in nations_dict:
-                str_return += ' title="{}"'.format(nations_dict[message.nation])
-            str_return += ' src="/static/nations/{}">'.format(message.nation)
+                str_return += f' title="{nations_dict[message.nation]}"'
+            str_return += f' src="/static/nations/{message.nation}">'
 
         elif message.nation_base64 and message.nation_name:
-            str_return += '&nbsp;<img style="position: relative; top: 3px; width: 25; height: 15" ' \
-                          'title="{}" ' \
-                          'src="/custom_flag_by_post_id/{}">'.format(
-                            message.nation_name, message.message_id)
+            str_return += f'&nbsp;<img style="position: relative; top: 3px; width: 25; height: 15" title="{message.nation_name}" src="/custom_flag_by_post_id/{message.message_id}">'
 
-        str_return += "&nbsp;{}&nbsp;<span class='link'>{}</span>".format(
-            timestamp_to_date(message.timestamp_sent), message.post_id)
+        str_return += f"&nbsp;{timestamp_to_date(message.timestamp_sent)}&nbsp;<span class='link'>{message.post_id}</span>"
 
         # Sage
         if message.sage:
@@ -330,7 +308,7 @@ def generate_popup_post_header(message, external_thread=False):
                 str_return += '">'
 
     except Exception as err:
-        logger.exception("Error in generate_popup_post_header(): {}".format(err))
+        logger.exception(f"Error in generate_popup_post_header(): {err}")
         str_return = "Error: Could not parse post header"
 
     return str_return
@@ -339,7 +317,7 @@ def generate_popup_post_header(message, external_thread=False):
 def generate_popup_post_body_file_info(message):
     ret_str = ""
     if message.file_amount:
-        ret_str += '<div class="reply-header link">{} File'.format(message.file_amount)
+        ret_str += f'<div class="reply-header link">{message.file_amount} File'
         if message.file_amount > 1:
             ret_str += "s"
 
@@ -350,10 +328,10 @@ def generate_popup_post_body_file_info(message):
         for i, file_name in enumerate(file_order):
             if file_name:
                 if len(file_name) > 25:
-                    file_name = "{}...{}".format(file_name[:19], file_name[-3:])
+                    file_name = f"{file_name[:19]}...{file_name[-3:]}"
                 else:
                     file_name = file_name
-                ret_str += " {}".format(file_name)
+                ret_str += f" {file_name}"
                 if i + 1 < message.file_amount:
                     ret_str += ","
 
@@ -381,8 +359,8 @@ def generate_popup_post_body_message(message, moderating=False):
                 msg_gen,
                 900,
                 target_lines=config.BOARD_MAX_LINES)
-            str_return = '<blockquote class="post">{}'.format(
-                truncated_str.rstrip().replace('\n', ' '))
+            tr_str = truncated_str.rstrip().replace("\n", " ")
+            str_return = f'<blockquote class="post">{tr_str}'
             if is_truncated:
                 if len(msg_gen) > 900:
                     str_return += f'<br/>... [message truncated]'
@@ -402,16 +380,15 @@ def generate_popup_post_body_message(message, moderating=False):
                 remove_script.extract()
             str_return = str(soup)
     except Exception as err:
-        logger.exception("{}: Error in generate_popup_post_body_message(): {}".format(
-            message.message_id[-config.ID_LENGTH:].upper(), err))
+        logger.exception(f"{message.message_id[-config.ID_LENGTH:].upper()}: Error in generate_popup_post_body_message(): {err}")
 
         try:
             is_truncated, truncated_str = truncate(
                 message.original_message,
                 900,
                 target_lines=config.BOARD_MAX_LINES)
-            str_return = '<blockquote class="post">{}'.format(
-                truncated_str.rstrip().replace('\n', ' '))
+            tr_str = truncated_str.rstrip().replace("\n", " ")
+            str_return = f'<blockquote class="post">{tr_str}'
             if is_truncated:
                 if len(msg_gen) > 900:
                     str_return += f'<br/>... [message truncated]'
@@ -419,7 +396,7 @@ def generate_popup_post_body_message(message, moderating=False):
                     str_return += f'<br/>...'
             str_return += '</blockquote>'
         except:
-            self.logger.exception("Error attempting to generate popup of original message")
+            logger.exception("Error attempting to generate popup of original message")
             str_return = "Error: Could not parse original message"
 
     return str_return
@@ -447,7 +424,7 @@ def attachment_info(message_id):
         if not file_order:
             file_order = []
 
-        if not os.path.exists("{}/{}".format(config.FILE_DIRECTORY, message_id)):
+        if not os.path.exists(os.path.join(config.FILE_DIRECTORY, message_id)):
             # Files haven't been downloaded, only return file names and count
             file_count = 0
             for filename in file_order:
@@ -512,26 +489,19 @@ def get_user_name(address_from, address_to, full_address=False):
 
     if address_from in identities:
         if identities[address_from]["label_short"]:
-            username = "{id} (You, {lbl})".format(
-                id=address,
-                lbl=identities[address_from]["label_short"])
+            username = f'{address} (You, {identities[address_from]["label_short"]})'
         else:
-            username = "{} (You)".format(
-                address)
+            username = f"{address} (You)"
     elif address_from in address_book:
         if address_book[address_from]["label_short"]:
-            username = "{id} ({lbl})".format(
-                id=address,
-                lbl=address_book[address_from]["label_short"])
+            username = f'{address} ({address_book[address_from]["label_short"]})'
         else:
-            username = "{} (ⒶⓃⓄⓃ)".format(address)
+            username = f"{address} (ⒶⓃⓄⓃ)"
     elif address_from in chans:
         if chans[address_from]["label_short"]:
-            username = "{id} ({lbl})".format(
-                id=address,
-                lbl=chans[address_from]["label_short"])
+            username = f'{address} ({chans[address_from]["label_short"]})'
         else:
-            username = "{} (ⒶⓃⓄⓃ)".format(address)
+            username = f"{address} (ⒶⓃⓄⓃ)"
     else:
         username = address
 
@@ -540,7 +510,7 @@ def get_user_name(address_from, address_to, full_address=False):
 
 def message_has_images(message):
     if not message:
-        return
+        return None
 
     try:
         media_info = json.loads(message.media_info)
@@ -557,3 +527,5 @@ def message_has_images(message):
                 "extension" in media_info[each_attachment] and
                 media_info[each_attachment]["extension"] in config.FILE_EXTENSIONS_IMAGE):
             return True
+
+    return None

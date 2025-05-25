@@ -5,7 +5,7 @@
 <input type="hidden" id="type_{{post.message_id}}" name="type" value="reply"/>
 <input type="hidden" id="num_files_{{post.message_id}}" name="num_files" value="{{number_files}}"/>
 
-<div class="themed" style="display: block; vertical-align: top;">
+<div class="themed" style="display: block; vertical-align: top; padding-right: 0.75em;">
     <div>
     {% include '/elements/board/post_header.html' %}
     {% include '/elements/board/post_files.html' %}
@@ -16,14 +16,14 @@
 {% if post.hide %}
 
 {% elif post.file_currently_downloading and post.file_progress %}
-        <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; margin-right: 1em">
+        <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin: 0.5em 1em 1em 0">
             {% include '/elements/board/post_filenames_only.html' %}
             Attachment Status: {{post.file_progress}}. <br/>Please wait.
         </div>
 {% elif not post.file_currently_downloading and
     post.file_progress and
     post.file_progress != "Attachment processing successful" %}
-        <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; margin-right: 1em">
+        <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin: 0.5em 1em 1em 0">
             {% include '/elements/board/post_filenames_only.html' %}
             Issue processing attachment(s): {{post.file_progress}}
             <form method="post" enctype="multipart/form-data" autocomplete="off">
@@ -32,7 +32,7 @@
             </form>
         </div>
 {% elif post.file_do_not_download %}
-        <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; margin-right: 1em">
+        <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin: 0.5em 1em 1em 0">
             {% include '/elements/board/post_filenames_only.html' %}
             Attachment(s) too large to auto-download<br/>
             <form style="padding-top: 0.5em" method="post" enctype="multipart/form-data" autocomplete="off">
@@ -41,7 +41,7 @@
             </form>
         </div>
 {% elif post.file_sha256_hash and not post.file_sha256_hashes_match %}
-        <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; margin-right: 1em">
+        <div style="float: left; font-size: 0.8em; vertical-align: top; overflow: hidden; border: 1px solid #000; border-radius: 5px; padding: 0.5em; margin: 0.5em 1em 1em 0">
             {% include '/elements/board/post_filenames_only.html' %}
             Attachment(s) discarded (SHA256 hashes don't match, likely an issue downloading)<br/>
             <form method="post" enctype="multipart/form-data" autocomplete="off">

@@ -436,8 +436,7 @@ def thread(current_chan, thread_id):
                 status_msg['status_message'].append(
                     "File download initialized in the background. Give it time to download.")
 
-        if form_post.preview_post.data:
-            anchor = "popup_reply"
+        elif form_post.preview_post.data:
             if 'status_title' not in status_msg:
                 status_msg['status_title'] = "Preview"
                 status_msg['status_message'].append("Post Preview generated.")
@@ -453,10 +452,12 @@ def thread(current_chan, thread_id):
 
             if thread:
                 form_populate["preview"] = format_body(
-                    "preview", form_populate["preview"], False, True, preview=True, this_thread_hash=thread.thread_hash, gpg_texts=gpg_texts)
+                    "preview", form_populate["preview"], False, True,
+                    preview=True, this_thread_hash=thread.thread_hash, gpg_texts=gpg_texts)
             else:
                 form_populate["preview"] = format_body(
-                    "preview", form_populate["preview"], False, True, preview=True, gpg_texts=gpg_texts)
+                    "preview", form_populate["preview"], False, True,
+                    preview=True, gpg_texts=gpg_texts)
 
             if ref:  # send text response status to popup reply window
                 status_msg["preview"] = form_populate["preview"]
@@ -495,8 +496,7 @@ def thread(current_chan, thread_id):
                     thread.default_from_address = None
             thread.save()
 
-            status_msg, result, form_populate = post_message(
-                form_post, status_msg)
+            status_msg, result, form_populate = post_message(form_post, status_msg)
             status_msg["no_escape"] = True
 
             if ref:  # send text response status to popup reply window
@@ -504,29 +504,6 @@ def thread(current_chan, thread_id):
 
         session['form_populate'] = form_populate
         session['status_msg'] = status_msg
-
-        if last:
-            return redirect(url_for("routes_board.thread",
-                                    current_chan=current_chan,
-                                    last=last,
-                                    message_op=message_op,
-                                    message_replies=message_replies,
-                                    message_reply_all_count=message_reply_all_count,
-                                    post_count=post_count,
-                                    pow_filter_value=pow_filter_value,
-                                    thread_id=thread_id,
-                                    thread_rules=thread_rules,
-                                    _anchor=anchor))
-        else:
-            return redirect(url_for("routes_board.thread",
-                                    current_chan=current_chan,
-                                    message_op=message_op,
-                                    message_replies=message_replies,
-                                    post_count=post_count,
-                                    pow_filter_value=pow_filter_value,
-                                    thread_id=thread_id,
-                                    thread_rules=thread_rules,
-                                    _anchor=anchor))
 
     try:
         from_list = daemon_com.get_from_list(current_chan)
@@ -682,18 +659,11 @@ def thread_steg(current_chan, thread_id):
                     thread.default_from_address = None
             thread.save()
 
-            status_msg, result, form_populate = post_message(
-                form_post, status_msg)
+            status_msg, result, form_populate = post_message(form_post, status_msg)
             status_msg["no_escape"] = True
 
         session['form_populate'] = form_populate
         session['status_msg'] = status_msg
-
-        return redirect(url_for("routes_board.thread_steg",
-                                current_chan=current_chan,
-                                message_op_steg=message_op_steg,
-                                message_replies_steg=message_replies_steg,
-                                thread_id=thread_id))
 
     try:
         from_list = daemon_com.get_from_list(current_chan)

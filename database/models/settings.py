@@ -38,9 +38,11 @@ class GlobalSettings(CRUDMixin, db.Model):
     maintenance_mode = db.Column(db.Boolean, default=False)
     debug_posts = db.Column(db.Boolean, default=False)
     theme = db.Column(db.String(255), default="Frosty")
+    font_size = db.Column(db.Float, default=10.0)
     chan_update_display_number = db.Column(db.Integer, default=5)
     max_download_size = db.Column(db.Float, default=0.0)
     max_extract_size = db.Column(db.Float, default=20.0)
+    form_default_upload_method = db.Column(db.String(255), default="Frosty")
     always_allow_my_i2p_bittorrent_attachments = db.Column(db.Boolean, default=True)
     allow_net_file_size_check = db.Column(db.Boolean, default=True)
     allow_net_book_quote = db.Column(db.Boolean, default=True)
@@ -63,7 +65,7 @@ class GlobalSettings(CRUDMixin, db.Model):
     html_body = db.Column(MEDIUMTEXT, default="")
 
     # Bitmessage
-    bm_connections_in_out = db.Column(db.String(255), default="minode_ip2_only")
+    bm_connections_in_out = db.Column(db.String(255), default="minode_i2p_only")
     bitmessage_onion_services_only = db.Column(db.Boolean, default=False)
 
     # Kiosk Mode

@@ -1,102 +1,125 @@
-<table class="text-functions">
+<table>
     <tr style="font-weight: bold;">
-        <td>Name</td>
         <td>Format</td>
         <td>Example</td>
-        <td>Description</td>
     </tr>
     <tr>
-        <td>Cross-linking</td>
-        <td style="white-space: nowrap;">&gt;&gt;&gt;[board/list address]<br>&gt;&gt;&gt;[board address]/[post ID]<br>>>>[post ID from same board, different thread]<br>>>>[post ID from different board]<br>>>>[post ID from address you control on same board, different thread]<br>>>>[post ID from address you control on different board]<br>>>>[post ID from a hidden board]</td>
+        <td style="white-space: nowrap;">
+            Cross-linking: Allows linking to other boards and posts.
+            <br/>&gt;&gt;&gt;[board/list address]
+            <br>&gt;&gt;&gt;[board address]/[post ID]
+            <br>>>>[post ID from same board, different thread]
+            <br>>>>[post ID from different board]
+            <br>>>>[post ID from your address, same board, different thread]
+            <br>>>>[post ID from your address, different board]
+            <br>>>>[post ID from a hidden board]
+        </td>
         <td style="white-space: nowrap;">
             <a class="reply-tooltip under-solid" href="/board/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/1">&gt;&gt;&gt;BM-2cTJJ...</a>
-            <br><a class="reply-tooltip under-solid" href="/board/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/1#1DA705CC1">&gt;&gt;&gt;BM-2cTJJ.../1DA705CC1</a>
-            <br><a class="reply-tooltip under-solid" href="/thread/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/2#1DA705CC1">&gt;&gt;&gt;1DA705CC1</a><br><a class="reply-tooltip under-double" href="/thread/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/2#1DA705CC1">&gt;&gt;&gt;1DA705CC1</a><br><a class="reply-tooltip under-dash" href="/thread/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/2#935V8HEE0">>>>935V8HEE0 (My ID)</a><br><a class="reply-tooltip under-wavy" href="/thread/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/2#935V8HEE0">>>>935V8HEE0 (My ID)</a><br>>>>935V8HEE0
+            <br/><a class="reply-tooltip under-solid" href="/board/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/1#1DA705CC1">&gt;&gt;&gt;BM-2cTJJ.../1DA705CC1</a>
+            <br/><a class="reply-tooltip under-solid" href="/thread/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/2#1DA705CC1">&gt;&gt;&gt;1DA705CC1</a>
+            <br/><a class="reply-tooltip under-double" href="/thread/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/2#1DA705CC1">&gt;&gt;&gt;1DA705CC1</a>
+            <br/><a class="reply-tooltip under-dash" href="/thread/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/2#935V8HEE0">>>>935V8HEE0 (My ID)</a>
+            <br/><a class="reply-tooltip under-wavy" href="/thread/BM-2cTJJTr1hXHE3k3L3Vb6NMjcQv2mnsEmYx/2#935V8HEE0">>>>935V8HEE0 (My ID)</a>
+            <br/>>>>935V8HEE0
         </td>
-        <td>Allows linking to other boards and other board's posts.</td>
     </tr>
     <tr>
-        <td>Link Identity Address</td>
-        <td style="white-space: nowrap;">[identity]BM-2cWpn...[/identity]</td>
+        <td>
+            Link Identity Address: Adds common functions to identity addresses.
+            <br/>[identity]BM-2cWpn...[/identity]</td>
         <td><span class="replace-funcs">BM-2cWpn...</span> (<a class="link" href="/compose/0/BM-2cWpn2bVGZxQs3xbPsG2aQPNFKgmvh23gN">Send Message</a>) (<a class="link" href="/address_book_add/BM-2cWpn2bVGZxQs3xbPsG2aQPNFKgmvh23gN">Add to Address Book</a>)</td>
-        <td>Adds common functions to identity addresses.</td>
     </tr>
     <tr>
-        <td>Countdown<br/>(3 max)</td>
-        <td style="white-space: nowrap;">#countdown([int])</td>
-        <td style="white-space: nowrap;"><span class="replace-funcs">#countdown(1607643756)</span><br/><span class="replace-funcs">#countdown(1 Day, 21 Hours, 19 Min, 22 Sec)</span></td>
-        <td>Returns a live countdown to the given epoch timestamp. Use <a class="link" href="https://www.epochconverter.com/">Epoch Converter</a> to convert your desired time to an epoch timestamp.</td>
+        <td>
+            Countdown (3 max): Returns a live countdown to the given epoch timestamp. Use <a class="link" href="https://www.epochconverter.com/">Epoch Converter</a> to convert your desired time to an epoch timestamp.
+            <br/>#countdown([int])
+        </td>
+        <td><span class="replace-funcs">#countdown(1607643756)</span><br/><span class="replace-funcs">#countdown(1 Day, 21 Hours, 19 Min, 22 Sec)</span></td>
     </tr>
     <tr>
-        <td>Dice Roll<br/>(50 max)</td>
-        <td style="white-space: nowrap;">#d[int]<br>#[int]d[int]</td>
-        <td style="white-space: nowrap;"><span class="replace-funcs">#d20(15)</span><br/><span class="replace-funcs">#4d6(2, 1, 1, 6)</span></td>
-        <td>Returns a random integer or integers up to the number of sides of the die. Multiple dice can be rolled if an integer is placed before the "d".</td>
+        <td>
+            Dice Roll (50 max): Returns a random integer or integers up to the number of sides of the die. Multiple dice can be rolled if an integer is placed before the "d".
+            <br/>#d[int]
+            <br/>#[int]d[int]
+        </td>
+        <td><span class="replace-funcs">#d20(15)</span><br/><span class="replace-funcs">#4d6(2, 1, 1, 6)</span></td>
     </tr>
     <tr>
-        <td>Magic 8 Ball<br/>(50 max)</td>
-        <td style="white-space: nowrap;">#8ball</td>
+        <td>
+            Magic 8 Ball (50 max): Produces an 8 ball answer.
+            <br/>#8ball
+        </td>
         <td><span class="replace-funcs">#8ball(It is decidedly so)</span></td>
-        <td>Produces an 8 ball answer.</td>
     </tr>
     <tr>
-        <td>Card Draw<br/>(50 max)</td>
-        <td style="white-space: nowrap;">#c[int 1-52]</td>
+        <td>
+            Card Draw (50 max): Draws cards from a standard deck of 52 cards.
+            <br/>#c[int 1-52]
+        </td>
         <td><span class="replace-funcs">#c13(6♠ 3♦ Q♦ Q♣ 8♠ K♣ 4♥ 6♣ 2♦ 10♥ Q♠ J♠ A♣)</span></td>
-        <td>Draws cards from a standard deck of 52 cards.</td>
     </tr>
     <tr>
-        <td>Coin Toss<br/>(50 max)</td>
-        <td style="white-space: nowrap;">#flip</td>
+        <td>
+            Coin Toss (50 max): Toss a coin.
+            <br/>#flip
+        </td>
         <td><span class="replace-funcs">#flip(flap)</span></td>
-        <td>Toss a coin.</td>
     </tr>
     <tr>
-        <td>Rock, Paper, Scissors<br/>(50 max)</td>
-        <td style="white-space: nowrap;">#rps</td>
+        <td>
+            Rock, Paper, Scissors (50 max): Rock, paper, scissors shoot.
+            <br/>#rps
+        </td>
         <td><span class="replace-funcs">#rps(paper)</span></td>
-        <td>Rock, paper, scissors shoot.</td>
     </tr>
     <tr>
-        <td>Tarot Draw<br/>(50 max)</td>
-        <td style="white-space: nowrap;">#t[int 1-78]</td>
+        <td>
+            Tarot Draw (50 max): Draw cards from a standard Tarot deck.
+            <br/>#t[int 1-78]
+        </td>
         <td><span class="replace-funcs">#t3(Ace of Wands (↓), The Magician (↓), The High Priestess)</span></td>
-        <td>Draw cards from a standard Tarot deck.</td>
     </tr>
     <tr>
-        <td>Crowley's Tarot<br/>(50 max)</td>
-        <td style="white-space: nowrap;">#ct[int 1-78]</td>
+        <td>
+            Crowley's Tarot (50 max): Draw cards from Crowley's Tarot deck.
+            <br/>#ct[int 1-78]
+        </td>
         <td><span class="replace-funcs">#ct3(Fortune, Four of Cups (↓), The Star)</span></td>
-        <td>Draw cards from Crowley's Tarot deck.</td>
     </tr>
     <tr>
-        <td>I Ching Divination<br/>(50 max)</td>
-        <td style="white-space: nowrap;">#iching</td>
+        <td>
+            I Ching Divination (50 max): Produce an automatic I Ching divination.
+            <br/>#iching
+        </td>
         <td><span class="replace-funcs">#iching(15. <span style="font-family: iching;">䷎</span> CH'IEN / MODESTY <span style="font-family: arrow;">🢂</span> 25. <span style="font-family: iching;">䷘</span> WU WANG / INNOCENCE (THE UNEXPECTED))</span></td>
-        <td>Produce an automatic I Ching divination.</td>
     </tr>
     <tr>
-        <td>Rune Draw (version 1)<br/>(50 max)</td>
-        <td style="white-space: nowrap;">#rb[int 1-25]</td>
+        <td>
+            Rune Draw (version 1) (50 max): Futhark Rune divination (with blank rune).
+            <br/>#rb[int 1-25]
+        </td>
         <td><span class="replace-funcs">#rb3(<span style="font-family: runes;">ᛁ</span> - ISA (STANDSTILL), <span style="font-family: runes;">ᚦ</span> - THURISAZ Rev. (STUBBORN), <span style="font-family: runes;">ᚺ</span> - HAGLAZ (DISRUPTION))</span></td>
-        <td>Futhark Rune divination (with blank rune).</td>
     </tr>
     <tr>
-        <td>Rune Draw (version 2)<br/>(50 max)</td>
-        <td style="white-space: nowrap;">#r[int 1-24]</td>
+        <td>
+            Rune Draw (version 2) (50 max): Futhark Rune divination (without blank rune).
+            <br/>#r[int 1-24]
+        </td>
         <td><span class="replace-funcs">#r3(<span style="font-family: runes;">ᛈ</span> - PERTHO (CHANCE AND BECOMING), <span style="font-family: runes;">ᚹ</span> - WUNJO (JOY), <span style="font-family: runes;">ᛋ</span> - SOWILO (SELF))</span></td>
-        <td>Futhark Rune divination (without blank rune).</td>
     </tr>
     <tr>
-        <td>Stichomancy<br/>(2 max)</td>
-        <td style="white-space: nowrap;">#stich</td>
+        <td>
+            Stichomancy (2 max): Perform a stichomancy divination from 60,000 books from the Project Gutenberg library.
+            <br/>#stich
+        </td>
         <td><span class="replace-funcs">#stich("Even as far north as Monterey, in the central part of the State, the famous Hotel del Monte, with its magnificent park of pines and live-oaks, and exquisite flower-gardens underneath the trees, is remarkable for its steadiness of temperature." -<a class="link" href="http://www.gutenberg.org/ebooks/28506">Our Italy</a>)</span></td>
-        <td>Perform a stichomancy divination from 60,000 books from the Project Gutenberg library.</td>
     </tr>
     <tr>
-        <td>God Song<br/>(1 song, 10 verses max)</td>
-        <td style="white-space: nowrap;">#godsong</td>
+        <td>
+            God Song (1 song, 10 verses max): Creates a God Song along with posting a quote from The Holy Bible (KJV).
+            <br/>#godsong
+        </td>
         <td><span class="replace-funcs">#godsong(</span><audio style="width: 300px" controls><source src="/static/good_god_song.mp3" type="audio/mp3"></audio><span class="replace-funcs"> 14:27 And king Rehoboam made in their stead brasen shields, and committed them unto the hands of the chief of the guard, which kept the door of the king’s house. -<a class="link" target="_blank" href="http://www.gutenberg.org/ebooks/10">The Second Book of Moses: Called Exodus, The Holy Bible (KJV)</a>)</span></td>
-        <td>Creates a God Song along with posting a quote from The Holy Bible (KJV)</td>
     </tr>
 </table>

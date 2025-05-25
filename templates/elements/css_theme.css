@@ -1,7 +1,7 @@
 {% set theme = themes[get_theme()] %}
 
 * {
-    font-size: 10pt;
+    font-size: {% if user_options['options_font_size'] %}{{user_options['options_font_size']}}{% else %}{{settings.font_size}}{% endif %}pt;
     font-family: {{theme.font_family}};
     -webkit-font-smoothing: antialiased !important;
 }
@@ -354,7 +354,6 @@ div.plaque {
     border: 1px solid {{theme.divborder}};
     border-left: none;
     border-top: none;
-    display: table;
 }
 
 div.post {
@@ -380,6 +379,8 @@ a.reference {
 blockquote.post {
     margin: 10px 10px 10px 10px;
     word-break: break-word;
+    width: 100%;
+    padding: 0px 10px 0 0;
 }
 
 p.post {

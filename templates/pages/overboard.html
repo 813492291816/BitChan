@@ -6,29 +6,19 @@
 
 {% block head %}
     <style>
-        .column {
-          float: left;
-          width: 24%;
-          padding: 0 0.5%;
+        .contain {
+          display: flex;
+          min-height: 150px;
+          flex-wrap: wrap;
+          overflow-y: hidden;
         }
 
-        /* Remove extra left and right margins, due to padding in columns */
-        .row {margin: 0 -5px;}
-
-        /* Clear floats after the columns */
-        .row:after {
-          content: "";
-          display: table;
-          clear: both;
-        }
-
-        /* Responsive columns - one column layout (vertical) on small screens */
-        @media screen and (max-width: 600px) {
-          .column {
-            width: 100%;
-            display: block;
-            margin-bottom: 20px;
-          }
+        .contain > div {
+          flex: 1 1 250px;
+          min-height: 250px;
+          min-width: 250px;
+          max-width: 400px;
+          padding: 5px;
         }
 
         .three-dots {
@@ -75,75 +65,77 @@
 
     {% include '/elements/footer_overboard_pages.html' %}
 
-    <div class="intro">
-        <div class="row" style="padding-top: 1em">
+    <div class="contain">
     {% for each_thread_hash in thread_info %}
         {% set thread_options = get_thread_options(each_thread_hash) %}
-        {% if loop.index0 %4 == 0%}
-        </div>
-        <div class="row" style="padding-top: 1em">
-        {% endif %}
-            <div class="column">
-                <div class="themed" style="font-size: 0.7em; padding-left: 0.25em; padding-bottom: 0.25em">
-                    {{thread_info[each_thread_hash]["last_post_past"]}} ago |
-                    {{thread_info[each_thread_hash]["ppm"]}} PPM
+        <div>
+            <div class="themed" style="font-size: 0.7em; padding-left: 0.25em; padding-bottom: 0.25em">
+                {{thread_info[each_thread_hash]["last_post_past"]}} ago |
+                {{thread_info[each_thread_hash]["ppm"]}} PPM
 
-                    {% if thread_info[each_thread_hash]["total_posts"] > 100 -%}
-                    | <a class="link" style="font-size: 1em;" href="/thread/{{thread_info[each_thread_hash]['board_address']}}/{{each_thread_hash}}?last=100">Last 100</a>
-                    {%- endif %}
+                {% if thread_info[each_thread_hash]["total_posts"] > 100 -%}
+                | <a class="link" style="font-size: 1em;" href="/thread/{{thread_info[each_thread_hash]['board_address']}}/{{each_thread_hash}}?last=100">Last 100</a>
+                {%- endif %}
 
-                    {% if not overboard_info["single_board"] -%}
-                    | <a class="link" style="font-size: 1em;" href="/board/{{thread_info[each_thread_hash]['board_address']}}/1" title="/{{thread_info[each_thread_hash]['board_label']}}/ - {{thread_info[each_thread_hash]['board_description']|safe}}">/{{thread_info[each_thread_hash]["board_label"]}}/</a>
-                    [<a class="link" style="font-size: 1em;" title="Catalog" href="/overboard/{{thread_info[each_thread_hash]['board_address']}}/1">C</a>
-                    / <a class="link" style="font-size: 1em;" title="Recent" href="/recent/{{thread_info[each_thread_hash]['board_address']}}/1">R</a>
-                    {% if not settings.enable_kiosk_mode or
-                          (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_mod_log and logged_in and has_permission("is_global_admin")) or
-                          (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_mod_log) -%}
-                    / <a class="link" style="font-size: 1em;" title="Mod Log" href="/mod_log/{{thread_info[each_thread_hash]['board_address']}}/1">M</a>
+                {% if not overboard_info["single_board"] -%}
+                | <a class="link" style="font-size: 1em;" href="/board/{{thread_info[each_thread_hash]['board_address']}}/1" title="/{{thread_info[each_thread_hash]['board_label']}}/ - {{thread_info[each_thread_hash]['board_description']|safe}}">/{{thread_info[each_thread_hash]["board_label"]}}/</a>
+                [<a class="link" style="font-size: 1em;" title="Catalog" href="/overboard/{{thread_info[each_thread_hash]['board_address']}}/1">C</a>
+                / <a class="link" style="font-size: 1em;" title="Recent" href="/recent/{{thread_info[each_thread_hash]['board_address']}}/1">R</a>
+                {% if not settings.enable_kiosk_mode or
+                      (settings.enable_kiosk_mode and settings.kiosk_only_admin_access_mod_log and logged_in and has_permission("is_global_admin")) or
+                      (settings.enable_kiosk_mode and not settings.kiosk_only_admin_access_mod_log) -%}
+                / <a class="link" style="font-size: 1em;" title="Mod Log" href="/mod_log/{{thread_info[each_thread_hash]['board_address']}}/1">M</a>
+                {%- endif -%}
+                ]
+                {%- endif %}
+
+                {% if thread_options["sticky"] %}
+                    <img style="position: relative; top: 1px; height: 10px" title="Stickied{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
+                    {%- if thread_options['sticky_local'] and not thread_options['sticky_remote'] -%}
+                        pin_green.png
+                    {%- elif not thread_options['sticky_local'] and thread_options['sticky_remote'] -%}
+                        pin_red.png
+                    {%- else -%}
+                        pin_green_red.png
                     {%- endif -%}
-                    ]
-                    {%- endif %}
+                    ">
+                {% endif %}
 
-                    {% if thread_options["sticky"] %}
-                        <img style="position: relative; top: 1px; height: 10px" title="Stickied{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
-                        {%- if thread_options['sticky_local'] and not thread_options['sticky_remote'] -%}
-                            pin_green.png
-                        {%- elif not thread_options['sticky_local'] and thread_options['sticky_remote'] -%}
-                            pin_red.png
-                        {%- else -%}
-                            pin_green_red.png
-                        {%- endif -%}
-                        ">
-                    {% endif %}
+                {% if thread_options["lock"] %}
+                    <img style="position: relative; top: 1px; height: 10px" title="Locked{% if thread_options['lock_local'] %} (Local){% endif %}{% if thread_options['lock_remote'] %} (Remote){% endif %}" src="/static/
+                    {%- if thread_options['lock_local'] and not thread_options['lock_remote'] -%}
+                        lock_green.png
+                    {%- elif not thread_options['lock_local'] and thread_options['lock_remote'] -%}
+                        lock_red.png
+                    {%- else -%}
+                        lock_green_red.png
+                    {%- endif -%}
+                    ">
+                {% endif %}
 
-                    {% if thread_options["lock"] %}
-                        <img style="position: relative; top: 1px; height: 10px" title="Locked{% if thread_options['lock_local'] %} (Local){% endif %}{% if thread_options['lock_remote'] %} (Remote){% endif %}" src="/static/
-                        {%- if thread_options['lock_local'] and not thread_options['lock_remote'] -%}
-                            lock_green.png
-                        {%- elif not thread_options['lock_local'] and thread_options['lock_remote'] -%}
-                            lock_red.png
-                        {%- else -%}
-                            lock_green_red.png
-                        {%- endif -%}
-                        ">
-                    {% endif %}
+                {% if thread_options["anchor"] %}
+                    <img style="position: relative; top: 1px; height: 10px" title="Anchored{% if thread_options['anchor_local'] %} (Local){% endif %}{% if thread_options['anchor_remote'] %} (Remote){% endif %}" src="/static/
+                    {%- if thread_options['anchor_local'] and not thread_options['anchor_remote'] -%}
+                        anchor_green.png
+                    {%- elif not thread_options['anchor_local'] and thread_options['anchor_remote'] -%}
+                        anchor_red.png
+                    {%- else -%}
+                        anchor_green_red.png
+                    {%- endif -%}
+                    ">
+                {% endif %}
 
-                    {% if thread_options["anchor"] %}
-                        <img style="position: relative; top: 1px; height: 10px" title="Anchored{% if thread_options['anchor_local'] %} (Local){% endif %}{% if thread_options['anchor_remote'] %} (Remote){% endif %}" src="/static/
-                        {%- if thread_options['anchor_local'] and not thread_options['anchor_remote'] -%}
-                            anchor_green.png
-                        {%- elif not thread_options['anchor_local'] and thread_options['anchor_remote'] -%}
-                            anchor_red.png
-                        {%- else -%}
-                            anchor_green_red.png
-                        {%- endif -%}
-                        ">
-                    {% endif %}
-                </div>
-                {{generate_card(each_thread_hash)|safe}}
+                {%- if thread_options["favorite"] -%}
+                &nbsp;<a href="/favorites"><img style="position: relative; top: 3px; height: 15px" title="Favorite Thread" src="/static/star_green.png"></a>
+                {%- endif -%}
+
+                {%- if thread_options["archived"] -%}
+                &nbsp;<a href="/archive"><img style="position: relative; top: 3px; height: 15px" title="Archived" src="/static/archive_green.png"></a>
+                {%- endif -%}
             </div>
-    {% endfor %}
+            {{generate_card(each_thread_hash)|safe}}
         </div>
+    {% endfor %}
     </div>
 
     {% include '/elements/footer_overboard_pages.html' %}

@@ -89,6 +89,7 @@ class Chan(CRUDMixin, db.Model):
     address = db.Column(db.String(255), unique=True, default=None)
     unlisted = db.Column(db.Boolean, default=False)
     restricted = db.Column(db.Boolean, default=False)
+    hide_from_recent = db.Column(db.Boolean, default=False)
     hide_passphrase = db.Column(db.Boolean, default=False)
     read_only = db.Column(db.Boolean, default=False)
     primary_addresses = db.Column(db.Text, default="[]")
@@ -149,17 +150,23 @@ class Threads(CRUDMixin, db.Model):
     timestamp_received = db.Column(db.Integer, default=0)
     locked_local_ts = db.Column(db.Integer, default=0)
     anchored_local_ts = db.Column(db.Integer, default=0)
-    hide = db.Column(db.Boolean, default=False)
     time_ts = db.Column(db.Integer, default=0)
     orig_op_bm_json_obj = db.Column(MEDIUMTEXT, default=None)
     last_op_json_obj_ts = db.Column(db.Integer, default=0)
     rules = db.Column(MEDIUMTEXT, default="{}")
 
-    # Local settings
+    # Attributes
+    archived = db.Column(db.Boolean, default=False)
+    archive_epoch = db.Column(db.Integer, default=None)
+    hide = db.Column(db.Boolean, default=False)
+    favorite = db.Column(db.Boolean, default=False)
     anchored_local = db.Column(db.Boolean, default=False)
     stickied_local = db.Column(db.Boolean, default=False)
     locked_local = db.Column(db.Boolean, default=False)
     post_max_height_local = db.Column(db.Boolean, default=False)
+    anchored_remote = db.Column(db.Boolean, default=False)
+    stickied_remote = db.Column(db.Boolean, default=False)
+    locked_remote = db.Column(db.Boolean, default=False)
 
     chan = relationship("Chan", back_populates="threads")
     messages = relationship("Messages", back_populates="thread")
@@ -231,7 +238,7 @@ class Messages(CRUDMixin, db.Model):
     popup_html = db.Column(MEDIUMTEXT, default="")
     popup_moderate = db.Column(db.Text, default="")
     regenerate_popup_html = db.Column(db.Boolean, default=True)
-    hide = db.Column(db.Boolean, default=False)
+
     time_ts = db.Column(db.Integer, default=0)
     delete_comment = db.Column(db.Text, default=None)
     post_html = db.Column(MEDIUMTEXT, default=None)
@@ -240,6 +247,10 @@ class Messages(CRUDMixin, db.Model):
     regenerate_post_html = db.Column(db.Boolean, default=False)
     post_ids_replied_to = db.Column(db.Text, default="[]")  # Reply Post IDs in this message
     post_ids_replying_to_msg = db.Column(db.Text, default="[]")  # Post IDs that reply to this message
+
+    # Attributes
+    hide = db.Column(db.Boolean, default=False)
+    favorite = db.Column(db.Boolean, default=False)
 
     # POW
     pow_method = db.Column(db.Text, default=None)

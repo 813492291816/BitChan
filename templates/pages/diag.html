@@ -81,10 +81,10 @@
         <tr>
             <td>
                 <form method="post">
-                    <input type="submit" name="del_inventory" value="Delete Bitmessage Inventory"/>
+                    <input type="submit" name="del_inventory" value="Delete Bitmessage messages.dat"/>
                 </form>
             </td>
-            <td>Delete messages.dat and restart Bitmessage. Useful to download the entire blockchain again after clearing the deleted message table and deleting the bitmessage trash in order to restore posts that were previously deleted.</td>
+            <td>Delete messages.dat and restart Bitmessage. Useful to download the entire blockchain again after clearing the deleted message table and deleting the bitmessage trash in order to restore posts that were previously deleted. Can also fix some rare issues with bitmessage if this file becomes corrupt.</td>
         </tr>
         <tr>
             <td>
@@ -101,6 +101,14 @@
                 </form>
             </td>
             <td>When posts are deleted in BitChan, an entry with that message ID is created to indicate that message has been deleted. If a message from Bitmessage arrives with that same message ID, it is deleted and not processed. If you would like to restore posts that have been deleted, first clear the deleted message table, then delete the Bitmessage inventory.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="del_deleted_thread_db" value="Clear Deleted Thread Table"/>
+                </form>
+            </td>
+            <td>When threads are deleted in BitChan, an entry with that thread hash is created to indicate that thread has been deleted. If a message from Bitmessage arrives indicating it's from that thread, it is deleted and not processed. If you would like to restore posts for a thread that has been deleted, first clear the deleted thread table, then clear the message table, then delete the Bitmessage inventory.</td>
         </tr>
         <tr>
             <td>

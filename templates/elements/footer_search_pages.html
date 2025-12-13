@@ -15,6 +15,7 @@
             {%- if filter_steg -%}&fs=1{%- endif -%}
             {%- if search_from -%}&sf={{search_from}}{%- endif -%}
             {%- if search_type -%}&st={{search_type}}{%- endif -%}
+            {%- if search_boards != 'all' -%}&sb={{search_boards}}{%- endif -%}
             ">&lt;&lt;</a>&nbsp;&nbsp;
         {% endif %}
         <a class="link page-nav" href="/search/{{search_string_b64}}/{{current_page - 1}}?
@@ -23,6 +24,7 @@
             {%- if filter_steg -%}&fs=1{%- endif -%}
             {%- if search_from -%}&sf={{search_from}}{%- endif -%}
             {%- if search_type -%}&st={{search_type}}{%- endif -%}
+            {%- if search_boards != 'all' -%}&sb={{search_boards}}{%- endif -%}
         ">&lt;</a>&nbsp;&nbsp;
     {% endif %}
 
@@ -44,7 +46,8 @@
                 {%- if filter_op -%}&fo=1{%- endif -%}
                 {%- if filter_steg -%}&fs=1{%- endif -%}
                 {%- if search_from -%}&sf={{search_from}}{%- endif -%}
-                {%- if search_type -%}&st={{search_type}}{%- endif -%}">[{{page}}]</a>
+                {%- if search_type -%}&st={{search_type}}{%- endif -%}
+                {%- if search_boards != 'all' -%}&sb={{search_boards}}{%- endif -%}">[{{page}}]</a>
             {% endif %}
             {% if not loop.last or current_page < pages|length %}&nbsp;&nbsp;{% endif %}
         {% endif %}
@@ -57,6 +60,7 @@
             {%- if filter_steg -%}&fs=1{%- endif -%}
             {%- if search_from -%}&sf={{search_from}}{%- endif -%}
             {%- if search_type -%}&st={{search_type}}{%- endif -%}
+            {%- if search_boards != 'all' -%}&sb={{search_boards}}{%- endif -%}
         ">&gt;</a>{% if current_page < total_pages - 1 %}&nbsp;&nbsp;{% endif %}
         {% if current_page < total_pages - 1 %}
             <a class="link page-nav" href="/search/{{search_string_b64}}/{{total_pages}}?
@@ -65,6 +69,7 @@
             {%- if filter_steg -%}&fs=1{%- endif -%}
             {%- if search_from -%}&sf={{search_from}}{%- endif -%}
             {%- if search_type -%}&st={{search_type}}{%- endif -%}
+            {%- if search_boards != 'all' -%}&sb={{search_boards}}{%- endif -%}
         ">&gt;&gt;</a>
         {% endif %}
     {% endif %}

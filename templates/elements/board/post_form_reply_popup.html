@@ -207,7 +207,7 @@
           <td colspan="3">
         {% if settings.enable_captcha %}
             {{captcha(page_id=page_id, img_id="post_captcha")}}
-            <input type="text" id="popup_captcha" name="captcha">
+            <input type="number" pattern="[0-9]*" inputmode="numeric" id="popup_captcha" name="captcha">
         {% endif %}
             <div style="float: right;">
               <input class="postbutton" type="submit" id="btn_reply_submit" name="submit_post" value="Post"/>

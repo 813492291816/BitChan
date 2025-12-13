@@ -195,7 +195,7 @@
         <tr>
         {% if settings.enable_captcha %}
           <td>{{captcha(page_id=page_id, img_id="post_captcha")}}</td>
-          <td><input type="text" name="captcha"></td>
+          <td><input type="number" pattern="[0-9]*" inputmode="numeric" name="captcha"></td>
         {% endif %}
           <td>
             <div style="float: left;">

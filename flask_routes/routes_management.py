@@ -746,9 +746,13 @@ def join():
                     "Must provide at least one primary address as the owner")
 
             # Rules
-            if form_join.require_attachment.data and form_join.disallow_attachments.data:
+            if ((form_join.require_attachment_op.data and form_join.disallow_attachments.data) or
+                    (form_join.require_attachment.data and form_join.disallow_attachments.data)):
                 status_msg['status_message'].append(
-                    "Cannot have both rules Require Attachment and Disallow Attachments.")
+                    "Cannot have both rules requiring attachments and disallowing attachments.")
+
+            if form_join.require_attachment_op.data:
+                rules["require_attachment_op"] = form_join.require_attachment_op.data
 
             if form_join.require_attachment.data:
                 rules["require_attachment"] = form_join.require_attachment.data

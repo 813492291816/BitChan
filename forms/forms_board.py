@@ -25,8 +25,17 @@ class ThreadAttributes(FlaskForm):
     thread_lock = BooleanField("Lock Thread")
     thread_anchor = BooleanField("Anchor Thread")
     thread_sticky = BooleanField("Sticky Thread")
+    thread_hide = BooleanField("Hide Thread")
+    thread_archive = BooleanField("Archive Thread")
+    thread_favorite = BooleanField("Favorite Thread")
     thread_max_height = BooleanField("Force Post Max Height")
     save_attributes = SubmitField("Save Thread Attributes")
+
+
+class PostAttributes(FlaskForm):
+    post_hide = BooleanField("Hide Post")
+    post_favorite = BooleanField("Favorite Post")
+    save_attributes = SubmitField("Save Post Attributes")
 
 
 class Post(FlaskForm):
@@ -119,7 +128,8 @@ class SetOptions(FlaskForm):
 class Join(FlaskForm):
     stage = StringField("Stage")
     join_type = SelectField("Join Type", choices=[])
-    require_attachment = BooleanField("Require Post Attachment")
+    require_attachment_op = BooleanField("Require Attachments for Thread OPs")
+    require_attachment = BooleanField("Require Attachments for All Posts")
     require_pow_to_post = BooleanField("Require Proof of Work (POW) to Post")
     pow_method = StringField("POW Method")
     pow_difficulty = StringField("POW Difficulty")

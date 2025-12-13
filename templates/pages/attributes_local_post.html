@@ -1,0 +1,63 @@
+{% extends "layout.html" %}
+
+{% block title %}Post Attributes - {% endblock %}
+
+{% block head %}
+<style>
+    table {
+        border: 1px solid black;
+    }
+    th, td {
+        border: 1px solid black;
+        padding: 0.5em;
+    }
+</style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="container">
+        <div style="max-width: 800px;">
+            <div class="themed" style="width: 100%; text-align: center; padding-bottom: 2em">
+                <form method="post">
+                <h1 class="title themed bold">Set Attributes (Locally) for Post {{message.post_id}} of thread "{{message.thread.subject|safe}}"</h1>
+
+                <table class="table themed">
+                    <tr>
+                        <td colspan="2" style="padding: 0.5em; text-align: center; font-size: 1.5em">Locally Applied Attributes</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: bold; text-align: left"><label for="post_hide">Hide</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="post_hide" name="post_hide" value="y"{% if message.hide %} checked{% endif %}/></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: left">Hide post from public view. Kiosk users will not be able to view this post.</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: bold; text-align: left"><label for="post_favorite">Favorite</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="post_favorite" name="post_favorite" value="y"{% if message.favorite %} checked{% endif %}/></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: left">Add to display on Favorites page.</td>
+                    </tr>
+                </table>
+
+                <div class="themed" style="padding-top: 1em; padding-bottom: 2em">
+                    <input type="submit" name="save_attributes" value="Save Post Attributes"/>
+                </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

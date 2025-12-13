@@ -24,7 +24,10 @@ def upgrade():
     try:
         with op.batch_alter_table("message") as batch_op:
             batch_op.add_column(sa.Column('pow_filter_value', BIGINT))
+    except Exception as err:
+        print(err)
 
+    try:
         op.execute(
             '''
             UPDATE message

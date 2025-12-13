@@ -24,7 +24,10 @@ def upgrade():
     try:
         with op.batch_alter_table("thread") as batch_op:
             batch_op.add_column(sa.Column('rules', MEDIUMTEXT))
+    except Exception as err:
+        print(err)
 
+    try:
         op.execute(
             '''
             UPDATE thread

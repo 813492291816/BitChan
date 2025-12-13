@@ -10,7 +10,6 @@ import time
 from threading import Thread
 
 import qbittorrentapi
-from flask import Response
 from flask import redirect
 from flask import render_template
 from flask import request
@@ -19,8 +18,6 @@ from flask import url_for
 from flask.blueprints import Blueprint
 from sqlalchemy import and_
 from sqlalchemy import or_
-from zipstream import ZIP_DEFLATED
-from zipstream import ZipStream
 
 import config
 from bitchan_client import DaemonCom
@@ -31,6 +28,7 @@ from database.models import Captcha
 from database.models import Chan
 from database.models import Command
 from database.models import DeletedMessages
+from database.models import DeletedThreads
 from database.models import Games
 from database.models import GlobalSettings
 from database.models import Identity
@@ -50,7 +48,6 @@ from utils import themes
 from utils.download import process_attachments
 from utils.encryption_decrypt import decrypt_safe_size
 from utils.files import LF
-from utils.files import delete_file
 from utils.files import delete_files_recursive
 from utils.gateway import api
 from utils.gateway import generate_identity
@@ -531,7 +528,8 @@ def diag():
 
         elif form_diag.restart_bitmessage.data:
             try:
-                daemon_com.restart_bitmessage()
+                restart_bitmessage = Thread(target=daemon_com.restart_bitmessage)
+                restart_bitmessage.start()
                 status_msg['status_title'] = "Success"
                 status_msg['status_message'].append(
                     "Restarting Bitmessage. Give it time to complete.")
@@ -542,7 +540,8 @@ def diag():
 
         elif form_diag.del_inventory.data:
             try:
-                daemon_com.clear_bm_inventory()
+                del_inventory = Thread(target=daemon_com.clear_bm_inventory)
+                del_inventory.start()
                 status_msg['status_title'] = "Success"
                 status_msg['status_message'].append(
                     "Deleted Bitmessage inventory and restarting Bitmessage. Give it time to resync.")
@@ -563,6 +562,19 @@ def diag():
                 status_msg['status_message'].append(
                     "Couldn't clear Deleted Message table: {}".format(err))
                 logger.exception("Couldn't clear Deleted Message table")
+
+        elif form_diag.del_deleted_thread_db.data:
+            try:
+                deleted_threads = DeletedThreads.query.all()
+                for each_thread in deleted_threads:
+                    logger.info("DeletedThreads: Deleting entry: {}".format(each_thread.id))
+                    each_thread.delete()
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append("Cleared Deleted Thread table")
+            except Exception as err:
+                status_msg['status_message'].append(
+                    "Couldn't clear Deleted Thread table: {}".format(err))
+                logger.exception("Couldn't clear Deleted Thread table")
 
         elif form_diag.del_non_bc_msg_list.data:
             try:

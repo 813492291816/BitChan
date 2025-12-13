@@ -43,11 +43,13 @@ def add_mod_log_entry(
 
         if timestamp:
             try:
-                log_entry.timestamp = int(timestamp)
+                ts = int(timestamp)
             except:
-                log_entry.timestamp = time.time()
+                ts = time.time()
         else:
-            log_entry.timestamp = time.time()
+            ts = time.time()
+
+        log_entry.timestamp = ts
 
         new_session.add(log_entry)
         new_session.commit()

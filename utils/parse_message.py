@@ -426,8 +426,13 @@ def parse_message(message_id, json_obj):
             except:
                 rules = {}
 
-            if "require_attachments" in rules and not file_amount:
-                logger.error(f"{log_id}: Message requires attachment and none found. Deleting message.")
+            if is_op and "require_attachment_op" in rules and not file_amount:
+                logger.error(f"{log_id}: OP requires attachment and none found. Deleting message.")
+                daemon_com.trash_message(message_id)
+                return
+
+            if "require_attachment" in rules and not file_amount:
+                logger.error(f"{log_id}: Post requires attachment and none found. Deleting message.")
                 daemon_com.trash_message(message_id)
                 return
 
@@ -722,6 +727,17 @@ def parse_message(message_id, json_obj):
                     new_thread.orig_op_bm_json_obj = json.dumps(json_obj)
                     new_thread.last_op_json_obj_ts = time.time()
                     new_thread.rules = json.dumps(thread_rules)
+
+                    # Check for existing admin command
+                    admin_cmd = new_session.query(Command).filter(Command.thread_id == thread_id).first()
+                    if admin_cmd:
+                        if admin_cmd.thread_lock:
+                            new_thread.locked_remote = True
+                        if admin_cmd.thread_sticky:
+                            new_thread.stickied_remote = True
+                        if admin_cmd.thread_anchor:
+                            new_thread.anchored_remote = True
+
                     new_session.add(new_thread)
 
                     if timestamp_sent > chan.timestamp_sent:
@@ -755,6 +771,16 @@ def parse_message(message_id, json_obj):
                         chan.timestamp_sent = timestamp_sent
                     if int(json_obj['receivedTime']) > chan.timestamp_received:
                         chan.timestamp_received = int(json_obj['receivedTime'])
+
+                    # Check for existing admin command
+                    admin_cmd = new_session.query(Command).filter(Command.thread_id == thread_id).first()
+                    if admin_cmd:
+                        if admin_cmd.thread_lock:
+                            new_thread.locked_remote = True
+                        if admin_cmd.thread_sticky:
+                            new_thread.stickied_remote = True
+                        if admin_cmd.thread_anchor:
+                            new_thread.anchored_remote = True
 
                     new_session.commit()
                     thread_created = True

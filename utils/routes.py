@@ -393,8 +393,9 @@ def get_threads_from_page(address, page):
             Command.thread_sticky.is_(True))
         ).order_by(Command.timestamp_utc.desc()).all()
     for each_adm in admin_cmds:
-        sticky_thread = Threads.query.filter(
-            Threads.thread_hash == each_adm.thread_id).first()
+        sticky_thread = Threads.query.filter(and_(
+            Threads.thread_hash == each_adm.thread_id,
+            Threads.archived.is_not(True))).first()
         if sticky_thread:
             stickied_hash_ids.append(sticky_thread.thread_hash)
             threads_sticky.append(sticky_thread)
@@ -407,7 +408,8 @@ def get_threads_from_page(address, page):
     threads_sticky_db = Threads.query.filter(
         and_(
             Threads.chan_id == chan_.id,
-            or_(Threads.stickied_local.is_(True))
+            Threads.stickied_local.is_(True),
+            Threads.archived.is_not(True)
         )).order_by(thread_order_desc).all()
     for each_db_sticky in threads_sticky_db:
         if each_db_sticky.thread_hash not in stickied_hash_ids:
@@ -416,7 +418,8 @@ def get_threads_from_page(address, page):
     threads_all = Threads.query.filter(
         and_(
             Threads.chan_id == chan_.id,
-            Threads.stickied_local.is_(False)
+            Threads.stickied_local.is_(False),
+            Threads.archived.is_not(True)
         )).order_by(thread_order_desc).all()
 
     threads = []
@@ -689,7 +692,11 @@ def get_thread_options(thread_hash):
         "sticky_remote": False,
         "anchor": False,
         "anchor_local": False,
-        "anchor_remote": False
+        "anchor_remote": False,
+        "archived": False,
+        "archived_local": False,
+        "favorite": False,
+        "favorite_local": False
     }
 
     thread = Threads.query.filter(
@@ -717,6 +724,12 @@ def get_thread_options(thread_hash):
         if thread.anchored_local:
             thread_options["anchor"] = True
             thread_options["anchor_local"] = True
+        if thread.archived:
+            thread_options["archived"] = True
+            thread_options["archived_local"] = True
+        if thread.favorite:
+            thread_options["favorite"] = True
+            thread_options["favorite_local"] = True
 
     try:
         thread_options["rules"] = json.loads(thread.rules)

@@ -123,22 +123,28 @@ Bitmessage normally can only operate over the clearnet or tor. MiNode enables bi
 
 # Permissions
 
-For both boards and lists, there can be Owner, Admin, and User addresses specified. If you control an address that is an Owner or Admin of a board or list, you can perform special actions that affect all members. Normally, when you click a link for a thread or post to be deleted from a board, this occurs only locally on your computer. However, Owners and Admins have the ability to delete threads and posts for all users of the board. For private lists, Owners and Admins can delete list items and the changes will be reflected for all users of the list.
+Global Admins can log in to a kiosk and control all aspects of the configuration on the local instance. This is referred to as local changes. They can only affect the local instance acting as the kiosk. They cannot influence other BitChan instances, such as board/list settings or delete threads/posts on other instances. This would be referred to as global changes.
+
+For both boards and lists, there can be Owner, Admin, and User addresses specified. If you control an address that is an Owner or Admin of a board or list, you can perform special actions that affect all members (globally). Normally, when you click a link for a thread or post to be deleted from a board, this occurs only locally on your computer. However, Owners and Admins have the ability to delete threads and posts for all users of the board. For private lists, Owners and Admins can delete list items and the changes will be reflected for all users of the list.
 
 Owners of private boards and lists will see an [Owner Options](#owner-options){.link} menu at the top of the page, where they can modify the parameters of the board or list. Additionally, when an Owner or Admin selects the dropdown menu next to a user's address or post ID, there will be additional options available to them. See the table, below, for what actions are available to each access level. Additionally, some actions may be restricted based on other settings of the board or list.
 
-Ability | Board Owner | Board Admin | Janitor | User
---- |---|---|---|---
-Modify Access Addresses | X |   |   | |
-Set Custom Banner Image | X |   |   | |
-Set Custom CSS | X |   |   | |
-Set Word Replacements | X |   |   | |
-Global Post/Thread Delete | X | X |   | |
-Local Kiosk Post/Thread Delete |   |   | X | |
-Ban Address | X | X |   | |
-Delete from List | X | X |   | |
-Post | X | X | X | X |
-Add to List | X | X | X | X |
+Ability | Global Admin | Board Owner | Board Admin | Janitor | User
+---|---|---|---|---|---
+BitChan Configuration (Local) | X |            | | | |
+Ban String/Regex (Local) | X |            | | | |
+Ban File/Image Hash (Local) | X |            | | | |
+Set Word Replacement (Local) | X |            | | | |
+Modify Access Addresses (Remote) | | X          | | | |
+Set Custom Banner Image (Remote) | | X          | | | |
+Set Custom CSS (Remote) | | X          | | | |
+Set Word Replacements (Remote) | | X          | | | |
+Post/Thread Delete (Remote) | | X          | X | | |
+Post/Thread Delete (Local) | X |            | | X | |
+Ban Address (Remote) | | X          | X | | |
+Delete from List (Remote) | | X          | X | | |
+Post (if enabled) | X | X          | X | X | X |
+Add to List (if enabled) | X | X          | X | X | X |
 
 ***Note: Be careful when banning an address, as there's no restriction to prevent you from banning your own address, and there is currently no ability to remove a ban. Consider adding addresses to the Restricted Address list instead, as this can be changed at a future point in time.***
 
@@ -338,7 +344,7 @@ To make cross-linking more convenient, you can copy the short version here. Clic
 
 To make cross-linking more convenient, you can copy the long version here. Clicking the clipboard icon will copy the address to your clipboard (JavaScript must be enabled for this to work). When posted, the long cross-link will indicate the originating board. 
 
-### This Post's Link
+### Link to This Post
 
 Right click and copy this link to get this post's url.
 
@@ -392,7 +398,7 @@ Each board has a catalog which shows thread cards for all threads on the board i
 
 # Recent
 
-The recent page shows a list for all posts in chronological order (most recent first) regardless of the board or thread from which they originate. Each item in the list displays the post ID, sent time, age of the post, whether it is an original post or not, if it was saged or not, if you control the identity which sent the post or not, the board the post is on and the subject of the thread the post appears on.
+The Recent page shows recent posts in chronological order (most recent first). Anchored threads and boards set to configured to Hide From Recent will not appear on the Recent page, but will appear on the \[A]ll Recent page. Each item in the list displays the post ID, sent time, age of the post, whether it is an original post, if it is saged, if you control the identity which sent the post, the board the post is on, and the subject of the thread.
 
 # Search
 
@@ -961,6 +967,10 @@ When enabled, the board or list will not show passphrases in the Board or List I
 ### Read Only
 
 Read Only boards and lists can only be viewed, unless you are a Board, List, or Global Admin.
+
+### Hide From Recent
+
+Hide posts from this board from the Recent page. The \[A]ll Recent page will still show these posts. 
 
 # Kiosk Mode
 

@@ -23,7 +23,10 @@ def upgrade():
     try:
         with op.batch_alter_table("thread") as batch_op:
             batch_op.add_column(sa.Column('post_max_height_local', sa.Boolean))
+    except Exception as err:
+        print(err)
 
+    try:
         op.execute(
             '''
             UPDATE thread

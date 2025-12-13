@@ -23,7 +23,10 @@ def upgrade():
     try:
         with op.batch_alter_table("settings_global") as batch_op:
             batch_op.add_column(sa.Column('form_default_upload_method', sa.String(255)))
+    except Exception as err:
+        print(err)
 
+    try:
         op.execute(
             '''
             UPDATE settings_global

@@ -648,6 +648,12 @@ def submit_post(form_post):
         elif form_post.pow_method.data and form_post.pow_difficulty.data and form_post.pow_repetitions.data:
             spawn_send_thread += "Additional POW was selected for this post, therefore a thread will be used to send this post in the background. "
 
+        if form_post.is_op.data == "yes" and "require_attachment_op" in rules and not file_list:
+            msg = "Rule requires OP to contain an attachment."
+            errors.append(msg)
+            logger.exception("{}: {}".format(post_options["post_id"], msg))
+            return "Error", errors
+
         if "require_attachment" in rules and not file_list:
             msg = "Rule requires post to contain an attachment."
             errors.append(msg)

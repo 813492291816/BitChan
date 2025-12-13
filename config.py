@@ -7,8 +7,8 @@ logger = logging.getLogger('bitchan.config')
 
 DOCKER = os.environ.get('DOCKER', False) == 'TRUE'
 
-VERSION_BITCHAN = "1.4.1"
-VERSION_ALEMBIC = '000000000134'
+VERSION_BITCHAN = "1.4.2"
+VERSION_ALEMBIC = '000000000142'
 VERSION_MSG = "1.3.0"
 VERSION_MIN_MSG = "1.3.0"
 
@@ -417,7 +417,8 @@ UPLOAD_ENCRYPTION_CIPHERS = [
 ]
 
 DICT_PERMISSIONS = {  # Board Rules
-    "require_attachment": "Require Post Attachment",
+    "require_attachment_op": "Require Attachment for OP",
+    "require_attachment": "Require Attachments for All Posts",
     "require_pow_to_post": "Require Proof of Work (POW) to Post",
     "require_identity_to_post": "Require Identity to Post",
     "restrict_thread_creation": "Restrict Thread Creation to Owners, Admins, and Thread Creation Users",

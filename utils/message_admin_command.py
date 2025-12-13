@@ -737,6 +737,10 @@ def admin_set_thread_options(msg_dict, admin_dict):
         thread = new_session.query(Threads).filter(
             Threads.thread_hash == admin_dict['thread_id']).first()
         if thread:
+            thread.stickied_remote = admin_cmd.thread_sticky
+            thread.locked_remote = admin_cmd.thread_lock
+            thread.anchored_remote = admin_cmd.thread_anchor
+
             message = new_session.query(Messages).filter(and_(
                 Messages.thread_id == thread.id,
                 Messages.is_op.is_(True))).first()

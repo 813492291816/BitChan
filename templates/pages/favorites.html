@@ -1,0 +1,136 @@
+{% extends "layout.html" %}
+
+{% block title %}Favorites - {% endblock %}
+
+{% block head %}
+    <style>
+        .column-thread {
+          float: left;
+          width: 25%;
+          padding: 0 0.5%;
+        }
+
+        .column-post {
+          float: left;
+          width: 33%;
+          padding: 0 0.5%;
+        }
+
+        /* Remove extra left and right margins, due to padding in columns */
+        .row {margin: 0 -5px;}
+
+        /* Clear floats after the columns */
+        .row:after {
+          content: "";
+          display: table;
+          clear: both;
+        }
+
+        /* Responsive columns - one column layout (vertical) on small screens */
+        @media screen and (max-width: 800px) {
+          .column-thread {
+            width: 100%;
+            display: block;
+            margin-bottom: 20px;
+          }
+        }
+
+        @media screen and (max-width: 800px) {
+          .column-post {
+            width: 100%;
+            display: block;
+            margin-bottom: 20px;
+          }
+        }
+
+        .three-dots {
+          text-align: center;
+          padding: 0.2em 0 0.5em 0;
+        }
+
+        .three-dots span {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: black;
+          display: inline-block;
+          margin: 0 3px;
+        }
+
+        div.force-max-height > div > div > blockquote.post {
+            max-height: 25em;
+            overflow-y: auto;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
+    {% include '/elements/banner.html' %}
+    <br/>
+
+    {% if status_msg["status_message"] %}
+        {% include '/elements/status.html' %}
+    {% endif %}
+
+    <div class="intro themed">
+        <h1 class="title themed bold" style="text-align: center">Favorite Threads</h1>
+
+    {%- if not chans_threads %}
+        <h3 class="themed" style="text-align: center">No Favorite Threads</h3>
+    {% endif -%}
+
+    {% for each_entry in chans_threads %}
+        <div class="themed" style="padding: {% if not loop.first %}1.5em{% else %}0{% endif %} 0 0.5em 0.25em">
+        <br/>Board: <a class="link" style="font-size: 1.2em;" href="/board/{{each_entry['chan'].address}}/1">/{{chans_board_info[each_entry['chan'].address]["label"]|safe}}/ - {{chans_board_info[each_entry['chan'].address]["description"]|safe}}</a>
+            [<a class="link" title="Catalog" href="/overboard/{{each_entry['chan'].address}}/1">C</a>
+            / <a class="link" title="Recent" href="/recent/{{each_entry['chan'].address}}/1">R</a>]
+        </div>
+        <div class="row">
+        {% for each_thread in each_entry['threads'] %}
+            <div class="column-thread">
+                {{generate_card(each_thread.thread_hash)|safe}}
+            </div>
+
+            {% if loop.index % 4 == 0 and each_entry['threads']|length > loop.index %}
+        </div>
+        <div class="row" style="padding-top: 1.5em">
+            {% endif %}
+        {% endfor %}
+        </div>
+    {% endfor %}
+    </div>
+
+    <div class="intro themed">
+        <h1 class="title themed bold" style="text-align: center">Favorite Posts</h1>
+
+    {%- if not messages_fav %}
+        <h3 class="themed" style="text-align: center">No Favorite Posts</h3>
+    {% endif -%}
+
+    {% if messages_fav.count() %}
+        <div class="row">
+        {% for each_post in messages_fav.all() %}
+            <div class="column-post">
+                <div class="card-post force-max-height" style="font-size: 1.2em;">
+                    {{generate_post_html(each_post.message_id, board_view=True)|safe}}
+                </div>
+            </div>
+
+            {% if loop.index % 3 == 0 and messages_fav.count() > loop.index %}
+        </div>
+        <div class="row" style="padding-top: 1.5em">
+            {% endif %}
+        {% endfor %}
+        </div>
+    {% endif %}
+    </div>
+
+    <div style="padding-top: 1em"></div>
+    {% include '/elements/display_boards.html' %}
+    {% include '/elements/display_lists.html' %}
+    {% include '/elements/display_pages.html' %}
+    <div style="padding-top: 1em"></div>
+{% endblock %}

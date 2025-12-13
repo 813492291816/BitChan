@@ -97,6 +97,15 @@
                 <td colspan="2">Max number of Board/List updates on the home page.</td>
             </tr>
             <tr>
+                <td>{{form_settings.chan_update_row_count.label(class_='heading-bold')}}</td>
+                <td>
+                    <input type="number" name="chan_update_row_count" value="{{settings.chan_update_row_count}}"/>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">Max number of cards per Board on the home page.</td>
+            </tr>
+            <tr>
                 <td>{{form_settings.max_download_size.label(class_='heading-bold')}}</td>
                 <td>
                     <input type="number" step="any" name="max_download_size" value="{{settings.max_download_size}}"/>
@@ -253,6 +262,18 @@
             </tr>
             <tr>
                 <td colspan="2">This will determine whether 12-hour or 24-hour time is displayed in post headers. Changing this setting will cause all cached post HTML to be regenerated.</td>
+            </tr>
+            <tr>
+                <td>{{form_settings.random_post_method.label(class_='heading-bold')}}</td>
+                <td>
+                     <select name="random_post_method">
+                        <option value="all_posts"{% if settings.random_post_method == "all_posts" %} selected{% endif %}>All Posts</option>
+                         <option value="threads_then_posts"{% if settings.random_post_method == "threads_then_posts" %} selected{% endif %}>Threads Before Posts</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">The method to use to find a random post using the Die link at the top of the page. All Posts: select a random post from all posts. Threads Before Posts: select a random thread, then select a random post within that thread. The first method will be biased to selecting posts of very large threads, whereas the second method will ensure every thread has an equal probability of being selected.</td>
             </tr>
             <tr>
                 <td>{{form_settings.title_text.label(class_='heading-bold')}}</td>
@@ -899,6 +920,7 @@
                 <td>Name</td>
                 <td title="Prevent boards/lists from being publicly listed (but can still be accessed)" style="writing-mode: sideways-lr;">Unlisted</td>
                 <td title="Prevent boards/lists from being accessed if not Global Admin" style="writing-mode: sideways-lr;">Restricted</td>
+                <td title="Prevent posts from boards appearing on Recent page" style="writing-mode: sideways-lr;">Hide From Recent</td>
                 <td title="Prevent passphrases from being visible in Board/List Information" style="writing-mode: sideways-lr;">Hide Passphrases</td>
                 <td title="Prevent posting to boards or manipulating lists if not Board/List/Global Admin" style="writing-mode: sideways-lr;">Read Only</td>
             </tr>
@@ -916,6 +938,7 @@
                 </td>
                 <td><input type="checkbox" id="option_unlisted_{{each_address}}" name="option_unlisted_{{each_address}}" value="y"{% if each_type[each_address]["db"].unlisted %} checked{% endif %}/></td>
                 <td><input type="checkbox" id="option_restricted_{{each_address}}" name="option_restricted_{{each_address}}" value="y"{% if each_type[each_address]["db"].restricted %} checked{% endif %}/></td>
+                <td><input type="checkbox" id="option_hide_recent_{{each_address}}" name="option_hide_recent_{{each_address}}" value="y"{% if each_type[each_address]["db"].hide_from_recent %} checked{% endif %}/></td>
                 <td><input type="checkbox" id="option_hide_passphrase_{{each_address}}" name="option_hide_passphrase_{{each_address}}" value="y"{% if each_type[each_address]["db"].hide_passphrase %} checked{% endif %}/></td>
                 <td><input type="checkbox" id="option_read_only_{{each_address}}" name="option_read_only_{{each_address}}" value="y"{% if each_type[each_address]["db"].read_only %} checked{% endif %}/></td>
             </tr>

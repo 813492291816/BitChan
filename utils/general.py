@@ -210,6 +210,14 @@ def process_passphrase(passphrase):
                     else:
                         value = each_value
 
+                # Sanity-check require_attachment_op
+                if each_key == "require_attachment_op":
+                    if not isinstance(each_value, bool):
+                        errors.append("require_attachment_op not boolean")
+                        continue
+                    else:
+                        value = each_value
+
                 # Sanity-check require_pow_to_post
                 elif each_key == "require_pow_to_post":
                     if not isinstance(each_value, dict):

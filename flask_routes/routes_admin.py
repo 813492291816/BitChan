@@ -288,116 +288,6 @@ def bulk_delete_thread(address):
                            url_text=url_text)
 
 
-@blueprint.route('/restore_thread_post/<address>/<message_id>/<thread_id>/<restore_type>', methods=('GET', 'POST'))
-@count_views
-def restore(address, message_id, thread_id, restore_type):
-    """
-    Owners and Admins can restore remotely deleted posts/threads
-
-    restore_type can be:
-    restore_post: restore post
-    restore_thread: restore thread
-    """
-    global_admin, allow_msg = allowed_access("is_global_admin")
-    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=address)
-    if not global_admin and not board_list_admin:
-        return allow_msg
-
-    form_confirm = forms_board.Confirm()
-
-    chan = Chan.query.filter(Chan.address == address).first()
-    thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
-    message = Messages.query.filter(Messages.message_id == message_id).first()
-
-    if request.method != 'POST' or not form_confirm.confirm.data:
-        return render_template("pages/confirm.html",
-                               action=restore_type,
-                               chan=chan,
-                               current_chan=address,
-                               message=message,
-                               message_id=message_id,
-                               thread=thread,
-                               thread_id=thread_id)
-
-    board = {
-        "current_chan": chan,
-        "current_thread": thread_id
-    }
-    status_msg = {"status_message": []}
-    url = "/thread/{}/{}".format(address, thread_id)
-    url_text = "{}".format(thread.subject)
-
-    if message_id == "0":
-        message_id = None
-
-    try:
-        if restore_type in ["restore_post", "restore_thread"]:
-            if restore_type == "restore_thread" and thread:
-                restore_thread(thread_id)
-            elif restore_type == "restore_post" and message:
-                restore_post(message_id)
-
-            log_description = ""
-            if restore_type == "restore_post":
-                status_msg['status_message'].append('Locally restore post from "{}"'.format(thread.subject))
-                status_msg['status_title'] = "Success"
-                log_description = 'Locally restore post from thread "{}"'.format(thread.subject)
-            elif restore_type == "restore_thread":
-                status_msg['status_message'].append('Locally restore thread "{}"'.format(thread.subject))
-                status_msg['status_title'] = "Success"
-                log_description = 'Locally restore thread "{}"'.format(thread.subject)
-
-            # Find if any admin commands exist for deleting this post or thread
-            # If so, add override to indicate local action has been taken to restore or delete
-            admin_cmd = Command.query.filter(and_(
-                Command.chan_address == address,
-                Command.action == "delete",
-                or_(Command.action_type == "delete_post",
-                    Command.action_type == "delete_thread"))).all()
-            for each_cmd in admin_cmd:
-                try:
-                    options = json.loads(each_cmd.options)
-                except:
-                    options = {}
-                if (
-                        ("delete_thread" in options and
-                         "thread_id" in options["delete_thread"] and
-                         options["delete_thread"]["thread_id"] == thread_id)
-                        or
-                        ("delete_post" in options and
-                         "message_id" in options["delete_post"] and
-                         options["delete_thread"]["message_id"] == message_id)
-                        ):
-                    admin_cmd.locally_restored = True
-                    admin_cmd.save()
-                    break
-
-            user_from_tmp = get_logged_in_user_name()
-            user_from = user_from_tmp if user_from_tmp else None
-
-            add_mod_log_entry(
-                log_description,
-                message_id=message_id,
-                user_from=user_from,
-                board_address=address,
-                thread_hash=thread_id)
-
-            # Allow messages to be deleted in bitmessage before allowing bitchan to rescan inbox
-            time.sleep(1)
-
-    except Exception as err:
-        logger.error("Exception while restoring post/thread: {}".format(err))
-
-    if 'status_title' not in status_msg and status_msg['status_message']:
-        status_msg['status_title'] = "Error"
-
-    return render_template("pages/alert.html",
-                           board=board,
-                           status_msg=status_msg,
-                           url=url,
-                           url_text=url_text)
-
-
 @blueprint.route('/b64_to_img/<str_b64>')
 @count_views
 def b64_to_img(str_b64):
@@ -540,7 +430,15 @@ def delete(address, message_id, thread_id, delete_type):
         url_text = "{}".format(thread.subject)
 
     try:
-        if delete_type in ["delete_post", "delete_thread"]:
+        thread_arch = Threads.query.filter(
+            and_(Threads.thread_hash == thread_id, Threads.archived.is_(True))).first()
+        message_arch = Messages.query.join(Threads).filter(
+            and_(Messages.message_id == message_id, Threads.archived.is_(True))).first()
+
+        if thread_arch or message_arch:
+            status_msg['status_message'].append("Cannot delete Archived thread or post. Unarchive before deleting.")
+
+        elif delete_type in ["delete_post", "delete_thread"]:
             only_hide = False
             if janitor:
                 only_hide = True
@@ -726,15 +624,8 @@ def thread_attributes(address, thread_id):
     else:
         thread = Threads.query.filter(Threads.thread_hash == thread_id).first()
 
-    message = Messages.query.filter(Messages.message_id == thread.id).first()
-
-    message_id = None
-
     user_from_tmp = get_logged_in_user_name()
     user_from = user_from_tmp if user_from_tmp else None
-
-    if message:
-        message_id = message.message_id
 
     # Ensure message, thread, board is valid
     if not chan or not thread:
@@ -754,24 +645,27 @@ def thread_attributes(address, thread_id):
             status_msg['status_message'].append(f"Set thread attributes.")
 
             if thread.locked_local != bool(form_thread_attributes.thread_lock.data):
-                thread.locked_local = form_thread_attributes.thread_lock.data
-                thread.save()
-
-                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
-
-                if thread.locked_local:
-                    log_description = "Locally locked thread"
-                    status_msg['status_message'].append(" Locally locked thread.")
+                if thread.archived and bool(form_thread_attributes.thread_archive.data) and not bool(form_thread_attributes.thread_lock.data):
+                    status_msg['status_message'].append(f"Cannot unlock thread if it's archived.")
                 else:
-                    log_description = "Locally unlocked thread"
-                    status_msg['status_message'].append(" Locally unlocked thread.")
+                    thread.locked_local = form_thread_attributes.thread_lock.data
+                    thread.save()
 
-                add_mod_log_entry(
-                    log_description,
-                    message_id=message_id,
-                    user_from=user_from,
-                    board_address=address,
-                    thread_hash=thread_id)
+                    regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
+
+                    if thread.locked_local:
+                        log_description = "Locally locked thread"
+                        status_msg['status_message'].append(" Locally locked thread.")
+                    else:
+                        log_description = "Locally unlocked thread"
+                        status_msg['status_message'].append(" Locally unlocked thread.")
+
+                    add_mod_log_entry(
+                        log_description,
+                        message_id=None,
+                        user_from=user_from,
+                        board_address=address,
+                        thread_hash=thread_id)
 
             if thread.anchored_local != bool(form_thread_attributes.thread_anchor.data):
                 thread.anchored_local = form_thread_attributes.thread_anchor.data
@@ -788,7 +682,7 @@ def thread_attributes(address, thread_id):
 
                 add_mod_log_entry(
                     log_description,
-                    message_id=message_id,
+                    message_id=None,
                     user_from=user_from,
                     board_address=address,
                     thread_hash=thread_id)
@@ -808,7 +702,89 @@ def thread_attributes(address, thread_id):
 
                 add_mod_log_entry(
                     log_description,
-                    message_id=message_id,
+                    message_id=None,
+                    user_from=user_from,
+                    board_address=address,
+                    thread_hash=thread_id)
+
+            if thread.archived != bool(form_thread_attributes.thread_archive.data):
+                thread.archived = form_thread_attributes.thread_archive.data
+                thread.archive_epoch = time.time()
+                thread.locked_local = True
+                thread.save()
+
+                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
+
+                if thread.archived:
+                    log_description = "Locally locked and archived thread"
+                    status_msg['status_message'].append(" Locally locked and archived thread.")
+                else:
+                    log_description = "Locally unarchived thread"
+                    status_msg['status_message'].append(" Locally unarchived thread.")
+
+                add_mod_log_entry(
+                    log_description,
+                    message_id=None,
+                    user_from=user_from,
+                    board_address=address,
+                    thread_hash=thread_id)
+
+            if thread.hide != bool(form_thread_attributes.thread_hide.data):
+                thread.hide = form_thread_attributes.thread_hide.data
+                thread.save()
+
+                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
+
+                if thread.hide:
+                    log_description = "Locally hid thread"
+                    status_msg['status_message'].append(" Locally hid thread.")
+                else:
+                    # Find if any admin commands exist for deleting this post or thread
+                    # If so, add override to indicate local action has been taken to restore or delete
+                    admin_cmd = Command.query.filter(and_(
+                        Command.chan_address == address,
+                        Command.action == "delete",
+                        Command.action_type == "delete_thread")).all()
+                    for each_cmd in admin_cmd:
+                        try:
+                            options = json.loads(each_cmd.options)
+                        except:
+                            options = {}
+                        if (
+                                ("delete_thread" in options and
+                                 "thread_id" in options["delete_thread"] and
+                                 options["delete_thread"]["thread_id"] == thread_id)
+                        ):
+                            admin_cmd.locally_restored = True
+                            admin_cmd.save()
+                            break
+
+                    log_description = "Locally unhid thread"
+                    status_msg['status_message'].append(" Locally unhid thread.")
+
+                add_mod_log_entry(
+                    log_description,
+                    message_id=None,
+                    user_from=user_from,
+                    board_address=address,
+                    thread_hash=thread_id)
+
+            if thread.favorite != bool(form_thread_attributes.thread_favorite.data):
+                thread.favorite = form_thread_attributes.thread_favorite.data
+                thread.save()
+
+                regenerate_card_popup_post_html(thread_hash=thread.thread_hash)
+
+                if thread.favorite:
+                    log_description = "Locally favorited thread"
+                    status_msg['status_message'].append(" Locally favorited thread.")
+                else:
+                    log_description = "Locally unfavorited thread"
+                    status_msg['status_message'].append(" Locally unfavorited thread.")
+
+                add_mod_log_entry(
+                    log_description,
+                    message_id=None,
                     user_from=user_from,
                     board_address=address,
                     thread_hash=thread_id)
@@ -828,7 +804,7 @@ def thread_attributes(address, thread_id):
 
                 add_mod_log_entry(
                     log_description,
-                    message_id=message_id,
+                    message_id=None,
                     user_from=user_from,
                     board_address=address,
                     thread_hash=thread_id)
@@ -836,11 +812,113 @@ def thread_attributes(address, thread_id):
         if 'status_title' not in status_msg:
             status_msg['status_title'] = "Error"
 
-    return render_template("pages/thread_attributes.html",
+    return render_template("pages/attributes_local_thread.html",
                            board_address=address,
                            form_thread_attributes=form_thread_attributes,
                            status_msg=status_msg,
                            thread=thread)
+
+
+@blueprint.route('/post_attributes/<address>/<message_id>', methods=('GET', 'POST'))
+@count_views
+def post_attributes(address, message_id):
+    global_admin, allow_msg = allowed_access("is_global_admin")
+    board_list_admin, allow_msg = allowed_access("is_board_list_admin", board_address=address)
+    if not global_admin and not board_list_admin:
+        return allow_msg
+
+    chan = Chan.query.filter(Chan.address == address).first()
+
+    message = Messages.query.filter(Messages.message_id == message_id).first()
+
+    user_from_tmp = get_logged_in_user_name()
+    user_from = user_from_tmp if user_from_tmp else None
+
+    # Ensure message, thread, board is valid
+    if not chan or not message:
+        return "post or board doesn't exist"
+
+    # Ensure message is from specified board address
+    if message.thread.chan.address != address:
+        return "Board addresses do not match thread"
+
+    status_msg = {"status_message": []}
+
+    form_attributes = forms_board.PostAttributes()
+
+    if request.method == 'POST':
+        if form_attributes.save_attributes.data:
+            status_msg['status_title'] = "Success"
+            status_msg['status_message'].append(f"Set post attributes.")
+
+            if message.hide != bool(form_attributes.post_hide.data):
+                message.hide = form_attributes.post_hide.data
+                message.save()
+
+                regenerate_card_popup_post_html(message_id=message_id)
+
+                if message.hide:
+                    log_description = "Locally hid post"
+                    status_msg['status_message'].append(" Locally hid post.")
+                else:
+                    # Find if any admin commands exist for deleting this post or thread
+                    # If so, add override to indicate local action has been taken to restore or delete
+                    admin_cmd = Command.query.filter(and_(
+                        Command.chan_address == address,
+                        Command.action == "delete",
+                        Command.action_type == "delete_post")).all()
+                    for each_cmd in admin_cmd:
+                        try:
+                            options = json.loads(each_cmd.options)
+                        except:
+                            options = {}
+                        if (
+                                ("delete_post" in options and
+                                 "message_id" in options["delete_post"] and
+                                 options["delete_thread"]["message_id"] == message_id)
+                        ):
+                            admin_cmd.locally_restored = True
+                            admin_cmd.save()
+                            break
+
+                    log_description = "Locally unhid post"
+                    status_msg['status_message'].append(" Locally unhid post.")
+
+                add_mod_log_entry(
+                    log_description,
+                    message_id=message.id,
+                    user_from=user_from,
+                    board_address=address,
+                    thread_hash=message.thread.thread_hash)
+
+            if message.favorite != bool(form_attributes.post_favorite.data):
+                message.favorite = form_attributes.post_favorite.data
+                message.save()
+
+                regenerate_card_popup_post_html(message_id=message_id)
+
+                if message.favorite:
+                    log_description = "Locally favorited post"
+                    status_msg['status_message'].append(" Locally favorited post.")
+                else:
+                    log_description = "Locally unfavorited post"
+                    status_msg['status_message'].append(" Locally unfavorited post.")
+
+                add_mod_log_entry(
+                    log_description,
+                    message_id=message.id,
+                    user_from=user_from,
+                    board_address=address,
+                    thread_hash=message.thread.thread_hash)
+
+        if 'status_title' not in status_msg:
+            status_msg['status_title'] = "Error"
+
+    return render_template("pages/attributes_local_post.html",
+                           board_address=address,
+                           form_attributes=form_attributes,
+                           message=message,
+                           status_msg=status_msg)
 
 
 @blueprint.route('/attachment_options/<address>/<message_id>/<single_file>/<file_name>', methods=('GET', 'POST'))

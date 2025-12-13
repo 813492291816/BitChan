@@ -26,7 +26,7 @@
         <div style="max-width: 800px;">
             <div class="themed" style="width: 100%; text-align: center; padding-bottom: 2em">
                 <form method="post">
-                <h1 class="title themed bold">Set Attributes for Thread "{{thread.subject|safe}}"</h1>
+                <h1 class="title themed bold">Set Attributes (Locally) for Thread "{{thread.subject|safe}}"</h1>
 
                 <table class="table themed">
                     <tr>
@@ -44,7 +44,7 @@
                         <td style="text-align: left"><input type="checkbox" id="thread_anchor" name="thread_anchor" value="y"{% if thread.anchored_local %} checked{% endif %}/></td>
                     </tr>
                     <tr>
-                        <td colspan="2" style="text-align: left">Anchored threads will not move to the top of the board when a reply is made.</td>
+                        <td colspan="2" style="text-align: left">Anchored threads will not move to the top of the board when a reply is made and will not appear on the Recent page.</td>
                     </tr>
                     <tr>
                         <td style="font-weight: bold; text-align: left"><label for="thread_sticky">Sticky</label></td>
@@ -52,6 +52,27 @@
                     </tr>
                     <tr>
                         <td colspan="2" style="text-align: left">Stickied threads will remain at the top of the board, even if threads with newer posts exist.</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: bold; text-align: left"><label for="thread_archive">Archive</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="thread_archive" name="thread_archive" value="y"{% if thread.archived %} checked{% endif %}/></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: left">Lock the thread. Lock to prevent new replies and add to the Archive page.</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: bold; text-align: left"><label for="thread_hide">Hide</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="thread_hide" name="thread_hide" value="y"{% if thread.hide %} checked{% endif %}/></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: left">Hide thread from public view. Kiosk users will not be able to view this thread.</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight: bold; text-align: left"><label for="thread_favorite">Favorite</label></td>
+                        <td style="text-align: left"><input type="checkbox" id="thread_favorite" name="thread_favorite" value="y"{% if thread.favorite %} checked{% endif %}/></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="text-align: left">Add to display on Favorites page.</td>
                     </tr>
                     <tr>
                         <td style="font-weight: bold; text-align: left"><label for="thread_max_height">Force Post Max Height</label></td>

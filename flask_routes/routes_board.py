@@ -9,6 +9,7 @@ import uuid
 from io import BytesIO
 from urllib.parse import unquote
 
+from flask import abort
 from flask import current_app
 from flask import g
 from flask import jsonify
@@ -692,20 +693,39 @@ def random_post():
         return allow_msg
 
     global_admin, _ = allowed_access("is_global_admin")
+    settings = GlobalSettings.query.first()
 
     timer = time.time()
     while time.time() - timer < 5:  # Search for a post for max 5 seconds
         try:
-            if global_admin:
-                message = Messages.query.join(Threads).filter(and_(
-                    Threads.hide.is_(False),
-                    Messages.hide.is_(False))).order_by(func.random()).first()
+            if settings.random_post_method == "all_posts":
+                if global_admin:
+                    message = Messages.query.join(Threads).filter(and_(
+                        Threads.hide.is_(False),
+                        Messages.hide.is_(False))).order_by(func.random()).first()
+                else:
+                    message = Messages.query.join(Threads).join(Chan).filter(and_(
+                        Chan.unlisted.is_(False),
+                        Chan.restricted.is_(False),
+                        Threads.hide.is_(False),
+                        Messages.hide.is_(False))).order_by(func.random()).first()
+            elif settings.random_post_method == "threads_then_posts":
+                if global_admin:
+                    thread = Threads.query.filter(
+                        Threads.hide.is_(False)).order_by(func.random()).first()
+                    message = Messages.query.filter(and_(
+                        Messages.thread_id == thread.thread_hash,
+                        Messages.hide.is_(False))).order_by(func.random()).first()
+                else:
+                    thread = Threads.query.filter(
+                        Threads.hide.is_(False)).order_by(func.random()).first()
+                    message = Messages.query.join(Threads).join(Chan).filter(and_(
+                        Chan.unlisted.is_(False),
+                        Chan.restricted.is_(False),
+                        Messages.thread_id == thread.thread_hash,
+                        Messages.hide.is_(False))).order_by(func.random()).first()
             else:
-                message = Messages.query.join(Threads).join(Chan).filter(and_(
-                    Chan.unlisted.is_(False),
-                    Chan.restricted.is_(False),
-                    Threads.hide.is_(False),
-                    Messages.hide.is_(False))).order_by(func.random()).first()
+                abort(404)
             if message and message.thread and message.thread.chan:
                 return redirect(f"/thread/{message.thread.chan.address}/{message.thread.thread_hash_short}#{message.post_id}")
         except:

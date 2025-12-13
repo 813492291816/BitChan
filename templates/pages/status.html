@@ -98,6 +98,19 @@
                     </tr>
                 </table>
 
+                {% if uptime %}
+                <table class="table" style="margin-left: auto; margin-right: auto; padding-top: 2em;">
+                    <tr>
+                        <td colspan=2 style="text-align: center; padding-bottom: 0.5em;">
+                            <h1 class="title themed bold">Command: uptime (of host)</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="font-family: monospace; white-space: pre;">{{uptime|safe}}</td>
+                    </tr>
+                </table>
+                {% endif %}
+
                 {% if df %}
                 <table class="table" style="margin-left: auto; margin-right: auto; padding-top: 2em;">
                     <tr>

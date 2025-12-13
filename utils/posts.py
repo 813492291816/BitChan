@@ -4,6 +4,7 @@ import os
 import time
 
 import qbittorrentapi
+from sqlalchemy import and_
 
 import config
 from bitchan_client import DaemonCom
@@ -102,8 +103,9 @@ def delete_chan(address):
 
 def delete_post(message_id, only_hide=False):
     with session_scope(config.DB_PATH) as new_session:
-        message = new_session.query(Messages).filter(
-            Messages.message_id == message_id).first()
+        message = new_session.query(Messages).join(Threads).filter(and_(
+            Messages.message_id == message_id,
+            Threads.archived.is_not(True))).first()
         if message:
             thread_hash = message.thread.thread_hash
             chan_id = message.thread.chan.id
@@ -170,8 +172,9 @@ def delete_thread(thread_id, only_hide=False):
             new_session.delete(card)
             new_session.commit()
 
-        thread = new_session.query(Threads).filter(
-            Threads.thread_hash == thread_id).first()
+        thread = new_session.query(Threads).filter(and_(
+            Threads.thread_hash == thread_id,
+            Threads.archived.is_not(True))).first()
         if thread:
             if only_hide:
                 thread.hide = True

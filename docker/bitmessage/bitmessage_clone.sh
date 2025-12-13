@@ -9,8 +9,9 @@ if [ ! -d "/home/bitchan/PyBitmessage" ] ; then
 #  git checkout 9c872ef676cafdebf07244a9dbd6e00a29154bef  # 2022.01.18
 #  git checkout a67572d70854fd59a3baffbe286a9d77a90e43d7  # 2022.04.25 not working
 #  git checkout e6ecaa5e7d7bedfe9f7271fa390f3d3c6691d51c  # 2022.11.06 new API endpoint, API client doesn't work!
-#  git checkout 3d19c3f23fad2c7a26e8606cd95c6b3df417cfbc   # 2023.01.13
-  git checkout 4e0731725d3459e0ded11e94f3d9781dbac9cc54   # 2025.02.11
+#  git checkout 3d19c3f23fad2c7a26e8606cd95c6b3df417cfbc  # 2023.01.13
+#  git checkout 4e0731725d3459e0ded11e94f3d9781dbac9cc54  # 2025.02.11
+  git checkout 802b0b9ff02dc2e534df049100a280f13c52db4b  # 2025.11.17
 else
   printf "\n+++ PyBitmessage directory already present. Skipping.\n"
 fi

@@ -406,8 +406,7 @@ def attachment_info(message_id):
     attach_info = {}
     with session_scope(config.DB_PATH) as new_session:
         number_files = 0
-        message = new_session.query(Messages).filter(
-            Messages.message_id == message_id).first()
+        message = new_session.query(Messages).filter(Messages.message_id == message_id).first()
         if not message:
             return [], {}, 0
 

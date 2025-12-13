@@ -338,34 +338,6 @@
             </div>
         </form>
 
-        {% elif action in ["restore_post", "restore_thread"] %}
-
-        <form method="post" enctype="multipart/form-data" action="/restore_thread_post/{{current_chan}}/{{message_id}}/{{thread_id}}/{{action}}">
-            <div class="themed bold" style="padding-top: 1.5em; text-align: center;">
-                Confirm restoring
-
-            {% if action == "restore_post" %}
-                post {{generate_reply_link_and_popup_html(message, board_view=True, external_thread=True, link_text=message.post_id, extra_style='font-family:monospace')|safe}} of thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash_short}}">{{replace_lt_gt(thread.subject)|safe}}</a> on
-            {%- elif action == "restore_thread" -%}
-                thread <a class="link" href="/thread/{{chan.address}}/{{thread.thread_hash_short}}">{{replace_lt_gt(thread.subject)|safe}}</a> on
-            {%- endif -%}
-
-            {% if chan.access == "public" %}
-                Public
-            {% elif chan.access == "private" %}
-                Private
-            {% endif %}
-                Board <a class="link" href="/board/{{chan.address}}/1">/{{replace_lt_gt(chan.label)|safe}}/ - {{replace_lt_gt(chan.description)|safe}}</a>.
-            </div>
-            <div class="themed bold" style="padding-top: 0.5em; padding-bottom: 1.5em; text-align: center;">
-                This will restore the post or thread locally, only for you.
-            </div>
-
-            <div style="padding-top: 1em; text-align: center;">
-                <input type="submit" name="confirm" value="Confirm"/>
-            </div>
-        </form>
-
         {% endif %}
 
     </div>

@@ -2,29 +2,19 @@
 
 {% block head %}
     <style>
-        .column {
-          float: left;
-          width: 24%;
-          padding: 0 0.5%;
+        .contain {
+          display: flex;
+          min-height: 150px;
+          flex-wrap: wrap;
+          overflow-y: hidden;
         }
 
-        /* Remove extra left and right margins, due to padding in columns */
-        .row {margin: 0 -5px;}
-
-        /* Clear floats after the columns */
-        .row:after {
-          content: "";
-          display: table;
-          clear: both;
-        }
-
-        /* Responsive columns - one column layout (vertical) on small screens */
-        @media screen and (max-width: 600px) {
-          .column {
-            width: 100%;
-            display: block;
-            margin-bottom: 20px;
-          }
+        .contain > div {
+          flex: 1 1 250px;
+          min-height: 250px;
+          min-width: 250px;
+          max-width: 400px;
+          padding: 5px;
         }
 
         .three-dots {
@@ -94,10 +84,10 @@
             ]
             <span style="font-size: 0.7em">{{newest_posts[each_chan]['total_threads']}} Thread{% if newest_posts[each_chan]['total_threads'] > 1 %}s{% endif %}, {{newest_posts[each_chan]['total_posts']}} Post{% if newest_posts[each_chan]['total_posts'] > 1 %}s{% endif %}{% if newest_posts[each_chan]["wipe_epoch"] %}, Wipe in {{wipe_time_left(newest_posts[each_chan]["wipe_epoch"], show_seconds=False)}}{% endif %}</span>
         </div>
-        <div class="row">
+        <div class="contain">
                     {% for each_thread_hash in newest_posts[each_chan]["threads"] %}
                         {% set thread_options = get_thread_options(each_thread_hash) %}
-            <div class="column">
+            <div>
                 <div class="themed" style="font-size: 0.7em; padding-left: 0.25em; padding-bottom: 0.25em">
                     {{newest_posts[each_chan]["threads"][each_thread_hash]["last_post_past"]}} ago |
                     {{newest_posts[each_chan]["threads"][each_thread_hash]["ppm"]}} PPM
@@ -139,6 +129,14 @@
                         {%- endif -%}
                         ">
                     {% endif %}
+
+                    {%- if thread_options["favorite"] -%}
+                    &nbsp;<a href="/favorites"><img style="position: relative; top: 3px; height: 15px" title="Favorite Thread" src="/static/star_green.png"></a>
+                    {%- endif -%}
+
+                    {%- if thread_options["archived"] -%}
+                    &nbsp;<a href="/archive"><img style="position: relative; top: 3px; height: 15px" title="Archived" src="/static/archive_green.png"></a>
+                    {%- endif -%}
                 </div>
                 {{generate_card(each_thread_hash)|safe}}
             </div>

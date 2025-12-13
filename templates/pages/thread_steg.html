@@ -278,9 +278,7 @@ Board
         </center>
     </div>
 
-    {% set thread_options = get_thread_options(thread.thread_hash) %}
-
-    {% if ((not is_private or (is_private and on_any_access_list)) and (not thread_options['lock_remote'] and not thread_options['lock_local'])) or primary_access %}
+    {% if ((not is_private or (is_private and on_any_access_list)) and (not thread.locked_local and not thread.locked_remote)) or primary_access %}
     {% else %}
     <center>
         <span class="themed">Insufficient permissions to post</span>
@@ -301,9 +299,16 @@ Board
 
     {% if thread.hide %}
 
-    <div class="thread" style="padding-bottom: 1em">
-        {% include '/elements/board/thread_hidden.html' %}
-    </div>
+        {% if message_op -%}
+            {% set post = message_op %}
+            <div class="thread" style="padding-bottom: 1em">
+                {% include '/elements/board/thread_hidden_with_op.html' %}
+            </div>
+        {% else -%}
+            <div class="thread" style="padding-bottom: 1em">
+                {% include '/elements/board/thread_hidden_without_op.html' %}
+            </div>
+        {% endif %}
 
     {% else %}
 

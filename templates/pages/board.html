@@ -384,9 +384,16 @@ Board
 
         {% if thread.hide %}
 
-    <div class="thread" style="padding-bottom: 1em">
-        {% include '/elements/board/thread_hidden.html' %}
-    </div>
+            {% if post_op -%}
+                {% set post = post_op %}
+                <div class="thread" style="padding-bottom: 1em">
+                    {% include '/elements/board/thread_hidden_with_op.html' %}
+                </div>
+            {% else -%}
+                <div class="thread" style="padding-bottom: 1em">
+                    {% include '/elements/board/thread_hidden_without_op.html' %}
+                </div>
+            {% endif %}
 
         {% else %}
 

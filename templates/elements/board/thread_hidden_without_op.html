@@ -1,0 +1,23 @@
+{% set is_op_post = True %}
+{% set is_board_view = board['board_view'] %}
+
+<div class="themed" style="display: block; vertical-align: top;" id="{{thread.thread_hash}}">
+	<span style="overflow-wrap: break-word;" class="subject bold"><a class="link" href="/thread/{{thread.chan.address}}/{{thread.thread_hash_short}}">{{thread.subject|safe}}</a></span>
+	<div tabindex="0" class="menu">
+		<span class="link clickable">&#9654;</span>
+		<table class="menu-content">
+			{% include '/elements/board/post_header_options/thread_attributes_for_you.html' %}
+			{% include '/elements/board/post_header_options/delete_thread_for_you.html' %}
+		{% if primary_access %}
+			<tr class="menu-entry"><td></td></tr>
+			{% include '/elements/board/post_header_options/sticky_thread_for_everyone.html' %}
+			{% include '/elements/board/post_header_options/lock_thread_for_everyone.html' %}
+			{% include '/elements/board/post_header_options/anchor_thread_for_everyone.html' %}
+			{% include '/elements/board/post_header_options/delete_thread_for_everyone.html' %}
+		{% endif %}
+		</table>
+	</div>
+	<div style="display: block; padding-top: 1em">
+		<span class="god-text">[moderated: hidden]</span>
+	</div>
+</div>

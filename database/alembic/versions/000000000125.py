@@ -23,7 +23,10 @@ def upgrade():
     try:
         with op.batch_alter_table("chan") as batch_op:
             batch_op.add_column(sa.Column('read_only', sa.Boolean))
+    except Exception as err:
+        print(err)
 
+    try:
         op.execute(
             '''
             UPDATE chan

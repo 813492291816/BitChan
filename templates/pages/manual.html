@@ -290,11 +290,17 @@ communicate to users on another network. This allows one instance of
 BitChan using MiNode only on I2P to communicate with another instance of
 BitChan using MiNode only on tor (or clearnet).</p>
 <h1 id="permissions">Permissions</h1>
+<p>Global Admins can log in to a kiosk and control all aspects of the
+configuration on the local instance. This is referred to as local
+changes. They can only affect the local instance acting as the kiosk.
+They cannot influence other BitChan instances, such as board/list
+settings or delete threads/posts on other instances. This would be
+referred to as global changes.</p>
 <p>For both boards and lists, there can be Owner, Admin, and User
 addresses specified. If you control an address that is an Owner or Admin
 of a board or list, you can perform special actions that affect all
-members. Normally, when you click a link for a thread or post to be
-deleted from a board, this occurs only locally on your computer.
+members (globally). Normally, when you click a link for a thread or post
+to be deleted from a board, this occurs only locally on your computer.
 However, Owners and Admins have the ability to delete threads and posts
 for all users of the board. For private lists, Owners and Admins can
 delete list items and the changes will be reflected for all users of the
@@ -311,6 +317,7 @@ other settings of the board or list.</p>
 <thead>
 <tr class="header">
 <th>Ability</th>
+<th>Global Admin</th>
 <th>Board Owner</th>
 <th>Board Admin</th>
 <th>Janitor</th>
@@ -319,70 +326,112 @@ other settings of the board or list.</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td>Modify Access Addresses</td>
+<td>BitChan Configuration (Local)</td>
+<td>X</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Ban String/Regex (Local)</td>
+<td>X</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>Ban File/Image Hash (Local)</td>
+<td>X</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Set Word Replacement (Local)</td>
+<td>X</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>Modify Access Addresses (Remote)</td>
+<td></td>
 <td>X</td>
 <td></td>
 <td></td>
 <td></td>
 </tr>
 <tr class="even">
-<td>Set Custom Banner Image</td>
+<td>Set Custom Banner Image (Remote)</td>
+<td></td>
 <td>X</td>
 <td></td>
 <td></td>
 <td></td>
 </tr>
 <tr class="odd">
-<td>Set Custom CSS</td>
+<td>Set Custom CSS (Remote)</td>
+<td></td>
 <td>X</td>
 <td></td>
 <td></td>
 <td></td>
 </tr>
 <tr class="even">
-<td>Set Word Replacements</td>
+<td>Set Word Replacements (Remote)</td>
+<td></td>
 <td>X</td>
 <td></td>
 <td></td>
 <td></td>
 </tr>
 <tr class="odd">
-<td>Global Post/Thread Delete</td>
+<td>Post/Thread Delete (Remote)</td>
+<td></td>
 <td>X</td>
 <td>X</td>
 <td></td>
 <td></td>
 </tr>
 <tr class="even">
-<td>Local Kiosk Post/Thread Delete</td>
+<td>Post/Thread Delete (Local)</td>
+<td>X</td>
 <td></td>
 <td></td>
 <td>X</td>
 <td></td>
 </tr>
 <tr class="odd">
-<td>Ban Address</td>
+<td>Ban Address (Remote)</td>
+<td></td>
 <td>X</td>
 <td>X</td>
 <td></td>
 <td></td>
 </tr>
 <tr class="even">
-<td>Delete from List</td>
+<td>Delete from List (Remote)</td>
+<td></td>
 <td>X</td>
 <td>X</td>
 <td></td>
 <td></td>
 </tr>
 <tr class="odd">
-<td>Post</td>
+<td>Post (if enabled)</td>
+<td>X</td>
 <td>X</td>
 <td>X</td>
 <td>X</td>
 <td>X</td>
 </tr>
 <tr class="even">
-<td>Add to List</td>
+<td>Add to List (if enabled)</td>
+<td>X</td>
 <td>X</td>
 <td>X</td>
 <td>X</td>
@@ -686,7 +735,7 @@ the short cross-link will not indicate the originating board.</p>
 here. Clicking the clipboard icon will copy the address to your
 clipboard (JavaScript must be enabled for this to work). When posted,
 the long cross-link will indicate the originating board.</p>
-<h3 id="this-posts-link">This Post’s Link</h3>
+<h3 id="link-to-this-post">Link to This Post</h3>
 <p>Right click and copy this link to get this post’s url.</p>
 <h3 id="sticky-thread">Sticky Thread</h3>
 <p>A stickied (or pinned) thread stays at the top of a board. If you
@@ -764,12 +813,13 @@ originate.</p>
 <p>Each board has a catalog which shows thread cards for all threads on
 the board in chronological order (most recent first).</p>
 <h1 id="recent">Recent</h1>
-<p>The recent page shows a list for all posts in chronological order
-(most recent first) regardless of the board or thread from which they
-originate. Each item in the list displays the post ID, sent time, age of
-the post, whether it is an original post or not, if it was saged or not,
-if you control the identity which sent the post or not, the board the
-post is on and the subject of the thread the post appears on.</p>
+<p>The Recent page shows recent posts in chronological order (most
+recent first). Anchored threads and boards set to configured to Hide
+From Recent will not appear on the Recent page, but will appear on the
+[A]ll Recent page. Each item in the list displays the post ID, sent
+time, age of the post, whether it is an original post, if it is saged,
+if you control the identity which sent the post, the board the post is
+on, and the subject of the thread.</p>
 <h1 id="search">Search</h1>
 <p>From this page you can search all of BitChan. The results show a list
 of posts in chronological order (most recent first). Each item in the
@@ -1643,6 +1693,9 @@ another BitChan instance.</p>
 <h3 id="read-only">Read Only</h3>
 <p>Read Only boards and lists can only be viewed, unless you are a
 Board, List, or Global Admin.</p>
+<h3 id="hide-from-recent">Hide From Recent</h3>
+<p>Hide posts from this board from the Recent page. The [A]ll Recent
+page will still show these posts.</p>
 <h1 id="kiosk-mode">Kiosk Mode</h1>
 <p>A Kiosk Mode has been created that institutes a login and permission
 system to allow administration as well as anonymous posting, among other

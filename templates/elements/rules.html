@@ -24,7 +24,7 @@
         {% if hours %}{{hours}} Hours{% endif %}
         {% if minutes %}{{days}} Min{% endif %}
         {% if seconds %}{{days}} Sec{% endif %}
-    {% elif each_rule in ["require_attachment", "require_pow_to_post", "require_identity_to_post", "allow_list_pgp_metadata", "disallow_attachments"] %}
+    {% elif each_rule in ["require_attachment", "require_attachment_op", "require_pow_to_post", "require_identity_to_post", "allow_list_pgp_metadata", "disallow_attachments"] %}
         {{each_value}}
     {% elif each_rule == "restrict_thread_creation" and "enabled" in each_value and "addresses" in each_value %}
         Enabled: {{each_value["enabled"]}}, Addresses: {{each_value["addresses"]}}

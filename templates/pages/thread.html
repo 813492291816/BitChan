@@ -295,7 +295,7 @@ Board
     {% if not can_post -%}
             [<a class="link" style="text-decoration: none; font-size: 18px;" href="#popup_reply">Reply</a>]
     {%- endif -%}
-            [<a class="link" style="text-decoration: none; font-size: 18px;" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}?last=100">Last 100</a>]
+            &nbsp;[<a class="link" style="text-decoration: none; font-size: 18px;" href="/thread/{{board['current_chan'].address}}/{{board['current_thread'].thread_hash_short}}?last=100">Last 100</a>]
             [<a id="toggle_images" class="link" style="text-decoration: none; font-size: 18px;" href="">Toggle Images</a>]</span>
         </center>
     </div>
@@ -311,8 +311,6 @@ Board
         {% endif %}
     {% endif %}
 
-    {%- set thread_options = get_thread_options(thread.thread_hash) %}
-
     {% if message_op_steg or message_replies_steg.count() -%}
     <div style="padding-top: 1em">
         <center>
@@ -321,7 +319,7 @@ Board
     </div>
     {% endif %}
 
-    {% if ((not is_private or (is_private and on_any_access_list)) and (not thread_options['lock_remote'] and not thread_options['lock_local'])) or primary_access -%}
+    {% if ((not is_private or (is_private and on_any_access_list)) and (not thread.locked_local and not thread.locked_remote)) or primary_access -%}
     {% else %}
     <center>
         <span class="themed">Insufficient permissions to post</span>
@@ -332,9 +330,16 @@ Board
 
     {% if thread.hide %}
 
-    <div class="thread" style="padding-bottom: 1em">
-        {% include '/elements/board/thread_hidden.html' %}
-    </div>
+        {% if message_op -%}
+            {% set post = message_op %}
+            <div class="thread" style="padding-bottom: 1em">
+                {% include '/elements/board/thread_hidden_with_op.html' %}
+            </div>
+        {% else -%}
+            <div class="thread" style="padding-bottom: 1em">
+                {% include '/elements/board/thread_hidden_without_op.html' %}
+            </div>
+        {% endif %}
 
     {% else %}
 

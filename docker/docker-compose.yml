@@ -189,6 +189,28 @@ services:
 #      - "/usr/local/bitchan-docker/i2psnark:/i2psnark"
 #    restart: unless-stopped
 
+#  bitchan_biglybt:
+#    container_name: biglybt_docker
+#    networks:
+#      bc_net:
+#        ipv4_address: 172.28.1.11
+#    restart: "no"
+#    build:
+#      context: ../
+#      dockerfile: docker/biglybt/Dockerfile
+#    ports:
+#      - "49000:49000"  # Listen Port
+#    privileged: true
+#    tty: true
+#    stdin_open: true
+#    volumes:
+#      - type: tmpfs
+#        target: /tmp
+#        tmpfs:
+#          size: 100m
+#      - run_vol:/run
+#      - /usr/local/bitchan-docker/biglybt:/root
+
 #
 # purple/i2pd
 # This will work out of the box, without any additional configuration

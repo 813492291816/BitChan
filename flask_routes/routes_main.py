@@ -194,7 +194,8 @@ def index():
 
         threads = Threads.query.filter(and_(
             Threads.chan_id == each_board.id,
-            Threads.hide.is_(False))).order_by(thread_order_desc).limit(4).all()
+            Threads.hide.is_(False),
+            Threads.archived.is_not(True))).order_by(thread_order_desc).limit(settings.chan_update_row_count).all()
         for each_thread in threads:
             post_order_desc = Messages.timestamp_sent.desc()
             if settings.post_timestamp == 'received':
@@ -247,11 +248,13 @@ def index():
                 cards[each_board]["threads"][each_thread.thread_hash]["last_post_past"] = str_past
 
         if each_board in cards:
-            cards[each_board]["total_threads"] = Threads.query.filter(
-                Threads.chan_id == each_board.id).count()
+            cards[each_board]["total_threads"] = Threads.query.filter(and_(
+                Threads.chan_id == each_board.id,
+                Threads.archived.is_not(True))).count()
 
-            threads = Threads.query.filter(
-                Threads.chan_id == each_board.id).all()
+            threads = Threads.query.filter(and_(
+                Threads.chan_id == each_board.id,
+                Threads.archived.is_not(True))).all()
             for each_thread in threads:
                 cards[each_board]["total_posts"] += Messages.query.filter(
                     Messages.thread_id == each_thread.id).count()
@@ -298,6 +301,115 @@ def index():
                            inventory_timer=inventory_timer,
                            current_time=datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
                            newest_posts=sorted_counted_cards,
+                           status_msg=status_msg)
+
+
+@blueprint.route('/archive', methods=('GET', 'POST'))
+@count_views
+@rate_limit
+def archive():
+    allowed, allow_msg = allowed_access("can_view")
+    if not allowed:
+        return allow_msg
+
+    global_admin, _ = allowed_access("is_global_admin")
+
+    status_msg = {"status_message": []}
+    settings = GlobalSettings.query.first()
+
+    chans_threads = []
+
+    for each_chan in Chan.query.order_by(Chan.label.asc()).all():
+        threads = Threads.query.filter(and_(Threads.chan_id == each_chan.id, Threads.archived.is_(True)))
+
+        if not global_admin:
+            threads = threads.filter(and_(
+                Chan.unlisted.is_not(True),
+                Chan.restricted.is_not(True),
+                Threads.hide.is_not(True)))
+
+        if settings.post_timestamp == 'received':
+            threads_order = Threads.timestamp_received.desc()
+        else:
+            threads_order = Threads.timestamp_sent.desc()
+
+        threads = threads.order_by(threads_order)
+
+        if threads.count():
+            chans_threads.append({
+                'chan': each_chan,
+                'threads': threads.all()
+            })
+
+    return render_template("pages/archive.html",
+                           chans_threads=chans_threads,
+                           generate_card=generate_card,
+                           status_msg=status_msg)
+
+
+@blueprint.route('/favorites', methods=('GET', 'POST'))
+@count_views
+@rate_limit
+def favorites():
+    allowed, allow_msg = allowed_access("can_view")
+    if not allowed:
+        return allow_msg
+
+    global_admin, _ = allowed_access("is_global_admin")
+
+    status_msg = {"status_message": []}
+    settings = GlobalSettings.query.first()
+
+    #
+    # Threads
+    #
+    chans_threads = []
+    for each_chan in Chan.query.order_by(Chan.label.asc()).all():
+        threads = Threads.query.filter(and_(Threads.chan_id == each_chan.id, Threads.favorite.is_(True)))
+
+        if not global_admin:
+            threads = threads.filter(and_(
+                Chan.unlisted.is_not(True),
+                Chan.restricted.is_not(True),
+                Threads.hide.is_not(True)))
+
+        if settings.post_timestamp == 'received':
+            threads_order = Threads.timestamp_received.desc()
+        else:
+            threads_order = Threads.timestamp_sent.desc()
+
+        threads = threads.order_by(threads_order)
+
+        if threads.count():
+            chans_threads.append({
+                'chan': each_chan,
+                'threads': threads.all()
+            })
+
+    #
+    # Posts
+    #
+    messages_fav = Messages.query.join(Threads).join(Chan)
+    messages_fav = messages_fav.filter(Messages.favorite.is_(True))
+
+    if not global_admin:
+        messages_fav = messages_fav.filter(and_(
+            Chan.unlisted.is_not(True),
+            Chan.restricted.is_not(True),
+            Threads.hide.is_not(True),
+            Messages.hide.is_not(True)))
+
+    if settings.post_timestamp == 'received':
+        messages_order = Messages.timestamp_received.desc()
+    else:
+        messages_order = Messages.timestamp_sent.desc()
+
+    messages_fav = messages_fav.order_by(messages_order)
+
+    return render_template("pages/favorites.html",
+                           chans_threads=chans_threads,
+                           generate_card=generate_card,
+                           messages_fav=messages_fav,
                            status_msg=status_msg)
 
 
@@ -609,19 +721,22 @@ def overboard(address, current_page):
             # Get locally stickied threads
             stickied_threads = Threads.query.filter(and_(
                 Threads.chan_id == chan.id,
-                Threads.stickied_local))
+                Threads.stickied_local,
+                Threads.archived.is_not(True)))
             for each_stick in stickied_threads:
                 if each_stick.thread_hash not in sticky_thread_ids:
                     sticky_thread_ids.append(each_stick.thread_hash)
 
-            threads = Threads.query.filter(
-                Threads.chan_id == chan.id).order_by(thread_order_desc)
+            threads = Threads.query.filter(and_(
+                Threads.chan_id == chan.id,
+                Threads.archived.is_not(True))).order_by(thread_order_desc)
             overboard_info["thread_count"] = threads.count()
 
             threads_stickied_list = []
             for each_thread_id in sticky_thread_ids:
-                thread_add = Threads.query.filter(
-                    Threads.thread_hash == each_thread_id).first()
+                thread_add = Threads.query.filter(and_(
+                    Threads.thread_hash == each_thread_id,
+                    Threads.archived.is_not(True))).first()
                 if thread_add:
                     threads_stickied_list.append(thread_add)
 
@@ -678,7 +793,8 @@ def overboard(address, current_page):
         else:
             threads = Threads.query.join(Chan).filter(and_(
                 Chan.unlisted.is_(False),
-                Chan.restricted.is_(False))).order_by(thread_order_desc)
+                Chan.restricted.is_(False),
+                Threads.archived.is_not(True))).order_by(thread_order_desc)
         overboard_info["thread_count"] = threads.count()
 
         for i, each_thread in enumerate(threads.all()):
@@ -765,8 +881,9 @@ def delete_posts_threads(message_ids, user_from=None):
 
     # Delete threads first
     for each_msg_id in message_ids:
-        msg = Messages.query.filter(
-            Messages.message_id == each_msg_id).first()
+        msg = Messages.query.join(Threads).filter(and_(
+            Messages.message_id == each_msg_id,
+            Threads.archived.is_not(True))).first()
         if msg and msg.is_op and msg.thread:
             if msg.thread.chan.address not in board_addresses:
                 board_addresses.append(msg.thread.chan.address)
@@ -790,8 +907,9 @@ def delete_posts_threads(message_ids, user_from=None):
 
     # Delete remaining posts
     for each_msg_id in message_ids:
-        msg = Messages.query.filter(
-            Messages.message_id == each_msg_id).first()
+        msg = Messages.query.join(Threads).filter(and_(
+            Messages.message_id == each_msg_id,
+            Threads.archived.is_not(True))).first()
         if msg:
             if msg.thread and msg.thread.thread_hash not in thread_hashes:
                 thread_hashes.append(msg.thread.thread_hash)
@@ -828,7 +946,7 @@ def recent_posts(address, current_page):
     settings = GlobalSettings.query.first()
     status_msg = {"status_message": []}
 
-    msg_count = 0
+    arg_recent_all = request.args.get('a', default=None)
 
     recent_info = {
         "single_board": False
@@ -890,9 +1008,25 @@ def recent_posts(address, current_page):
     if settings.post_timestamp == 'received':
         post_order_desc = Messages.timestamp_received.desc()
 
+    messages = Messages.query.join(Threads).join(Chan)
+
+    messages = messages.filter(Threads.archived.is_not(True))
+
+    # filters
+    if arg_recent_all != "1":
+        messages = messages.filter(Chan.hide_from_recent.is_not(True))
+        messages = messages.filter(Threads.anchored_local.is_not(True))
+        messages = messages.filter(Threads.anchored_remote.is_not(True))
+
+    if not global_admin:
+        messages = messages.filter(and_(
+            Chan.unlisted.is_not(True),
+            Chan.restricted.is_not(True),
+            Threads.hide.is_not(True),
+            Messages.hide.is_not(True)))
+
     if address != "0":
-        chan = Chan.query.filter(
-            Chan.address == address).first()
+        chan = Chan.query.filter(Chan.address == address).first()
         if not chan:
             return render_template("pages/404-board.html",
                                    board_address=address)
@@ -902,8 +1036,10 @@ def recent_posts(address, current_page):
         recent_info["board_description"] = chan.description
         recent_info["board_address"] = chan.address
 
-        messages = Messages.query.join(Threads).join(Chan).filter(
-            Chan.address == address).order_by(post_order_desc)
+        messages = messages.filter(Chan.address == address)
+
+        messages = messages.order_by(post_order_desc)
+
         msg_count = messages.count()
 
         msg_total = 0
@@ -914,12 +1050,8 @@ def recent_posts(address, current_page):
                 recent_results.append(result)
             msg_total += 1
     else:
-        if global_admin:
-            messages = Messages.query.order_by(post_order_desc)
-        else:
-            messages = Messages.query.join(Threads).join(Chan).filter(and_(
-                Chan.unlisted.is_(False),
-                Chan.restricted.is_(False))).order_by(post_order_desc)
+        messages = messages.order_by(post_order_desc)
+
         msg_count = messages.count()
         for i, result in enumerate(messages.all()):
             if i > post_end:
@@ -928,6 +1060,7 @@ def recent_posts(address, current_page):
                 recent_results.append(result)
 
     return render_template("pages/recent.html",
+                           arg_recent_all=arg_recent_all,
                            recent_page=current_page,
                            msg_count=msg_count,
                            now=time.time(),
@@ -950,6 +1083,27 @@ def search(search_b64, current_page):
     if settings.kiosk_only_admin_access_search and not global_admin:
         return allow_msg
 
+    filter_hidden = False
+    filter_op = False
+    filter_steg = False
+    result_count = 0
+    search_from = None
+    search_results = []
+    thread_results = []
+
+    # Admin options
+    arg_filter_hidden = request.args.get('fh', default=False, type=bool)
+    arg_filter_steg = request.args.get('fs', default=False, type=bool)
+
+    # User options
+    arg_filter_op = request.args.get('fo', default=False, type=bool)
+    arg_search_type = request.args.get('st', default="posts", type=str)
+    arg_search_boards = request.args.get('sb', default="all", type=str)
+    arg_search_from = request.args.get('sf', default=False, type=str)
+
+    search_type = arg_search_type
+    search_boards = arg_search_boards
+
     status_msg = {"status_message": []}
     search_string_b64 = search_b64
 
@@ -964,7 +1118,7 @@ def search(search_b64, current_page):
         if form_search.submit.data:
             current_page = 1
 
-            if form_search.search.data and len(form_search.search.data) < 3:
+            if not global_admin and (not form_search.search.data or len(form_search.search.data) < 3):
                 status_msg['status_message'].append(
                     "At search string of at least 3 characters is required.")
 
@@ -1004,150 +1158,137 @@ def search(search_b64, current_page):
                                     search_b64=search_b64,
                                     current_page=current_page))
 
+    if request.method == 'POST' or search_string:
         if 'status_title' not in status_msg and status_msg['status_message']:
             status_msg['status_title'] = "Error"
 
-    arg_filter_hidden = request.args.get('fh', default=False, type=bool)
-    arg_filter_op = request.args.get('fo', default=False, type=bool)
-    arg_filter_steg = request.args.get('fs', default=False, type=bool)
-    arg_search_type = request.args.get('st', default="posts", type=str)
-    arg_search_boards = request.args.get('sb', default="all", type=str)
-    arg_search_from = request.args.get('sf', default=False, type=str)
+        else:
+            if form_search.search_type.data:
+                search_type = form_search.search_type.data
+            if form_search.search_boards.data:
+                search_boards = form_search.search_boards.data
 
-    search_type = arg_search_type
-    search_boards = arg_search_boards
+            global_admin, allow_msg = allowed_access("is_global_admin")
 
-    if form_search.search_type.data:
-        search_type = form_search.search_type.data
-    if form_search.search_boards.data:
-        search_boards = form_search.search_boards.data
+            search_threads = Threads.query.join(Chan).join(Messages)
+            search_msgs = Messages.query.join(Threads).join(Chan)
 
-    filter_hidden = False
-    filter_op = False
-    filter_steg = False
-    result_count = 0
-    search_from = None
-    search_results = []
-    thread_results = []
+            search_threads = search_threads.filter(Threads.archived.is_not(True))
+            search_msgs = search_msgs.filter(Threads.archived.is_not(True))
 
-    global_admin, allow_msg = allowed_access("is_global_admin")
+            if search_boards != 'all':
+                if search_type == "posts":
+                    search_msgs = search_msgs.filter(Chan.address == search_boards)
+                elif search_type == "threads":
+                    search_threads = search_threads.filter(Chan.address == search_boards)
 
-    search_threads = Threads.query.join(Chan).join(Messages)
-    search_msgs = Messages.query.join(Threads).join(Chan)
+            if search_string and len(search_string) > 2:
+                if search_type == "posts":
+                    search_msgs = search_msgs.filter(or_(
+                        Messages.message.contains(search_string),
+                        Messages.message_id.contains(search_string.lower()),
+                        and_(Messages.subject.contains(search_string),
+                             Messages.is_op.is_(True))
+                    ))
+                elif search_type == "threads":
+                    search_threads = search_threads.filter(and_(
+                        Messages.is_op.is_(True),
+                        or_(Messages.message.contains(search_string),
+                            Messages.message_id.contains(search_string.lower()),
+                            Messages.subject.contains(search_string))))
 
-    if search_boards != 'all':
-        if search_type == "posts":
-            search_msgs = search_msgs.filter(Chan.address == search_boards)
-        elif search_type == "threads":
-            search_threads = search_threads.filter(Chan.address == search_boards)
+            #
+            # Search from address
+            #
+            if arg_search_from:
+                search_from = arg_search_from
+                search_msgs = search_msgs.filter(Messages.address_from == arg_search_from)
 
-    if search_string and len(search_string) > 2:
-        if search_type == "posts":
-            search_msgs = search_msgs.filter(or_(
-                Messages.message.contains(search_string),
-                Messages.message_id.contains(search_string.lower()),
-                and_(Messages.subject.contains(search_string),
-                     Messages.is_op.is_(True))
-            ))
-        elif search_type == "threads":
-            search_threads = search_threads.filter(and_(
-                Messages.is_op.is_(True),
-                or_(Messages.message.contains(search_string),
-                    Messages.message_id.contains(search_string.lower()),
-                    Messages.subject.contains(search_string))))
+            #
+            # Hidden
+            #
+            if form_search.filter_hidden.data or arg_filter_hidden:
+                if global_admin:
+                    filter_hidden = True
+                    if search_type == "posts":
+                        search_msgs = search_msgs.filter(Messages.hide.is_(True))
+                    elif search_type == "threads":
+                        search_threads = search_threads.filter(Threads.hide.is_(True))
+                else:
+                    status_msg['status_message'].append(allow_msg)
+                    status_msg['status_title'] = "Error"
 
-    #
-    # Search from address
-    #
-    if arg_search_from:
-        search_from = arg_search_from
-        search_msgs = search_msgs.filter(Messages.address_from == arg_search_from)
+            if not filter_hidden:
+                if search_type == "posts":
+                    search_msgs = search_msgs.filter(Messages.hide.is_(False))
+                elif search_type == "threads":
+                    search_threads = search_threads.filter(Threads.hide.is_(False))
 
-    #
-    # Hidden
-    #
-    if form_search.filter_hidden.data or arg_filter_hidden:
-        if global_admin:
-            filter_hidden = True
+            #
+            # STEG
+            #
+            if form_search.filter_steg.data or arg_filter_steg:
+                if global_admin:
+                    filter_steg = True
+                    if search_type == "posts":
+                        search_msgs = search_msgs.filter(Messages.message_steg != "{}")
+                else:
+                    status_msg['status_message'].append(allow_msg)
+                    status_msg['status_title'] = "Error"
+
+            if not filter_steg:
+                if search_type == "posts":
+                    search_msgs = search_msgs.filter(Messages.message_steg == "{}")
+
+            #
+            # OP
+            #
+            if (form_search.filter_op.data or arg_filter_op) and search_type == "posts":
+                filter_op = True
+                search_msgs = search_msgs.filter(Messages.is_op.is_(True))
+
             if search_type == "posts":
-                search_msgs = search_msgs.filter(Messages.hide.is_(True))
+                post_order_desc = Messages.timestamp_sent.desc()
+                if settings.post_timestamp == 'received':
+                    post_order_desc = Messages.timestamp_received.desc()
+
+                if global_admin:
+                    search_msgs = search_msgs.order_by(post_order_desc)
+                else:
+                    search_msgs = search_msgs.filter(and_(
+                        Chan.unlisted.is_(False),
+                        Chan.restricted.is_(False))).order_by(post_order_desc)
+                result_count = search_msgs.count()
+
             elif search_type == "threads":
-                search_threads = search_threads.filter(Threads.hide.is_(True))
-        else:
-            status_msg['status_message'].append(allow_msg)
-            status_msg['status_title'] = "Error"
+                thread_order_desc = Threads.timestamp_sent.desc()
+                if settings.post_timestamp == 'received':
+                    thread_order_desc = Threads.timestamp_received.desc()
 
-    if not filter_hidden:
-        if search_type == "posts":
-            search_msgs = search_msgs.filter(Messages.hide.is_(False))
-        elif search_type == "threads":
-            search_threads = search_threads.filter(Threads.hide.is_(False))
+                if global_admin:
+                    search_threads = search_threads.order_by(thread_order_desc)
+                else:
+                    search_threads = search_threads.filter(and_(
+                        Chan.unlisted.is_(False),
+                        Chan.restricted.is_(False))).order_by(thread_order_desc)
+                result_count = search_threads.count()
 
-    #
-    # STEG
-    #
-    if form_search.filter_steg.data or arg_filter_steg:
-        if global_admin:
-            filter_steg = True
+            search_start = (current_page - 1) * settings.results_per_page_search
+            search_end = (current_page * settings.results_per_page_search) - 1
+
             if search_type == "posts":
-                search_msgs = search_msgs.filter(Messages.message_steg != "{}")
-        else:
-            status_msg['status_message'].append(allow_msg)
-            status_msg['status_title'] = "Error"
+                for i, result in enumerate(search_msgs.all()):
+                    if i > search_end:
+                        break
+                    if search_start <= i:
+                        search_results.append(result)
 
-    if not filter_steg:
-        if search_type == "posts":
-            search_msgs = search_msgs.filter(Messages.message_steg == "{}")
-
-    #
-    # OP
-    #
-    if form_search.filter_op.data or arg_filter_op and search_type == "posts":
-        filter_op = True
-        search_msgs = search_msgs.filter(Messages.is_op.is_(True))
-
-    if search_type == "posts":
-        post_order_desc = Messages.timestamp_sent.desc()
-        if settings.post_timestamp == 'received':
-            post_order_desc = Messages.timestamp_received.desc()
-
-        if global_admin:
-            search_msgs = search_msgs.order_by(post_order_desc)
-        else:
-            search_msgs = search_msgs.filter(and_(
-                Chan.unlisted.is_(False),
-                Chan.restricted.is_(False))).order_by(post_order_desc)
-        result_count = search_msgs.count()
-
-    elif search_type == "threads":
-        thread_order_desc = Threads.timestamp_sent.desc()
-        if settings.post_timestamp == 'received':
-            thread_order_desc = Threads.timestamp_received.desc()
-
-        if global_admin:
-            search_threads = search_threads.order_by(thread_order_desc)
-        else:
-            search_threads = search_threads.filter(and_(
-                Chan.unlisted.is_(False),
-                Chan.restricted.is_(False))).order_by(thread_order_desc)
-        result_count = search_threads.count()
-
-    search_start = (current_page - 1) * settings.results_per_page_search
-    search_end = (current_page * settings.results_per_page_search) - 1
-
-    if search_type == "posts":
-        for i, result in enumerate(search_msgs.all()):
-            if i > search_end:
-                break
-            if search_start <= i:
-                search_results.append(result)
-
-    if search_type == "threads":
-        for i, result in enumerate(search_threads.all()):
-            if i > search_end:
-                break
-            if search_start <= i:
-                thread_results.append(result)
+            if search_type == "threads":
+                for i, result in enumerate(search_threads.all()):
+                    if i > search_end:
+                        break
+                    if search_start <= i:
+                        thread_results.append(result)
 
     return render_template("pages/search.html",
                            current_page=current_page,
@@ -1460,6 +1601,7 @@ def configure():
             if settings.post_timestamp_hour != form_settings.post_timestamp_hour.data:
                 timestamp_change = True
                 settings.post_timestamp_hour = form_settings.post_timestamp_hour.data
+            settings.random_post_method = form_settings.random_post_method.data
             settings.title_text = form_settings.title_text.data
             settings.home_page_msg = form_settings.home_page_msg.data
             settings.html_head = form_settings.html_head.data
@@ -1565,6 +1707,10 @@ def configure():
             if (form_settings.chan_update_display_number.data and
                     form_settings.chan_update_display_number.data >= 0):
                 settings.chan_update_display_number = form_settings.chan_update_display_number.data
+
+            if (form_settings.chan_update_row_count.data and
+                    form_settings.chan_update_row_count.data >= 0):
+                settings.chan_update_row_count = form_settings.chan_update_row_count.data
 
             if not status_msg['status_message']:
                 status_msg['status_title'] = "Success"
@@ -1766,6 +1912,7 @@ def configure():
             # Get submitted unlisted and restricted addresses
             chans_unlisted = []
             chans_restricted = []
+            chans_hide_from_recent = []
             chans_hide_passphrase = []
             chans_read_only = []
             for each_input in request.form:
@@ -1773,6 +1920,8 @@ def configure():
                     chans_unlisted.append(each_input.split("_")[2])
                 if each_input.startswith("option_restricted_"):
                     chans_restricted.append(each_input.split("_")[2])
+                if each_input.startswith("option_hide_recent_"):
+                    chans_hide_from_recent.append(each_input.split("_")[3])
                 if each_input.startswith("option_hide_passphrase_"):
                     chans_hide_passphrase.append(each_input.split("_")[3])
                 if each_input.startswith("option_read_only_"):
@@ -1780,6 +1929,19 @@ def configure():
 
             chans = Chan.query.all()
             for each_chan in chans:
+                # Change unlisted status
+                unlisted_changed = False
+                if each_chan.address in chans_unlisted:
+                    if not each_chan.unlisted:
+                        unlisted_changed = True
+                    each_chan.unlisted = True
+                else:
+                    if each_chan.unlisted:
+                        unlisted_changed = True
+                    each_chan.unlisted = False
+                if unlisted_changed:
+                    each_chan.save()
+
                 # Change unlisted status
                 unlisted_changed = False
                 if each_chan.address in chans_unlisted:
@@ -1804,6 +1966,19 @@ def configure():
                         restricted_changed = True
                     each_chan.restricted = False
                 if restricted_changed:
+                    each_chan.save()
+
+                # Change recent hidden status
+                hide_from_recent_changed = False
+                if each_chan.address in chans_hide_from_recent:
+                    if not each_chan.hide_from_recent:
+                        hide_from_recent_changed = True
+                    each_chan.hide_from_recent = True
+                else:
+                    if each_chan.hide_from_recent:
+                        hide_from_recent_changed = True
+                    each_chan.hide_from_recent = False
+                if hide_from_recent_changed:
                     each_chan.save()
 
                 # Change hide_passphrase status
@@ -2333,6 +2508,12 @@ def status():
         bm_keys_size = "ERROR"
 
     try:
+        uptime = subprocess.check_output(
+            "/usr/bin/uptime", shell=True, text=True).replace("\n", "<br/>")
+    except:
+        uptime = None
+
+    try:
         df = subprocess.check_output(
             "/bin/df -h", shell=True, text=True).replace("\n", "<br/>")
     except:
@@ -2492,7 +2673,8 @@ def status():
                            tor_modules=tor_modules,
                            tor_status=tor_status,
                            tor_version=tor_version,
-                           upload_progress=UploadProgress.query.all())
+                           upload_progress=UploadProgress.query.all(),
+                           uptime=uptime)
 
 
 @blueprint.route('/log', methods=('GET', 'POST'))

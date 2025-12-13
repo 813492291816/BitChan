@@ -1,8 +1,35 @@
+## 1.4.2 (2025/12/13)
+
+Note; MiNode for Bitmessage over I2P is new and experimental. If you are having issues using MiNode in I2P Only mode, try "MiNode: I2P Only, In: Tor", before trying "In: Tor, Out: Tor". If you are having issues with bitmessage continuously restarting, delete messages.dat from the /diag page (this will not negatively affect posts in any way).
+
+ - Fix alignment of header text in post popups on home page
+ - Fix Board Rule that requires attachment for posts
+ - Fix mod log timestamps
+ - Add Favorite Threads/Posts page
+ - Add All Recent page
+ - Add ability to archive threads to Archive page
+ - Add checks to prevent deleting Archived threads and posts
+ - Add ability to favorite threads and posts to Favorites page
+ - Add hiding anchored threads from Recent page
+ - Add option to hide Boards from Recent page
+ - Add Board Rule: Require Attachment for OP
+ - Add alternate method for picking random posts
+ - Add periodic restart of MiNode
+ - Add Set Post Attributes page for setting post attributes
+ - Add unhiding/restoring posts and threads from Post/Thread Attributes pages
+ - Update python packages
+ - Update PyBitmessage from 2025.02.11 to 2025.11.17 commit (port check bugfix)
+ - Update i2pd from 2.56.0 to 2.58.0 (using post-quantum encryption)
+ - Update qBittorrent from 5.1.0 to 5.1.4
+ - Update tor from 0.4.9.2-alpha to 0.4.9.3-alpha
+ - Improve responsiveness of cards on home/overboard pages
+
+
 ## 1.4.1 (2025/05/24)
 
-This is a bugfix release, that fixes the Bitmesssage Connections setting from working properly for some options. If upgrading, you may need to save the Bitmessage Connections configuration setting after the upgrade.
+This is a bugfix release that fixes the Bitmesssage Connections setting from working properly for some options. If upgrading, you may need to save the Bitmessage Connections configuration setting after the upgrade.
 
-Additionally, the post menu has changed to include d Set Thread Attributes menu. This will render fine for new posts, but old posts that have already had their HTML rendered, will still have the old (non-functional) menu. In order for old posts to show the new menu, select the Diag link at the top of the page and click Regenerate All HTML. Each post will then regenerate its HTML the next time it's loaded. The speed of loading posts will only be slower for their first load, then improve on subsequent loadings.
+Additionally, the post menu has changed to include a Set Thread Attributes menu. This will render fine for new posts, but old posts that have already had their HTML rendered, will still have the old (non-functional) menu. In order for old posts to show the new menu, select the Diag link at the top of the page and click Regenerate All HTML. Each post will then regenerate its HTML the next time it's loaded. The speed of loading posts will only be slower for their first load, then improve on subsequent loadings.
 
  - Fix Allow Download post button starting attachment download
  - Fix separation of threads on board page
@@ -23,7 +50,7 @@ Additionally, the post menu has changed to include d Set Thread Attributes menu.
  - Add MiNode install instructions to INSTALL.md
  - Periodically restart qBittorrent to prevent connection issues
  - Style changes to be more mobile friendly
- - Refactor setting post attributes into one settings page
+ - Refactor setting thread attributes into one settings page
  - Update qBittorrent to 5.1.0
  - Update qbittorrent-api to 2025.5.0
 

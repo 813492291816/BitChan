@@ -40,6 +40,7 @@ class GlobalSettings(CRUDMixin, db.Model):
     theme = db.Column(db.String(255), default="Frosty")
     font_size = db.Column(db.Float, default=10.0)
     chan_update_display_number = db.Column(db.Integer, default=5)
+    chan_update_row_count = db.Column(db.Integer, default=5)
     max_download_size = db.Column(db.Float, default=0.0)
     max_extract_size = db.Column(db.Float, default=20.0)
     form_default_upload_method = db.Column(db.String(255), default="Frosty")
@@ -63,6 +64,7 @@ class GlobalSettings(CRUDMixin, db.Model):
     home_page_msg = db.Column(MEDIUMTEXT, default=HOME_MESSAGE)
     html_head = db.Column(MEDIUMTEXT, default="")
     html_body = db.Column(MEDIUMTEXT, default="")
+    random_post_method = db.Column(db.String(255), default="all_posts")
 
     # Bitmessage
     bm_connections_in_out = db.Column(db.String(255), default="minode_i2p_only")

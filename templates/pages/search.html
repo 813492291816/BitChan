@@ -19,13 +19,21 @@
         }
     </script>
     <style>
-        .table th, td {
+        table.checker td {
             text-align: left;
+        }
+
+        table.checker .pad:td {
             padding: 0.3em;
         }
 
-        tr:nth-child(odd) {
+        table.checker .alternate:nth-child(odd) {
             background-color: {{themes[get_theme()].posthighlight}};
+        }
+        
+        .table th, td {
+            text-align: left;
+            padding: 0.3em;
         }
 
         .wrap {
@@ -34,6 +42,11 @@
         .outer {
             display: inline-block;
             margin: 0 auto;
+        }
+
+        div.force-max-height > div > div > blockquote.post {
+            max-height: 25em;
+            overflow-y: auto;
         }
     </style>
 {% endblock %}
@@ -54,23 +67,31 @@
 
     <div class="themed" style="text-align: center; padding-bottom: 0.5em">
         <form method="post">
-            <select name="search_type">
-                <option value="posts"{% if search_type == 'posts' %} selected{% endif %}>Posts</option>
-                <option value="threads"{% if search_type == 'threads' %} selected{% endif %}>Threads</option>
-            </select>
-            <select name="search_boards">
-                <option value="all"{% if search_boards == 'all' %} selected{% endif %}>All Boards</option>
-        {% for each_chan in table_chan.query.all() if each_chan.type == 'board' and ((not global_admin and not each_chan.restricted) or global_admin) %}
-                <option value="{{each_chan.address}}"{% if search_boards == each_chan.address %} selected{% endif %}>({{(each_chan.address)[:8]}}...) /{{each_chan.label|safe}}/</option>
-        {% endfor %}
-            </select>
-            <input type="text" id="search" name="search" value="{{search_string}}" autofocus/>
-            OP: <input type="checkbox" id="filter_op" name="filter_op" value="y"{% if filter_op %} checked{% endif %}>
-        {% if global_admin %}
-            Hidden: <input type="checkbox" id="filter_hidden" name="filter_hidden" value="y"{% if filter_hidden %} checked{% endif %}>
-            STEG: <input type="checkbox" id="filter_steg" name="filter_steg" value="y"{% if filter_steg %} checked{% endif %}>
-        {% endif %}
-            <input type="submit" name="submit" value="Search"/>
+            <div style="padding-bottom: 1em">
+                <input type="text" id="search" name="search" value="{{search_string}}" autofocus/>
+            </div>
+            <div style="padding-bottom: 1em">
+                <select name="search_type">
+                    <option value="posts"{% if search_type == 'posts' %} selected{% endif %}>Posts</option>
+                    <option value="threads"{% if search_type == 'threads' %} selected{% endif %}>Threads</option>
+                </select>
+                <select name="search_boards">
+                    <option value="all"{% if search_boards == 'all' %} selected{% endif %}>All Boards</option>
+            {% for each_chan in table_chan.query.order_by(table_chan.label.asc()).all() if each_chan.type == 'board' and ((not global_admin and not each_chan.restricted) or global_admin) %}
+                    <option value="{{each_chan.address}}"{% if search_boards == each_chan.address %} selected{% endif %}>/{{each_chan.label|safe}}/ ({{(each_chan.address)[:8]}}...)</option>
+            {% endfor %}
+                </select>
+            </div>
+            <div style="padding-bottom: 1em">
+                OP: <input type="checkbox" id="filter_op" name="filter_op" value="y"{% if filter_op %} checked{% endif %}>
+            {% if global_admin %}
+                Hidden: <input type="checkbox" id="filter_hidden" name="filter_hidden" value="y"{% if filter_hidden %} checked{% endif %}>
+                STEG: <input type="checkbox" id="filter_steg" name="filter_steg" value="y"{% if filter_steg %} checked{% endif %}>
+            {% endif %}
+            </div>
+            <div>
+                <input type="submit" name="submit" value="Search"/>
+            </div>
         </form>
     </div>
 
@@ -85,91 +106,93 @@
     <form action="/search/{{search_string_b64}}/{{current_page}}" method="post">
 
         {% if search_type == "posts" and search_results %}
-    <table class="table themed" style="margin-left: auto; margin-right: auto; width: 100%; max-width: 1800px; display: table; table-layout: fixed;">
-        <tr>
-            <td>{% if global_admin %}<input type="checkbox" onClick="toggle(this)"/> {% endif %}Post ID</td>
-            <td>Sent</td>
-            <td>Age</td>
-            <td>OP</td>
-            <td>Replies</td>
-            <td>Attributes</td>
-            <td title="Posted with your Identity address">Ident</td>
-            <td>Board</td>
-            <td>Subject</td>
+    <table class="themed checker" style="margin-left: auto; margin-right: auto; width: 100%; max-width: 1800px; display: table; table-layout: fixed;">
+        <tr class="alternate">
+            {% if global_admin %}<td class="pad"><input type="checkbox" onClick="toggle(this)"/></td>{% endif %}
+            <td class="pad">Age</td>
+            <td class="pad">Attributes</td>
+            <td class="pad" title="Posted with your Identity address">Ident</td>
         </tr>
             {% for each_msg in search_results %}
                 {% if each_msg.thread and each_msg.thread.chan %}
 
-                    {% set thread_options = get_thread_options(each_msg.thread.thread_hash) %}
-        <tr>
-            <td>
-                {% if global_admin %}<input type="checkbox" id="selectbulk_{{each_msg.message_id}}" name="selectbulk_{{each_msg.message_id}}" value="y"> {% endif %}{{generate_reply_link_and_popup_html(each_msg, board_view=True, external_thread=True, link_text=each_msg.post_id, extra_style='font-family:monospace', moderating=global_admin)|safe}}
-            </td>
-            <td style="font-family: monospace">{{timestamp_to_date(each_msg.timestamp_sent)}}</td>
-            <td>{{display_time(now - each_msg.timestamp_sent)}}</td>
-            <td>{% if each_msg.is_op %}X{% endif %}</td>
+        <tr class="alternate">
+            {% if global_admin %}<td class="pad"><input type="checkbox" id="selectbulk_{{each_msg.message_id}}" name="selectbulk_{{each_msg.message_id}}" value="y"></td>{% endif %}
+            <td class="pad">{{display_time(now - each_msg.timestamp_sent)}}</td>
             <td class="pad">
-                    {%- if each_msg.post_ids_replying_to_msg == "[]" -%}
-                0
-                    {%- elif each_msg.post_ids_replying_to_msg|length == 13 -%}
-                1
-                    {%- else -%}
-                {{(each_msg.post_ids_replying_to_msg | length) - (each_msg.post_ids_replying_to_msg | replace(",","") | length) + 1}}
-                    {%- endif -%}
-            </td>
-            <td>
-                    {% if thread_options["sticky"] %}
-                <img style="position: relative; top: 3px; height: 15px" title="Sticky{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
-                {%- if thread_options['sticky_local'] and not thread_options['sticky_remote'] -%}
+                    {%- if each_msg.is_op -%}&nbsp;OP{%- endif -%}
+                    {%- if each_msg.thread.stickied_local or each_msg.thread.stickied_remote -%}
+                &nbsp;<img style="position: relative; top: 3px; height: 15px" title="Sticky{% if each_msg.thread.stickied_local %} (Local){% endif %}{% if each_msg.thread.stickied_remote %} (Remote){% endif %}" src="/static/
+                {%- if each_msg.thread.stickied_local and not each_msg.thread.stickied_remote -%}
                     pin_green.png
-                {%- elif not thread_options['sticky_local'] and thread_options['sticky_remote'] -%}
+                {%- elif not each_msg.thread.stickied_local and each_msg.thread.stickied_remote -%}
                     pin_red.png
                 {%- else -%}
                     pin_green_red.png
                 {%- endif -%}
                 ">
-                    {% endif %}
-                    {% if thread_options["lock"] %}
-                <img style="position: relative; top: 3px; height: 15px" title="Locked{% if thread_options['lock_local'] %} (Local){% endif %}{% if thread_options['lock_remote'] %} (Remote){% endif %}" src="/static/
-                {%- if thread_options['lock_local'] and not thread_options['lock_remote'] -%}
+                    {%- endif -%}
+                    {%- if each_msg.thread.locked_local or each_msg.thread.locked_remote -%}
+                &nbsp;<img style="position: relative; top: 3px; height: 15px" title="Locked{% if each_msg.thread.locked_local %} (Local){% endif %}{% if each_msg.thread.locked_remote %} (Remote){% endif %}" src="/static/
+                {%- if each_msg.thread.locked_local and not each_msg.thread.locked_remote -%}
                     lock_green.png
-                {%- elif not thread_options['lock_local'] and thread_options['lock_remote'] -%}
+                {%- elif not each_msg.thread.locked_local and each_msg.thread.locked_remote -%}
                     lock_red.png
                 {%- else -%}
                     lock_green_red.png
                 {%- endif -%}
                 ">
-                    {% endif %}
-                    {% if thread_options["anchor"] %}
-                <img style="position: relative; top: 3px; height: 15px" title="Anchored{% if thread_options['anchor_local'] %} (Local){% endif %}{% if thread_options['anchor_remote'] %} (Remote){% endif %}" src="/static/
-                {%- if thread_options['anchor_local'] and not thread_options['anchor_remote'] -%}
+                    {%- endif -%}
+                    {%- if each_msg.thread.anchored_local or each_msg.thread.anchored_remote -%}
+                &nbsp;<img style="position: relative; top: 3px; height: 15px" title="Anchored{% if each_msg.thread.anchored_local %} (Local){% endif %}{% if each_msg.thread.anchored_remote %} (Remote){% endif %}" src="/static/
+                {%- if each_msg.thread.anchored_local and not each_msg.thread.anchored_remote -%}
                     anchor_green.png
-                {%- elif not thread_options['anchor_local'] and thread_options['anchor_remote'] -%}
+                {%- elif not each_msg.thread.anchored_local and each_msg.thread.anchored_remote -%}
                     anchor_red.png
                 {%- else -%}
                     anchor_green_red.png
                 {%- endif -%}
                 ">
-                    {% endif %}
-                    {% if each_msg.sage %}
-                <img style="position: relative; height: 15px" title="Sage" src="/static/leaf.png">
-                    {% endif %}
+                    {%- endif -%}
+
+                    {%- if each_msg.favorite or each_msg.thread.favorite -%}
+                &nbsp;<a href="/favorites"><img style="position: relative; height: 15px" title="Favorite{% if each_msg.thread.favorite %} Thread{% endif %}" src="/static/star_green.png"></a>
+                    {%- endif -%}
+
+                    {%- if each_msg.thread.archived -%}
+                &nbsp;<a href="/archive"><img style="position: relative; height: 15px" title="Archived" src="/static/archive_green.png"></a>
+                    {%- endif -%}
+
+                    {%- if (each_msg.is_op and each_msg.thread.hide) or each_msg.hide -%}
+                &nbsp;<img style="position: relative; height: 15px" title="Hidden" src="/static/do_not_red.png">
+                    {%- endif -%}
             </td>
-            <td>{% if each_msg.address_from in identities %}<span title="{{get_user_name(each_msg.address_from, '0', full_address=True)}}">X</span>{% endif %}</td>
-            <td style="overflow-wrap: break-word;"><a class="link" title="{{each_msg.thread.chan.description|safe}}" href="/board/{{each_msg.thread.chan.address}}/1">/{{each_msg.thread.chan.label|safe}}/</a></td>
-            <td style="overflow-wrap: break-word;"><a class="link" href="/thread/{{each_msg.thread.chan.address}}/{{each_msg.thread.thread_hash[-12:]}}">{{each_msg.thread.subject|safe}}</a></td>
+            <td class="pad">{% if each_msg.address_from in identities %}<span title="{{get_user_name(each_msg.address_from, '0', full_address=True)}}">X</span>{% endif %}</td>
+        </tr>
+        <tr class="alternate">
+            <td class="pad" colspan="{% if global_admin %}4{% else %}3{% endif %}">
+                    {% if search_boards == "all" or not each_msg.is_op %}
+                <div style="padding: 0.5em">
+                        {% if search_boards == "all" %}
+                    <a class="link" title="{{each_msg.thread.chan.description|safe}}" href="/board/{{each_msg.thread.chan.address}}/1">/{{each_msg.thread.chan.label|safe}}/</a>
+                        {% endif %}
+                        {% if not each_msg.is_op %}
+                    <a class="link" href="/thread/{{each_msg.thread.chan.address}}/{{each_msg.thread.thread_hash[-12:]}}">{{each_msg.thread.subject|safe}}</a>
+                        {% endif %}
+                </div>
+                    {% endif %}
+                <div class="{% if each_msg.thread.post_max_height_local and user_options['options_disable_forced_max_height'] != '1' %} force-max-height{% endif %}">
+                    {{generate_post_html(each_msg.message_id, board_view=True)|safe}}
+                </div>
+            </td>
         </tr>
                 {% else %}
-        <tr>
-            <td style="font-family: monospace">{{each_msg.post_id}}</td>
-            <td style="font-family: monospace">{{timestamp_to_date(each_msg.timestamp_sent)}}</td>
-            <td>{% if each_msg.is_op %}X{% endif %}</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+        <tr class="alternate">
+            {% if global_admin %}<td class="pad"></td>{% endif %}
+            <td class="pad" style="font-family: monospace">{{timestamp_to_date(each_msg.timestamp_sent)}}</td>
+            <td class="pad"></td>
+            <td class="pad"></td>
+            <td class="pad"></td>
         </tr>
                 {% endif %}
             {% endfor %}
@@ -180,61 +203,69 @@
         {% endif %}
 
         {% if search_type == "threads" and thread_results %}
-    <table class="table themed" style="margin-left: auto; margin-right: auto;">
-        <tr>
-            {% if global_admin %}
-            <td><input type="checkbox" onClick="toggle(this)"/></td>
-            {% endif %}
-            <td>Thread Hash</td>
-            <td>Last Post</td>
-            <td>Age</td>
-            <td>Attributes</td>
-            <td>Board</td>
-            <td>Subject</td>
+    <table class="checker themed" style="margin-left: auto; margin-right: auto;">
+        <tr class="alternate">
+            <td class="pad">{% if global_admin %}<input type="checkbox" onClick="toggle(this)"/> {% endif %}Thread Hash</td>
+            <td class="pad">Last Post</td>
+            <td class="pad">Age</td>
+            <td class="pad">Attributes</td>
+            <td class="pad">Board</td>
+            <td class="pad">Subject</td>
         </tr>
             {% for each_thread in thread_results %}
-                {% set thread_options = get_thread_options(each_thread.thread_hash) %}
-        <tr>
-            <td style="font-family:monospace">{% if global_admin %}<input type="checkbox" id="selectbulk_{{each_thread.thread_hash}}" name="selectbulk_{{each_thread.thread_hash}}" value="y">{% endif %}{{each_thread.thread_hash_short}}</td>
-            <td style="font-family: monospace">{{timestamp_to_date(each_thread.timestamp_sent)}}</td>
-            <td>{{display_time(now - each_thread.timestamp_sent)}}</td>
-            <td>
-                {% if thread_options["sticky"] %}
-                <img style="position: relative; top: 3px; height: 15px" title="Sticky{% if thread_options['sticky_local'] %} (Local){% endif %}{% if thread_options['sticky_remote'] %} (Remote){% endif %}" src="/static/
-                {%- if thread_options['sticky_local'] and not thread_options['sticky_remote'] -%}
+        <tr class="alternate">
+            <td class="pad" style="font-family:monospace">{% if global_admin %}<input type="checkbox" id="selectbulk_{{each_thread.thread_hash}}" name="selectbulk_{{each_thread.thread_hash}}" value="y"> {% endif %}{{each_thread.thread_hash_short}}</td>
+            <td class="pad" style="font-family: monospace">{{timestamp_to_date(each_thread.timestamp_sent)}}</td>
+            <td class="pad">{{display_time(now - each_thread.timestamp_sent)}}</td>
+            <td class="pad">
+                {%- if each_thread.stickied_local or each_thread.stickied_remote -%}
+                &nbsp;<img style="position: relative; top: 3px; height: 15px" title="Sticky{% if each_thread.stickied_local %} (Local){% endif %}{% if each_thread.stickied_remote %} (Remote){% endif %}" src="/static/
+                {%- if each_thread.stickied_local and not each_thread.stickied_remote -%}
                     pin_green.png
-                {%- elif not thread_options['sticky_local'] and thread_options['sticky_remote'] -%}
+                {%- elif not each_thread.stickied_local and each_thread.stickied_remote -%}
                     pin_red.png
                 {%- else -%}
                     pin_green_red.png
                 {%- endif -%}
-                ">
-                {% endif %}
-                    {% if thread_options["lock"] %}
-                <img style="position: relative; top: 3px; height: 15px" title="Locked{% if thread_options['lock_local'] %} (Local){% endif %}{% if thread_options['lock_remote'] %} (Remote){% endif %}" src="/static/
-                {%- if thread_options['lock_local'] and not thread_options['lock_remote'] -%}
+                ">&nbsp;
+                {%- endif -%}
+                {%- if each_thread.locked_local or each_thread.locked_remote -%}
+                &nbsp;<img style="position: relative; top: 3px; height: 15px" title="Locked{% if each_thread.locked_local %} (Local){% endif %}{% if each_thread.locked_remote %} (Remote){% endif %}" src="/static/
+                {%- if each_thread.locked_local and not each_thread.locked_remote -%}
                     lock_green.png
-                {%- elif not thread_options['lock_local'] and thread_options['lock_remote'] -%}
+                {%- elif not each_thread.locked_local and each_thread.locked_remote -%}
                     lock_red.png
                 {%- else -%}
                     lock_green_red.png
                 {%- endif -%}
-                ">
-                {% endif %}
-                    {% if thread_options["anchor"] %}
-                <img style="position: relative; top: 3px; height: 15px" title="Anchored{% if thread_options['anchor_local'] %} (Local){% endif %}{% if thread_options['anchor_remote'] %} (Remote){% endif %}" src="/static/
-                {%- if thread_options['anchor_local'] and not thread_options['anchor_remote'] -%}
+                ">&nbsp;
+                {%- endif -%}
+                {%- if each_thread.anchored_local or each_thread.anchored_remote -%}
+                &nbsp;<img style="position: relative; top: 3px; height: 15px" title="Anchored{% if each_thread.anchored_local %} (Local){% endif %}{% if each_thread.anchored_remote %} (Remote){% endif %}" src="/static/
+                {%- if each_thread.anchored_local and not each_thread.anchored_remote -%}
                     anchor_green.png
-                {%- elif not thread_options['anchor_local'] and thread_options['anchor_remote'] -%}
+                {%- elif not each_thread.anchored_local and each_thread.anchored_remote -%}
                     anchor_red.png
                 {%- else -%}
                     anchor_green_red.png
                 {%- endif -%}
-                ">
-                {% endif %}
+                ">&nbsp;
+                {%- endif -%}
+
+                {%- if each_thread.favorite -%}
+                &nbsp;<a href="/favorites"><img style="position: relative; height: 15px" title="Favorite Thread" src="/static/star_green.png"></a>&nbsp;
+                {%- endif -%}
+
+                {%- if each_thread.archived -%}
+                &nbsp;<a href="/archive"><img style="position: relative; height: 15px" title="Archived" src="/static/archive_green.png"></a>&nbsp;
+                {%- endif -%}
+
+                {%- if each_thread.hide -%}
+                &nbsp;<img style="position: relative; height: 15px" title="Hidden" src="/static/do_not_red.png">&nbsp;
+                {%- endif -%}
             </td>
-            <td><a class="link" title="{{each_thread.chan.description|safe}}" href="/board/{{each_thread.chan.address}}/1">/{{each_thread.chan.label|safe}}/</a></td>
-            <td>{{generate_reply_link_and_popup_html(None, external_thread=True, link_text=each_thread.subject, moderating=global_admin, use_thread_id=each_thread.id)|safe}}</td>
+            <td class="pad"><a class="link" title="{{each_thread.chan.description|safe}}" href="/board/{{each_thread.chan.address}}/1">/{{each_thread.chan.label|safe}}/</a></td>
+            <td class="pad">{{generate_reply_link_and_popup_html(None, external_thread=True, link_text=each_thread.subject, moderating=global_admin, use_thread_id=each_thread.id)|safe}}</td>
         </tr>
             {% endfor %}
     </table>

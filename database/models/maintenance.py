@@ -114,7 +114,7 @@ class ModLog(CRUDMixin, db.Model):
 
     id = db.Column(db.Integer, unique=True, primary_key=True)
     message_id = db.Column(db.String(255), default=None)
-    timestamp = db.Column(db.Float, default=None)
+    timestamp = db.Column(db.Integer, default=None)
     description = db.Column(db.Text, default=None)
     user_from = db.Column(db.String(255), default=None)
     board_address = db.Column(db.String(255), default=None)

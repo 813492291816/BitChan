@@ -155,13 +155,15 @@ class BitChan:
         self.timer_new_tor_identity = now + random.randint(10800, 28800)
         self.timer_scheduled_posts = now + random.randint(60, 180)  # 1 - 3 minutes
 
-        self.timer_qbittorrent_restart = now + (60 * 60 * 6)  # 6 hours
+        self.timer_restart_qbittorrent = now + (60 * 60 * 6)  # 6 hours
+        self.timer_restart_minode = now + (60 * 60 * 6)       # 6 hours
         self.timer_delete_and_vacuum = now + (60 * 60)        # 1 hour
         self.timer_check_locked_threads = now + (60 * 20)     # 20 minutes
         self.timer_delete_msgs = now + (60 * 10)              # 10 minutes
         self.timer_delete_captchas = now + (60 * 10)          # 10 minutes
         self.timer_get_msg_expires_time = now + (60 * 10)     # 10 minutes
         self.timer_remove_deleted_msgs = now + (60 * 10)      # 10 minutes
+        self.timer_check_admin_commands = now + (60 * 5)      # 5 minutes
         self.timer_send_lists = now + (60 * 5)                # 5 minutes
         self.timer_send_commands = now + (60 * 5)             # 5 minutes
         self.timer_clear_session_info = now + (60 * 5)        # 5 minutes
@@ -217,31 +219,6 @@ class BitChan:
 
     def run_periodic(self):
         now = time.time()
-
-        #
-        # Check settings
-        #
-        if self.timer_check_maintenance < now:
-            try:
-                with session_scope(config.DB_PATH) as new_session:
-                    settings = new_session.query(GlobalSettings).first()
-                    if settings.maintenance_mode:
-                        self.logger.info("Maintenance mode enabled. Pausing daemon operation.")
-                        self.maintenance_mode = True
-
-                #
-                # Maintenance Mode
-                #
-                while self.maintenance_mode:
-                    with session_scope(config.DB_PATH) as new_session:
-                        settings = new_session.query(GlobalSettings).first()
-                        if not settings.maintenance_mode:
-                            self.logger.info("Maintenance mode disabled. Resuming daemon operation.")
-                            self.maintenance_mode = False
-                    time.sleep(3)
-            except:
-                self.logger.exception("Could not check maintenance mode")
-            self.timer_check_maintenance = time.time() + 10
 
         #
         # Check Bitmessage onion address
@@ -593,6 +570,18 @@ class BitChan:
         #
         # Clear flask session info
         #
+        if self.timer_check_admin_commands < now:
+            try:
+                self.logger.debug("Run check_admin_commands()")
+                self.check_admin_commands()
+                self.logger.debug("End check_admin_commands()")
+            except:
+                self.logger.exception("Could not complete check_admin_commands()")
+            self.timer_check_admin_commands = time.time() + (60 * 60 * 12)  # 12 hours
+
+        #
+        # Clear flask session info
+        #
         if self.timer_clear_session_info < now:
             try:
                 self.logger.debug("Run clear_session_info()")
@@ -696,14 +685,52 @@ class BitChan:
         #
         # Restart qBittorrent
         #
-        if self.timer_qbittorrent_restart < now:
+        if self.timer_restart_qbittorrent < now:
             try:
                 self.logger.debug("Run restart_qbittorrent()")
                 self.restart_qbittorrent()
                 self.logger.debug("End restart_qbittorrent()")
             except:
                 self.logger.exception("Could not complete restart_qbittorrent()")
-            self.timer_qbittorrent_restart = time.time() + (60 * 60 * 6)
+            self.timer_restart_qbittorrent = time.time() + (60 * 60 * 6)
+
+        #
+        # Restart MiNode
+        #
+        if self.timer_restart_minode < now:
+            try:
+                self.logger.debug("Restarting MiNode")
+                self.minode_stop()
+                self.minode_start()
+                self.logger.debug("End Restarting MiNode")
+            except:
+                self.logger.exception("Could not restart MiNode")
+            self.timer_restart_minode = time.time() + (60 * 60 * 6)
+
+        #
+        # Check maintenance mode (keep at end of first loop)
+        #
+        if self.timer_check_maintenance < now:
+            try:
+                with session_scope(config.DB_PATH) as new_session:
+                    settings = new_session.query(GlobalSettings).first()
+                    if settings.maintenance_mode:
+                        self.logger.info("Maintenance mode enabled. Pausing daemon operation.")
+                        self.maintenance_mode = True
+
+                #
+                # Maintenance Mode
+                #
+                while self.maintenance_mode:
+                    with session_scope(config.DB_PATH) as new_session:
+                        settings = new_session.query(GlobalSettings).first()
+                        if not settings.maintenance_mode:
+                            self.logger.info("Maintenance mode disabled. Resuming daemon operation.")
+                            self.maintenance_mode = False
+                    time.sleep(3)
+            except:
+                self.logger.exception("Could not check maintenance mode")
+            self.timer_check_maintenance = time.time() + 10
 
         self.first_run = False
 
@@ -827,7 +854,6 @@ class BitChan:
         qbt_client.auth_log_in()
         qbt_client.application.shutdown()
         self.qbittorrent_restarted_ts = time.time()
-
 
     def check_scheduled_posts(self):
         now = time.time()
@@ -1618,6 +1644,27 @@ class BitChan:
                                 message.post_id, thread.timestamp_sent, message.timestamp_sent))
                         thread.timestamp_sent = message.timestamp_sent
                         new_session.commit()
+
+    def check_admin_commands(self):
+        """Ensure thread attributes are up-to-date with latest admin command"""
+        with session_scope(config.DB_PATH) as new_session:
+            for each_cmd in new_session.query(Command).all():
+                thread = new_session.query(Threads).filter(Threads.thread_hash == each_cmd.thread_id).first()
+                if not thread:
+                    continue
+
+                save_thread = False
+                if thread.locked_remote != admin_cmd.thread_lock:
+                    thread.locked_remote = admin_cmd.thread_lock
+                    save_thread = True
+                if thread.stickied_remote != admin_cmd.thread_sticky:
+                    thread.stickied_remote = admin_cmd.thread_sticky
+                    save_thread = True
+                if thread.anchored_remote != admin_cmd.thread_anchor:
+                    thread.anchored_remote = admin_cmd.thread_anchor
+                    save_thread = True
+                if save_thread:
+                    thread.save()
 
     def clear_session_info(self):
         with session_scope(config.DB_PATH) as new_session:
@@ -2616,15 +2663,17 @@ class BitChan:
 
                 add_mod_log_entry("Wiping Board (Rule)", board_address=address)
 
-    def delete_all_messages(self, address):
+    @staticmethod
+    def delete_all_messages(address):
         with session_scope(config.DB_PATH) as new_session:
             list_delete_message_ids = []
             list_delete_thread_hashes = []
 
             chan = new_session.query(Chan).filter(
                 Chan.address == address).first()
-            threads = new_session.query(Threads).filter(
-                Threads.chan_id == chan.id).all()
+            threads = new_session.query(Threads).filter(and_(
+                Threads.chan_id == chan.id,
+                Threads.archived.is_not(True))).all()
             for each_thread in threads:
                 list_delete_thread_hashes.append(each_thread.thread_hash)
                 for each_message in each_thread.messages:
@@ -3064,44 +3113,38 @@ class BitChan:
             msg_dict["msgid"][-config.ID_LENGTH:].upper()))
 
         if "message_id" not in msg_decrypted_dict or not msg_decrypted_dict["message_id"]:
-            self.logger.error(
-                "{}: No message ID. Deleting.".format(
-                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            self.logger.error("{}: No message ID. Deleting.".format(
+                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
             self.trash_message(msg_dict["msgid"])
             return
 
         if "thread_hash" not in msg_decrypted_dict or not msg_decrypted_dict["thread_hash"]:
-            self.logger.error(
-                "{}: No thread hash. Deleting.".format(
-                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            self.logger.error("{}: No thread hash. Deleting.".format(
+                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
             self.trash_message(msg_dict["msgid"])
             return
 
         if "delete_password" not in msg_decrypted_dict or not msg_decrypted_dict["delete_password"]:
-            self.logger.error(
-                "{}: No password. Deleting.".format(
-                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            self.logger.error("{}: No password. Deleting.".format(
+                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
             self.trash_message(msg_dict["msgid"])
             return
 
         if "timestamp_utc" not in msg_decrypted_dict or not msg_decrypted_dict["timestamp_utc"]:
-            self.logger.error(
-                "{}: No timestamp. Deleting.".format(
-                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+            self.logger.error("{}: No timestamp. Deleting.".format(
+                msg_dict["msgid"][-config.ID_LENGTH:].upper()))
             self.trash_message(msg_dict["msgid"])
             return
 
         if "timestamp_utc" in msg_decrypted_dict and msg_decrypted_dict["timestamp_utc"]:
             if msg_decrypted_dict["timestamp_utc"] > time.time() + (60 * 60 * 24):
-                self.logger.error(
-                    "{}: Timestamp too far in the future. Deleting.".format(
-                        msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                self.logger.error("{}: Timestamp too far in the future. Deleting.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
                 self.trash_message(msg_dict["msgid"])
                 return
             elif msg_decrypted_dict["timestamp_utc"] < time.time() - (60 * 60 * 24 * 30):
-                self.logger.error(
-                    "{}: Timestamp too far in the past. Deleting.".format(
-                        msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                self.logger.error("{}: Timestamp too far in the past. Deleting.".format(
+                    msg_dict["msgid"][-config.ID_LENGTH:].upper()))
                 self.trash_message(msg_dict["msgid"])
                 return
 
@@ -3109,9 +3152,9 @@ class BitChan:
             hashed_password = hashlib.sha512(msg_decrypted_dict["delete_password"].encode('utf-8')).hexdigest()
 
             with session_scope(config.DB_PATH) as new_session:
-                create_hash_entry = True
-                message = new_session.query(Messages).filter(
-                    Messages.message_id == msg_decrypted_dict["message_id"]).first()
+                message = new_session.query(Messages).join(Threads).filter(and_(
+                    Messages.message_id == msg_decrypted_dict["message_id"],
+                    Threads.archived.is_not(True))).first()
                 if message:
                     if hashed_password == message.delete_password_hash:
                         settings = new_session.query(GlobalSettings).first()
@@ -3121,15 +3164,28 @@ class BitChan:
                             hide = False
                         self.logger.info(
                             f"{msg_dict['msgid'][-config.ID_LENGTH:].upper()}: Hashes match to delete post (hide={hide}).")
+
+                        delete_post(msg_decrypted_dict["message_id"], only_hide=hide)
+
+                        hash_entry = new_session.query(PostDeletePasswordHashes).filter(
+                            PostDeletePasswordHashes.message_id == msg_decrypted_dict["message_id"]).first()
+                        if not hash_entry:
+                            new_hash = PostDeletePasswordHashes()
+                            new_hash.message_id = msg_decrypted_dict["message_id"]
+                            new_hash.password_hash = hashed_password
+                            new_hash.address_from = msg_dict["fromAddress"]
+                            new_hash.address_to = msg_dict["toAddress"]
+                            new_hash.timestamp_utc = msg_decrypted_dict["timestamp_utc"]
+                            new_session.add(new_hash)
+                            new_session.commit()
+
                         add_mod_log_entry(
                             f"Delete post with password (hide={hide})",
                             message_id=msg_decrypted_dict["message_id"],
                             user_from=msg_dict["fromAddress"],
                             board_address=msg_dict["toAddress"],
                             thread_hash=msg_decrypted_dict["thread_hash"])
-                        delete_post(msg_decrypted_dict["message_id"], only_hide=hide)
                     else:
-                        create_hash_entry = False
                         self.logger.error(
                             "{}: Hashes don't match. Not deleting post.".format(
                                 msg_dict["msgid"][-config.ID_LENGTH:].upper()))
@@ -3140,19 +3196,6 @@ class BitChan:
                             board_address=msg_dict["toAddress"],
                             thread_hash=msg_decrypted_dict["thread_hash"],
                             success=False)
-
-                if create_hash_entry:
-                    hash_entry = new_session.query(PostDeletePasswordHashes).filter(
-                        PostDeletePasswordHashes.message_id == msg_decrypted_dict["message_id"]).first()
-                    if not hash_entry:
-                        new_hash = PostDeletePasswordHashes()
-                        new_hash.message_id = msg_decrypted_dict["message_id"]
-                        new_hash.password_hash = hashed_password
-                        new_hash.address_from = msg_dict["fromAddress"]
-                        new_hash.address_to = msg_dict["toAddress"]
-                        new_hash.timestamp_utc = msg_decrypted_dict["timestamp_utc"]
-                        new_session.add(new_hash)
-                        new_session.commit()
         except Exception as err:
             self.logger.error("{}: Could not process post delete with password: {}".format(
                 msg_dict["msgid"][-config.ID_LENGTH:].upper(), err))
@@ -3400,10 +3443,9 @@ class BitChan:
                 Messages.message_id == msg_dict["msgid"]).first()
             if not message:
                 self.logger.info(
-                    "{}: Message not in DB. Start processing.".format(
-                        msg_dict["msgid"][-config.ID_LENGTH:].upper()))
+                    f'{msg_dict["msgid"][-config.ID_LENGTH:].upper()}: Message not in DB. Start processing.')
                 return_obj = parse_message(msg_dict["msgid"], msg_dict)
-                self.logger.info(f"Return type from parse_message(): {type(return_obj)}")
+                # self.logger.info(f"Return type from parse_message(): {type(return_obj)}")
                 if (type(return_obj) is dict and
                         "process_op_json_obj" in return_obj and
                         "orig_op_bm_json_obj" in return_obj):
@@ -3415,8 +3457,7 @@ class BitChan:
                     else:
                         # Parse OP of thread that appears to currently be missing
                         self.logger.info("Allowing OP to be processed")
-                        parse_message(return_obj["orig_op_bm_json_obj"]["msgid"],
-                                      return_obj["orig_op_bm_json_obj"])
+                        parse_message(return_obj["orig_op_bm_json_obj"]["msgid"], return_obj["orig_op_bm_json_obj"])
 
         # Check if message was created by parse_message()
         with session_scope(config.DB_PATH) as new_session:
@@ -4136,21 +4177,35 @@ class BitChan:
             time.sleep(1)
 
     def clear_bm_inventory(self):
+        self.logger.info("Deleting Bitmessage messages.dat")
+
+        # stop BM, delete messages.dat, start bitmessage
         try:
+            timer_waiting = time.time()
+            while self.is_restarting_bitmessage and time.time() - timer_waiting < 360:
+                self.logger.info("Already restarting bitmessage. Please wait.")
+                time.sleep(2)
+
             self.is_restarting_bitmessage = True
             self.bitmessage_stop()
-            time.sleep(20)
+            time.sleep(15)
 
-            self.logger.info("Deleting Bitmessage inventory")
+            if os.path.exists(config.BM_MESSAGES_DAT):
+                try:
+                    os.remove(config.BM_MESSAGES_DAT)
+                except:
+                    self.logger.error(f"Could not remove {config.BM_MESSAGES_DAT}")
+            else:
+                self.logger.error(f"Can't find messages.dat at {config.BM_MESSAGES_DAT}")
 
-            conn = sqlite3.connect('file:{}'.format(config.BM_MESSAGES_DAT), uri=True)
-            c = conn.cursor()
-            c.execute('DELETE FROM inventory')
-            conn.commit()
-            conn.close()
+            # conn = sqlite3.connect('file:{}'.format(config.BM_MESSAGES_DAT), uri=True)
+            # c = conn.cursor()
+            # c.execute('DELETE FROM inventory')
+            # conn.commit()
+            # conn.close()
 
             self.bitmessage_start()
-            time.sleep(20)
+            time.sleep(15)
         finally:
             self.is_restarting_bitmessage = False
 

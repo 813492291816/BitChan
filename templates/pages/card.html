@@ -4,7 +4,7 @@
                 background-size: 100%; background-repeat: no-repeat; background-image: linear-gradient(rgba(255,255,255,0.2), rgba(255,255,255,0.2)), url(/files/thumb_first/{{op_post.message_id}}/0);
                 {%- endif -%}
                 ">
-                    <div class="card_bg themed" style="font-weight: bold; overflow-wrap: break-word;">
+                    <div class="card_bg themed" style="min-height: 100px; font-weight: bold; overflow-wrap: break-word;">
                         {% if op_post %}
                         {{get_card_link_html(op_post, card_text='[O]', external_thread=True)|safe}} <a class="link" href="/thread/{{op_post.thread.chan.address}}/{{op_post.thread.thread_hash_short}}">{{op_post.thread.subject|safe}}</a><br/>
                         {% else %}

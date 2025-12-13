@@ -1,6 +1,6 @@
 FROM alpine:3.19.1
 
-ENV TORVER="tor-0.4.9.2-alpha"
+ENV TORVER="tor-0.4.9.3-alpha"
 ENV TORLOC="https://www.torproject.org/dist/${TORVER}.tar.gz"
 
 RUN apk update \

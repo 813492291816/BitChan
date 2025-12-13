@@ -26,7 +26,10 @@ def upgrade():
 
         with op.batch_alter_table("upload_torrents") as batch_op:
             batch_op.add_column(sa.Column('auto_start_torrent', sa.Boolean))
+    except Exception as err:
+        print(err)
 
+    try:
         op.execute(
             '''
             UPDATE settings_global

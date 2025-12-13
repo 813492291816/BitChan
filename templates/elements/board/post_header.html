@@ -28,19 +28,14 @@
         </tr>
         <tr class="menu-entry">
             <td style="white-space: nowrap;">
-                <a class="link" href="/thread/{{post.thread.chan.address}}/{{post.thread.thread_hash_short}}#{{post.post_id}}">This Post's Link</a>
+                <a class="link" href="/thread/{{post.thread.chan.address}}/{{post.thread.thread_hash_short}}#{{post.post_id}}">Link to This Post</a>
             </td>
         </tr>
 
         <tr class="menu-entry"><td></td></tr>
     {% if is_op_post -%}
-        {% if post.thread.hide -%}
-            {% include '/elements/board/post_header_options/restore_thread.html' %}
-        {%- endif %}
-        {% if post.hide -%}
-            {% include '/elements/board/post_header_options/restore_post.html' %}
-        {%- endif %}
         {% include '/elements/board/post_header_options/thread_attributes_for_you.html' %}
+        {% include '/elements/board/post_header_options/post_attributes_for_you.html' %}
         {% if post.file_amount %}
             {% include '/elements/board/post_header_options/attachment_options.html' %}
         {% endif %}
@@ -58,9 +53,8 @@
             {% include '/elements/board/post_header_options/delete_thread_for_everyone.html' %}
         {%- endif %}
     {% else -%}
-        {% if post.hide -%}
-            {% include '/elements/board/post_header_options/restore_post.html' %}
-        {%- endif %}
+        {% include '/elements/board/post_header_options/thread_attributes_for_you.html' %}
+        {% include '/elements/board/post_header_options/post_attributes_for_you.html' %}
         {% if post.file_amount %}
             {% include '/elements/board/post_header_options/attachment_options.html' %}
         {% endif %}
@@ -181,6 +175,18 @@
     anchor_green_red.png
 {%- endif -%}
 ">
+{%- endif -%}
+
+{%- if post.favorite or (is_op_post and post.thread.favorite) -%}
+&nbsp;<a href="/favorites"><img style="position: relative; top: 3px; height: 15px" title="Favorite{% if post.thread.favorite %} Thread{% endif %}" src="/static/star_green.png"></a>
+{%- endif -%}
+
+{%- if is_op_post and post.thread.archived -%}
+&nbsp;<a href="/archive"><img style="position: relative; top: 3px; height: 15px" title="Archived" src="/static/archive_green.png"></a>
+{%- endif -%}
+
+{%- if post.hide or (post.is_op and post.thread.hide) -%}
+&nbsp;<img style="position: relative; top: 3px; height: 15px" title="Hidden" src="/static/do_not_red.png">
 {%- endif -%}
 
 {%- if is_board_view -%}

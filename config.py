@@ -7,7 +7,7 @@ logger = logging.getLogger('bitchan.config')
 
 DOCKER = os.environ.get('DOCKER', False) == 'TRUE'
 
-VERSION_BITCHAN = "1.4.2"
+VERSION_BITCHAN = "1.4.3"
 VERSION_ALEMBIC = '000000000142'
 VERSION_MSG = "1.3.0"
 VERSION_MIN_MSG = "1.3.0"

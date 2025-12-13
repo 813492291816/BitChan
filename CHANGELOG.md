@@ -1,10 +1,16 @@
-## 1.4.2 (2025/12/13)
+## 1.4.3 (2025/12/13)
+
+If you're installing new, you don't need to do anything. If upgrading, go to /config and add the following trackers to I2P Torrent Tracker URLs:
+
+http://qimlze77z7w32lx2ntnwkuqslrzlsqy7774v3urueuarafyqik5a.b32.i2p/a
+http://wc4sciqgkceddn6twerzkfod6p2npm733p7z3zwsjfzhc4yulita.b32.i2p/a
 
 Note; MiNode for Bitmessage over I2P is new and experimental. If you are having issues using MiNode in I2P Only mode, try "MiNode: I2P Only, In: Tor", before trying "In: Tor, Out: Tor". If you are having issues with bitmessage continuously restarting, delete messages.dat from the /diag page (this will not negatively affect posts in any way).
 
  - Fix alignment of header text in post popups on home page
  - Fix Board Rule that requires attachment for posts
  - Fix mod log timestamps
+ - Add two i2p open torrent trackers
  - Add Favorite Threads/Posts page
  - Add All Recent page
  - Add ability to archive threads to Archive page

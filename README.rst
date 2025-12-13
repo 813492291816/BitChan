@@ -2,7 +2,7 @@
 BitChan
 =======
 
-Version: 1.4.2
+Version: 1.4.3
 
 BitChan is a decentralized anonymous imageboard inspired by `BitBoard <https://github.com/michrob/bitboard>`__ and built on top of `Bitmessage <https://bitmessage.org>`__ with `Tor <https://www.torproject.org>`__, `I2P <https://i2pd.website>`__, and `GnuPG <https://gnupg.org>`__.
 

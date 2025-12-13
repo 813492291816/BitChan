@@ -121,6 +121,8 @@ class GlobalSettings(CRUDMixin, db.Model):
     messages_older = db.Column(db.Integer, default=0)
     messages_newer = db.Column(db.Integer, default=0)
     i2p_trackers = db.Column(db.Text, default=json.dumps([
+        'http://qimlze77z7w32lx2ntnwkuqslrzlsqy7774v3urueuarafyqik5a.b32.i2p/a',
+        'http://wc4sciqgkceddn6twerzkfod6p2npm733p7z3zwsjfzhc4yulita.b32.i2p/a',  # http://opentracker.simp.i2p/a
         'http://opentracker.r4sas.i2p/a',
         'http://opentracker.skank.i2p/a',
         'http://opentracker.dg2.i2p/a',

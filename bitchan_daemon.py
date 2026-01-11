@@ -90,6 +90,8 @@ from utils.shared import regenerate_card_popup_post_html
 from utils.tor import enable_custom_address
 from utils.tor import enable_random_address
 
+logging.getLogger("urllib3").setLevel(logging.ERROR)
+
 
 class BitChan:
     def __init__(self):
@@ -205,6 +207,23 @@ class BitChan:
         time.sleep(3)
         self.process_stored_messages()  # Process messages that were already processed and stored in the database
         self.logger.debug("Initialization complete. Starting daemon.")
+
+        # Precent daemon from starting until qBittorrent has started (up to 60 seconds)
+        self.logger.info("Checking ability to connect to qBittorrent...")
+        connected_qb = False
+        timer_qb = time.time()
+        while not connected_qb and time.time() - timer_qb < 60:
+            try:
+                conn_info = dict(host=config.QBITTORRENT_HOST, port=8080)
+                qbt_client = qbittorrentapi.Client(**conn_info)
+                qbt_client.auth_log_in()
+                self.logger.info("Successfully connected to qBittorrent.")
+                connected_qb = True
+            except:
+                pass
+            time.sleep(5)
+        if not connected_qb:
+            self.logger.error("Failed to connect to qBittorrent. Post attachments rely on qBittorrent functioning.")
 
         while self.running:
             if not self.is_restarting_bitmessage:
@@ -4176,10 +4195,10 @@ class BitChan:
 
             time.sleep(1)
 
-    def clear_bm_inventory(self):
+    def clear_bm_inventory(self, delete_file=False):
         self.logger.info("Deleting Bitmessage messages.dat")
 
-        # stop BM, delete messages.dat, start bitmessage
+        # stop BM, clear inventory or delete messages.dat, start bitmessage
         try:
             timer_waiting = time.time()
             while self.is_restarting_bitmessage and time.time() - timer_waiting < 360:
@@ -4190,19 +4209,20 @@ class BitChan:
             self.bitmessage_stop()
             time.sleep(15)
 
-            if os.path.exists(config.BM_MESSAGES_DAT):
-                try:
-                    os.remove(config.BM_MESSAGES_DAT)
-                except:
-                    self.logger.error(f"Could not remove {config.BM_MESSAGES_DAT}")
+            if delete_file:
+                if os.path.exists(config.BM_MESSAGES_DAT):
+                    try:
+                        os.remove(config.BM_MESSAGES_DAT)
+                    except:
+                        self.logger.error(f"Could not remove {config.BM_MESSAGES_DAT}")
+                else:
+                    self.logger.error(f"Can't find messages.dat at {config.BM_MESSAGES_DAT}")
             else:
-                self.logger.error(f"Can't find messages.dat at {config.BM_MESSAGES_DAT}")
-
-            # conn = sqlite3.connect('file:{}'.format(config.BM_MESSAGES_DAT), uri=True)
-            # c = conn.cursor()
-            # c.execute('DELETE FROM inventory')
-            # conn.commit()
-            # conn.close()
+                conn = sqlite3.connect('file:{}'.format(config.BM_MESSAGES_DAT), uri=True)
+                c = conn.cursor()
+                c.execute('DELETE FROM inventory')
+                conn.commit()
+                conn.close()
 
             self.bitmessage_start()
             time.sleep(15)

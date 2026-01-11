@@ -1,4 +1,5 @@
 alembic==1.17.2
+audioop-lts==0.2.2  # fix until new pydub release, broken version: pydub==0.25.1
 beautifulsoup4==4.14.3
 bleach==6.3.0
 cachelib==0.13.0
@@ -22,7 +23,7 @@ matplotlib==3.9.0
 msgpack==1.1.2
 numpy==2.0.0
 opencv-python==4.12.0.88
-pandas==2.2.2
+pandas==2.3.3
 piexif==1.1.3  # utils/stegano dependency
 Pillow==12.0.0
 pillow-avif-plugin==1.5.2

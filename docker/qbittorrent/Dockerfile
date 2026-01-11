@@ -1,67 +1,142 @@
-FROM alpine:3.19.1
+FROM alpine:3.23.2 AS base
 
-ENV QB_HOME="/i2p_qb"
-ENV HOST_USER_ID=1001
-ENV HOST_GROUP_ID=1001
+ENV QB_HOME="/i2p_qb" \
+    HOST_USER_ID=1001 \
+    HOST_GROUP_ID=1001
 
-RUN apk update \
-    && apk add autoconf automake boost-dev build-base cmake curl git libtool linux-headers perl pkgconf python3 python3-dev \
-    qt6-qtbase-dev qt6-qttools-dev qt6-qtsvg-dev re2c ninja tar icu-dev openssl-dev ufw zlib-dev
+RUN apk --no-cache --update-cache upgrade
 
-# Commit 74bc93a37a5e31c78f0aa02037a68fb9ac5deb41 v2.0.10
+# run-time dependencies
+RUN apk --no-cache add \
+  7zip \
+  bash \
+  curl \
+  libcrypto3 \
+  libssl3 \
+  qt6-qtbase \
+  qt6-qtbase-sqlite \
+  tini \
+  tzdata \
+  ufw \
+  zlib
+
+# image for building
+FROM base AS builder
+
+ENV QBT_VERSION="5.1.4" \
+    BOOST_VERSION_MAJOR="1" \
+    BOOST_VERSION_MINOR="86" \
+    BOOST_VERSION_PATCH="0" \
+    LIBBT_VERSION="RC_1_2" \
+    LIBBT_CMAKE_FLAGS=""
+
+# alpine linux packages:
+# https://git.alpinelinux.org/aports/tree/community/libtorrent-rasterbar/APKBUILD
+# https://git.alpinelinux.org/aports/tree/community/qbittorrent/APKBUILD
+RUN apk add \
+  cmake \
+  git \
+  g++ \
+  make \
+  ninja \
+  openssl-dev \
+  qt6-qtbase-dev \
+  qt6-qtbase-private-dev \
+  qt6-qttools-dev \
+  zlib-dev
+
+# compiler, linker options:
+# https://gcc.gnu.org/onlinedocs/gcc/Option-Summary.html
+# https://gcc.gnu.org/onlinedocs/gcc/Link-Options.html
+# https://sourceware.org/binutils/docs/ld/Options.html
+ENV CFLAGS="-pipe -fstack-clash-protection -fstack-protector-strong -fno-plt -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS" \
+    CXXFLAGS="-pipe -fstack-clash-protection -fstack-protector-strong -fno-plt -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS" \
+    LDFLAGS="-gz -Wl,-O1,--as-needed,--sort-common,-z,now,-z,pack-relative-relocs,-z,relro"
+
+# prepare boost
+RUN cd / && \
+  wget -O boost.tar.gz "https://archives.boost.io/release/$BOOST_VERSION_MAJOR.$BOOST_VERSION_MINOR.$BOOST_VERSION_PATCH/source/boost_${BOOST_VERSION_MAJOR}_${BOOST_VERSION_MINOR}_${BOOST_VERSION_PATCH}.tar.gz" && \
+  tar -xf boost.tar.gz && \
+  mv boost_* boost && \
+  cd boost && \
+  ./bootstrap.sh && \
+  ./b2 stage --stagedir=./ --with-headers
+
+# build libtorrent
 # Commit 9d7443f467147d1784fb7516d2a882db1abb5a8b v2.0.11
-RUN git clone --progress --verbose --shallow-submodules --recurse-submodules https://github.com/arvidn/libtorrent.git ./libtorrent \
-    && cd ./libtorrent \
-    && git checkout 9d7443f467147d1784fb7516d2a882db1abb5a8b \
-    && cmake -Wno-dev -G Ninja -B build \
-    -D CMAKE_BUILD_TYPE="Release" \
-    -D CMAKE_CXX_STANDARD=17 \
-    -D CMAKE_INSTALL_LIBDIR="lib" \
-    -D CMAKE_INSTALL_PREFIX="/usr/local" \
-    && cmake --build build \
-    && cmake --install build \
-    && cd .. \
-    && rm -rf ./libtorrent
+RUN cd / && \
+  git clone --progress --verbose --shallow-submodules --recurse-submodules https://github.com/arvidn/libtorrent.git ./libtorrent && \
+  cd ./libtorrent && \
+  git checkout 9d7443f467147d1784fb7516d2a882db1abb5a8b && \
+  cmake \
+    -B build \
+    -G Ninja \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_CXX_STANDARD=20 \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+    -DBOOST_ROOT=/boost/lib/cmake \
+    -Ddeprecated-functions=OFF \
+    $LIBBT_CMAKE_FLAGS && \
+  cmake --build build -j $(nproc) && \
+  cmake --install build
 
-RUN git clone --progress --verbose https://github.com/mikroskeem/libexecinfo.git ./libexecinfo \
-    && cd ./libexecinfo \
-    && git checkout d79eee9b042198a841411668368fcad18a3da506 \
-    && make PREFIX='/usr' all \
-    && make PREFIX='/usr' install \
-    && cd .. \
-    && rm -rf ./libexecinfo
+# build qbittorrent
+RUN cd / && \
+  wget "https://github.com/qbittorrent/qBittorrent/archive/refs/tags/release-${QBT_VERSION}.tar.gz" && \
+  tar -xf "release-${QBT_VERSION}.tar.gz" && \
+  cd "qBittorrent-release-${QBT_VERSION}" && \
+  cmake \
+    -B build \
+    -G Ninja \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+    -DBOOST_ROOT=/boost/lib/cmake \
+    -DGUI=OFF && \
+  cmake --build build -j $(nproc) && \
+  cmake --install build
 
-# Commit c01265c4cffe98db2ee2fba651f7f254ca8afbec v4.6.6
-# Commit 2d67729617fc3f5bd9cfb71953d45f73a8c1a617 v5.0.0rc1
-# Commit 94136262a84293da0d8504724e7143df0d0baa12 v5.0.1
-# Commit d96ab6ba849ae722d2abb1d94c760283f7b51135 v5.1.0beta1
-# Commit bc7d5c1f8f50fe1b4b09c3653eeb490d8733edb4 v5.1.0rc1
-# Commit da87be2b12893dfb769df8124afeb064f099dc71 v5.1.0
-# Commit ea9f3800ce70ded6db66b2c9f0d2f0513399e969 v5.1.1
-# Commit 202ff8a099cfc1ca9421e7d30944b3c58a4a47cd v5.1.2
-# Commit 6ede4e49ff1432ade8a75d37daf076b6000e2a57 v5.1.3
-# Commit 33e5e772200b5e2f9d23af8870ce7436ec216faa v5.1.4
-RUN git clone --progress --verbose --shallow-submodules --recurse-submodules https://github.com/qbittorrent/qBittorrent.git ./qbittorrent \
-    && cd ./qbittorrent \
-    && git checkout 33e5e772200b5e2f9d23af8870ce7436ec216faa \
-    && cmake -Wno-dev -G Ninja -B build \
-    -D GUI=OFF \
-    -D CMAKE_BUILD_TYPE="release" \
-    -D CMAKE_CXX_STANDARD=17 \
-    -D CMAKE_CXX_STANDARD_LIBRARIES="/usr/lib/libexecinfo.so" \
-    -D CMAKE_INSTALL_PREFIX="/usr/local" \
-    && cmake --build build \
-    && cmake --install build \
-    && cd .. \
-    && rm -rf ./qbittorrent
+# record compile-time Software Bill of Materials (sbom)
+RUN cd / && \
+  printf "Software Bill of Materials for building qbittorrent-nox\n\n" >> /sbom.txt && \
+  echo "boost $BOOST_VERSION_MAJOR.$BOOST_VERSION_MINOR.$BOOST_VERSION_PATCH" >> /sbom.txt && \
+  cd libtorrent && \
+  echo "libtorrent-rasterbar git $(git rev-parse HEAD)" >> /sbom.txt && \
+  cd .. && \
+  echo "qBittorrent ${QBT_VERSION}" >> /sbom.txt ; \
+  echo >> /sbom.txt && \
+  apk list -I | sort >> /sbom.txt && \
+  cat /sbom.txt
 
-RUN apk --purge del boost-dev build-base
+RUN cd / && \
+  rm -rf boost && \
+  rm -rf ./libtorrent && \
+  rm -rf "qBittorrent-release-${QBT_VERSION}"
+
+RUN apk --no-cache --purge del \
+  cmake \
+  git \
+  g++ \
+  make \
+  ninja \
+  openssl-dev \
+  qt6-qtbase-dev \
+  qt6-qtbase-private-dev \
+  qt6-qttools-dev \
+  zlib-dev
+
+# image for running
+FROM base
+
+COPY --from=builder /usr/bin/qbittorrent-nox /usr/bin/qbittorrent-nox
+
+COPY --from=builder /sbom.txt /sbom.txt
 
 COPY docker/qbittorrent/entrypoint.sh /entrypoint.sh
 COPY docker/qbittorrent/qBittorrent.conf /qBittorrent.conf
 
 RUN chmod a+rx /entrypoint.sh
-
-EXPOSE 8080
 
 ENTRYPOINT [ "/entrypoint.sh" ]

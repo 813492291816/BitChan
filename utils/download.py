@@ -9,6 +9,7 @@ import time
 import zipfile
 from pathlib import Path
 from threading import Thread
+from urllib3.exceptions import NewConnectionError
 from urllib.parse import urlparse
 
 try:
@@ -168,16 +169,27 @@ def allow_download(message_id):
                 # Resume torrent. When download completes, it will be automatically processed by the daemon
                 conn_info = dict(host=config.QBITTORRENT_HOST, port=8080)
                 qbt_client = qbittorrentapi.Client(**conn_info)
+
+                logged_in = False
                 try:
                     qbt_client.auth_log_in()
-                    qbt_client.torrents_resume(torrent_hashes=torrent.torrent_hash)
-                except:
-                    logger.exception(f"Resuming torrent {torrent.torrent_hash}")
-                qbt_client.auth_log_out()
+                    logged_in = True
+                except ConnectionRefusedError:
+                    logger.exception(f"ConnectionRefusedError logging in to qbittorrent")
+                except NewConnectionError:
+                    logger.exception(f"NewConnectionError logging in to qbittorrent")
 
-                message.file_do_not_download = False
-                message.start_download = True
-                new_session.commit()
+                if logged_in:
+                    try:
+                        qbt_client.torrents_resume(torrent_hashes=torrent.torrent_hash)
+                    except:
+                        logger.exception(f"Resuming torrent {torrent.torrent_hash}")
+
+                    qbt_client.auth_log_out()
+
+                    message.file_do_not_download = False
+                    message.start_download = True
+                    new_session.commit()
 
             #
             # Attachment is not a torrent, check other methods

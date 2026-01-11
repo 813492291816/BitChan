@@ -809,8 +809,8 @@ def split_into_sentences(text):
     suffixes = "(Inc|Ltd|Jr|Sr|Co)"
     romannum = "(I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII|XIII|" \
                "XIV|XV|XVI|XVII|XVIII|XIX|XX|XXI|XXII|XXIII|XXIV|XXV)"
-    starters = "(Mr|Mrs|Ms|Dr|He\s|She\s|It\s|They\s|Their\s|Our\s|" \
-               "We\s|But\s|However\s|That\s|This\s|Wherever)"
+    starters = r"(Mr|Mrs|Ms|Dr|He\s|She\s|It\s|They\s|Their\s|Our\s|" \
+               r"We\s|But\s|However\s|That\s|This\s|Wherever)"
     acronyms = "([A-Z][.][A-Z][.](?:[A-Z][.])?)"
     websites = "[.](com|net|org|io|gov)"
 
@@ -823,7 +823,7 @@ def split_into_sentences(text):
     text = re.sub(romannum + "[.]", "\\1<prd>", text)
     text = re.sub(websites, "<prd>\\1", text)
     if "Ph.D" in text: text = text.replace("Ph.D.", "Ph<prd>D<prd>")
-    text = re.sub("\s" + alphabets + "[.] ", " \\1<prd> ", text)
+    text = re.sub(r"\s" + alphabets + "[.] ", " \\1<prd> ", text)
     text = re.sub(acronyms + " " + starters, "\\1<stop> \\2", text)
     text = re.sub(alphabets + "[.]" + alphabets + "[.]" + alphabets + "[.]",
                   "\\1<prd>\\2<prd>\\3<prd>", text)

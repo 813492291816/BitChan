@@ -1,6 +1,16 @@
+## 1.4.4 (2026/01/10)
+
+This is a bugfix release for certain systems installing BitChan using a very recent version of docker that was causing API version mismatch errors.
+
+ - Fix host system docker version being too new (update BitChan debian-slim docker container from Bookworm to Trixie)
+ - Fix bitmessage inventory deletion method, add ability to delete inventory or messages.dat file
+ - Update docker builds for bitmessage, i2pd, and qbittorrent
+ - Update local installation instructions
+
+
 ## 1.4.3 (2025/12/13)
 
-If you're installing new, you don't need to do anything. If upgrading, go to /config and add the following trackers to I2P Torrent Tracker URLs:
+If you're installing, you don't need to do anything. If upgrading, go to /config and add the following trackers to I2P Torrent Tracker URLs:
 
 http://qimlze77z7w32lx2ntnwkuqslrzlsqy7774v3urueuarafyqik5a.b32.i2p/a
 http://wc4sciqgkceddn6twerzkfod6p2npm733p7z3zwsjfzhc4yulita.b32.i2p/a

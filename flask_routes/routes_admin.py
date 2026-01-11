@@ -1126,6 +1126,10 @@ def delete_with_comment_local(address, message_id, thread_id):
     if not global_admin and not board_list_admin and not janitor:
         return allow_msg
 
+    message = Messages.query.filter(Messages.message_id == message_id).first()
+    if not message:
+        return "Post doesn't exist"
+
     form_del_com = forms_board.DeleteComment()
     chan = Chan.query.filter(Chan.address == address).first()
 
@@ -1209,6 +1213,7 @@ def delete_with_comment_local(address, message_id, thread_id):
                            board=board,
                            from_list=from_list,
                            local_delete=True,
+                           message=message,
                            status_msg=status_msg,
                            url=url,
                            url_text=url_text)

@@ -53,6 +53,7 @@ class Diag(FlaskForm):
     start_bitmessage_and_daemon = SubmitField("Start Bitmessage and Daemon")
     restart_bitmessage = SubmitField("Restart Bitmessage")
     del_inventory = SubmitField("Delete BM Inventory")
+    del_messages_dat = SubmitField("Delete BM messages.dat")
     del_trash = SubmitField("Delete BM Trash")
     del_deleted_msg_db = SubmitField("Clear Deleted Message Table")
     del_deleted_thread_db = SubmitField("Clear Deleted Thread Table")

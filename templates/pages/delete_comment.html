@@ -16,7 +16,7 @@
         <div style="max-width: 800px;">
             <div class="themed" style="width: 100%; text-align: center; padding-bottom: 2em">
                 <form method="post">
-                <h1 class="title themed bold">Delete Post with Comment</h1>
+                <h1 class="title themed bold">Delete Post {{generate_reply_link_and_popup_html(message, link_text=message.post_id, font_size="28px")|safe}} with Comment</h1>
 
                 <div style="padding-bottom: 1em">
     {% if local_delete %}

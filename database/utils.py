@@ -22,7 +22,7 @@ def session_scope(db_uri):
         yield session
         session.commit()
     except Exception as e:
-        logger.exception("session_scope error. Rolled back: uri='{u}', error='{e}'".format(u=db_uri, e=e))
+        logger.exception("session_scope error. Rolled back: error='{e}'".format(u=db_uri, e=e))
         session.rollback()
         raise
     finally:

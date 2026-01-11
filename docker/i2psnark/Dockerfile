@@ -47,6 +47,4 @@ VOLUME /i2psnark/downloads
 COPY docker/i2psnark/entrypoint.sh /entrypoint.sh
 RUN chmod a+x /entrypoint.sh
 
-EXPOSE 8002
-
 ENTRYPOINT [ "/entrypoint.sh" ]

@@ -81,10 +81,18 @@
         <tr>
             <td>
                 <form method="post">
-                    <input type="submit" name="del_inventory" value="Delete Bitmessage messages.dat"/>
+                    <input type="submit" name="del_inventory" value="Delete Bitmessage Inventory"/>
                 </form>
             </td>
-            <td>Delete messages.dat and restart Bitmessage. Useful to download the entire blockchain again after clearing the deleted message table and deleting the bitmessage trash in order to restore posts that were previously deleted. Can also fix some rare issues with bitmessage if this file becomes corrupt.</td>
+            <td>Delete inventory from messages.dat and restart Bitmessage. Useful to download the entire blockchain again after clearing the deleted message table and deleting the bitmessage trash in order to restore posts that were previously deleted.</td>
+        </tr>
+        <tr>
+            <td>
+                <form method="post">
+                    <input type="submit" name="del_messages.dat" value="Delete Bitmessage messages.dat"/>
+                </form>
+            </td>
+            <td>Delete the entire messages.dat file and restart Bitmessage. Can fix some rare issues with bitmessage if this file becomes corrupt.</td>
         </tr>
         <tr>
             <td>

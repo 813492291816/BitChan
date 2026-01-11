@@ -2,7 +2,6 @@ import logging
 
 from pydub import AudioSegment
 from pydub.generators import Sine
-from pydub.playback import play
 
 logger = logging.getLogger('bitchan.audio')
 

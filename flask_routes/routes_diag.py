@@ -550,6 +550,18 @@ def diag():
                     "Couldn't delete Bitmessage inventory: {}".format(err))
                 logger.exception("Couldn't delete BM inventory")
 
+        elif form_diag.del_messages_dat.data:
+            try:
+                del_messages_dat = Thread(target=daemon_com.clear_bm_inventory, args=(True,))
+                del_messages_dat.start()
+                status_msg['status_title'] = "Success"
+                status_msg['status_message'].append(
+                    "Deleted messages.dat and restarting Bitmessage. Give it time to resync.")
+            except Exception as err:
+                status_msg['status_message'].append(
+                    "Couldn't delete messages.dat: {}".format(err))
+                logger.exception("Couldn't delete messages.dat")
+
         elif form_diag.del_deleted_msg_db.data:
             try:
                 deleted_msgs = DeletedMessages.query.all()

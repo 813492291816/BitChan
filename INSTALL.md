@@ -45,9 +45,9 @@ BitChan can now be accessed at http://172.28.1.1:8000 (If using tor browser, rea
 
 Installing BitChan with Docker is still the recommended method, however it is possible to install BitChan natively within a Debian-based Linux operating system (outside docker). This has been tested to work on [Xubuntu](https://xubuntu.org) 22.04 as a virtual machine in [VirtualBox](https://www.virtualbox.org), but will likely work on most Debian-based operating systems, as long as you have both Python 2 and Python 3 available.
 
-This currently works but you may find it takes a while for bitmessage to make its initial connections. You can speed up this process by (after following the installation) copying the knownnodes.dat from your existing bitmessage install that has connections to /usr/local/bitchan/bitmessage/ and restarting bitmessage with "sudo service bitchan_bitmessage restart".
+This currently works, but you may find it takes a while for bitmessage to make its initial connections. You can speed up this process by (after following the installation) copying the knownnodes.dat from your existing bitmessage install that has connections to /usr/local/bitchan/bitmessage/ and restarting bitmessage with "sudo service bitchan_bitmessage restart".
 
-Since the addition of the BitTorrentover I2P post attachment upload method, qBittorrent needs to be installed. The safest way to ensure qbittorrent does not leak non-i2p traffic is by using the Docker install method, as this uses iptables within the container to only allow connections to i2pd for torrenting. Use the non-docker install method at your own risk. It is recommended to set qbittorrent behind some type of firewall to only allow it to communicate with i2pd.
+Since the addition of the I2P BitTorrent post attachment upload method, qBittorrent needs to be installed. The safest way to ensure qbittorrent does not leak non-i2p traffic is by using the Docker install method, as this uses iptables within the container to only allow connections to i2pd for torrenting. Use the non-docker install method at your own risk. It is recommended to set qbittorrent behind some type of firewall to only allow it to communicate with i2pd.
 
 ## Install general dependencies
 
@@ -59,8 +59,6 @@ sudo apt install -yq --no-install-suggests --no-install-recommends git wget
 ## Create directories
 
 ```bash
-sudo adduser --disabled-password --gecos "" bitchan
-sudo usermod -aG bitchan $USER
 sudo mkdir -p /usr/local/bitchan
 sudo mkdir -p /usr/local/bitchan/bitmessage
 sudo mkdir -p /usr/local/bitchan/downloaded_files
@@ -80,6 +78,13 @@ sudo mkdir -p /usr/local/bitchan_venv3
 sudo chmod -R 770 /usr/local/bitchan*
 sudo chmod -R 700 /usr/local/bitchan/tor
 sudo chmod -R 700 /usr/local/bitchan/tor_data
+```
+
+## Add user & change ownership
+
+```bash
+sudo adduser --disabled-password --gecos "" bitchan
+sudo usermod -aG bitchan $USER
 sudo chown -R bitchan:bitchan /usr/local/bitchan*
 ```
 
@@ -142,7 +147,7 @@ If you already have tor installed, skip this step. If you're using non-default t
 If you choose, torsocks will be installed and used to install the rest of BitChan. Wait for tor to be boostrapped 100% before proceeding. You can monitor the progress with "sudo service bitchan_tor status". The first time bootstrapping may take longer than subsequent starts.
 
 ```bash
-export TORVER="tor-0.4.8.10"
+export TORVER="tor-0.4.9.3-alpha"
 export TORLOC="https://www.torproject.org/dist/${TORVER}.tar.gz"
 export TORPASS=$(tr -dc a-zA-Z0-9 < /dev/urandom | head -c32 && echo)
 
@@ -158,8 +163,7 @@ cd ${TORVER}
 make
 sudo make install
 cd ~
-rm -rf ${TORVER}.tar.gz
-rm -rf ${TORVER}
+rm -rf ${TORVER} ${TORVER}.tar.gz
 
 sudo cp /usr/local/bitchan/BitChan/install_files/tor/torrc /usr/local/bitchan/tor/
 echo "${TORPASS}" | sudo dd of=/usr/local/bitchan/tor/torpass
@@ -201,7 +205,7 @@ cd torsocks
 make
 sudo make install
 cd ~
-rm -rf torsocks
+rm -rf ~/torsocks
 ```
 
 ## Install bitchan and bitmessage dependencies
@@ -228,12 +232,12 @@ sudo ${TORSOCKS_RUN} apt install -yq --no-install-suggests --no-install-recommen
 ${TORSOCKS_RUN} python2 -m pip install --no-cache-dir virtualenv
 python2 -m virtualenv /usr/local/bitchan_venv2
 ${TORSOCKS_RUN} /usr/local/bitchan_venv2/bin/pip install --no-cache-dir --upgrade pip
-${TORSOCKS_RUN} /usr/local/bitchan_venv2/bin/pip install --no-cache-dir -r /usr/local/bitchan/BitChan/install_files/bitmessage/requirements.txt
+${TORSOCKS_RUN} /usr/local/bitchan_venv2/bin/pip install --no-cache-dir -r /usr/local/bitchan/BitChan/install_files/bitmessage/requirements-freeze-hashes.txt
 
 ${TORSOCKS_RUN} python3 -m pip install --no-cache-dir virtualenv
 python3 -m virtualenv /usr/local/bitchan_venv3
 ${TORSOCKS_RUN} /usr/local/bitchan_venv3/bin/pip install --no-cache-dir --upgrade pip
-${TORSOCKS_RUN} /usr/local/bitchan_venv3/bin/pip install --no-cache-dir -r /usr/local/bitchan/BitChan/install_files/bitchan/requirements.txt
+${TORSOCKS_RUN} /usr/local/bitchan_venv3/bin/pip install --no-cache-dir -r /usr/local/bitchan/BitChan/install_files/bitchan/requirements-freeze-hashes.txt
 ```
 
 ## Set Up PyBitmessage
@@ -242,7 +246,7 @@ ${TORSOCKS_RUN} /usr/local/bitchan_venv3/bin/pip install --no-cache-dir -r /usr/
 cd ~
 ${TORSOCKS_RUN} git clone https://github.com/Bitmessage/PyBitmessage
 cd PyBitmessage
-git checkout 3d19c3f23fad2c7a26e8606cd95c6b3df417cfbc
+git checkout 802b0b9ff02dc2e534df049100a280f13c52db4b  # 2025.11.17
 ${TORSOCKS_RUN} /usr/local/bitchan_venv2/bin/pip install --no-cache-dir -r requirements.txt
 sudo ${TORSOCKS_RUN} /usr/local/bitchan_venv2/bin/python2 setup.py install
 sudo ln -sf /usr/local/bitchan_venv2/bin/pybitmessage /usr/local/bin/pybitmessage
@@ -253,8 +257,8 @@ cd /usr/local/bitchan/bitmessage
 
 export APIUSER=$(tr -dc a-zA-Z0-9 < /dev/urandom | head -c12 && echo)
 export APIPASS=$(tr -dc a-zA-Z0-9 < /dev/urandom | head -c32 && echo)
-sudo crudini --set /usr/local/bitchan/bitmessage/keys.dat bitmessagesettings socksproxytype SOCKS5
-sudo crudini --set /usr/local/bitchan/bitmessage/keys.dat bitmessagesettings sockshostname 127.0.0.1
+sudo crudini --set /usr/local/bitchan/bitmessage/keys.dat bitmessagesettings socksproxytype none
+sudo crudini --set /usr/local/bitchan/bitmessage/keys.dat bitmessagesettings sockshostname none
 sudo crudini --set /usr/local/bitchan/bitmessage/keys.dat bitmessagesettings socksport 9050
 sudo crudini --set /usr/local/bitchan/bitmessage/keys.dat bitmessagesettings onionport 8444
 sudo crudini --set /usr/local/bitchan/bitmessage/keys.dat bitmessagesettings sockslisten False
@@ -284,7 +288,7 @@ sudo service nginx restart
 ## Compile and install i2pd
 
 ```bash
-export I2PVER="2.51.0"
+export I2PVER="2.58.0"
 export I2PLOC="https://github.com/PurpleI2P/i2pd/archive/refs/tags/${I2PVER}.tar.gz"
 
 sudo ${TORSOCKS_RUN} apt install -yq --no-install-suggests --no-install-recommends \
@@ -298,9 +302,8 @@ cd i2pd/build
 cmake -DWITH_HARDENING=ON -DWITH_ADDRSANITIZER=ON
 make
 sudo make install
-cd ../..
-rm -rf ${I2PVER}.tar.gz
-rm -rf i2pd
+cd ~
+rm -rf i2pd ${I2PVER}.tar.gz
 
 sudo cp /usr/local/bitchan/BitChan/install_files/i2pd/i2pd.conf /usr/local/bitchan/i2pd/i2pd.conf
 sudo chown -R bitchan:bitchan /usr/local/bitchan/i2pd/i2pd.conf
@@ -314,7 +317,7 @@ If you're setting up a kiosk and want to use an eepsite to access BitChan over H
 
 ## Compile and install qBittorrent
 
-Note: torsocks has been removed from the git clone commands due to connection refusals for the submodule downloads.
+Note: torsocks has been removed from the git clone commands due to connection refusals for the submodule downloads. You can attempt to run the foloowing commands with torsocks, but understand this may be the cause if you run into issues.
 
 ```bash
 sudo ${TORSOCKS_RUN} apt install -yq --no-install-suggests --no-install-recommends \
@@ -322,27 +325,55 @@ sudo ${TORSOCKS_RUN} apt install -yq --no-install-suggests --no-install-recommen
     libicu-dev libqt5svg5-dev libssl-dev libtool linux-headers-generic perl pkgconf python3 python3-dev qtbase5-dev \
     qttools5-dev qttools5-dev-tools re2c ninja-build tar zlib1g-dev
 
+# Boost
 cd ~
+wget -O boost.tar.gz "https://archives.boost.io/release/$BOOST_VERSION_MAJOR.$BOOST_VERSION_MINOR.$BOOST_VERSION_PATCH/source/boost_${BOOST_VERSION_MAJOR}_${BOOST_VERSION_MINOR}_${BOOST_VERSION_PATCH}.tar.gz"
+tar -xf boost.tar.gz
+mv boost_* boost
+cd boost
+./bootstrap.sh
+./b2 stage --stagedir=./ --with-headers
 
-# Commit 74bc93a37a5e31c78f0aa02037a68fb9ac5deb41 v2.0.10
-git clone --shallow-submodules --recurse-submodules https://github.com/arvidn/libtorrent.git ./libtorrent
+# libtorrent
+cd ~
+git clone --progress --verbose --shallow-submodules --recurse-submodules https://github.com/arvidn/libtorrent.git ./libtorrent
 cd ./libtorrent
-git checkout 74bc93a37a5e31c78f0aa02037a68fb9ac5deb41
-cmake -Wno-dev -G Ninja -B build -D CMAKE_BUILD_TYPE="Release" -D CMAKE_CXX_STANDARD=17
-cmake --build build
-sudo cmake --install build
-cd ..
-rm -rf ./libtorrent
+git checkout 9d7443f467147d1784fb7516d2a882db1abb5a8b
+cmake \
+  -B build \
+  -G Ninja \
+  -DBUILD_SHARED_LIBS=OFF \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_CXX_STANDARD=20 \
+  -DCMAKE_INSTALL_PREFIX=/usr \
+  -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+  -DBOOST_ROOT=/boost/lib/cmake \
+  -Ddeprecated-functions=OFF \
+  $LIBBT_CMAKE_FLAGS
+cmake --build build -j $(nproc)
+cmake --install build
 
-# Commit 785320e7f6a5e228caf817b01dca69da0b83a012 v4.6.4
-git clone --shallow-submodules --recurse-submodules https://github.com/qbittorrent/qBittorrent.git ./qbittorrent
-cd ./qbittorrent
-git checkout 785320e7f6a5e228caf817b01dca69da0b83a012
-cmake -Wno-dev -G Ninja -B build -D GUI=OFF -D CMAKE_BUILD_TYPE="release" -D CMAKE_CXX_STANDARD=17
-cmake --build build
-sudo cmake --install build
-cd ..
-rm -rf ./qbittorrent
+# qBittorrent
+export QBT_VERSION="5.1.4"
+cd ~
+wget "https://github.com/qbittorrent/qBittorrent/archive/refs/tags/release-${QBT_VERSION}.tar.gz"
+tar -xf "release-${QBT_VERSION}.tar.gz"
+cd "qBittorrent-release-${QBT_VERSION}"
+cmake \
+  -B build \
+  -G Ninja \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_INSTALL_PREFIX=/usr \
+  -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+  -DBOOST_ROOT=/boost/lib/cmake \
+  -DGUI=OFF
+cmake --build build -j $(nproc) 
+cmake --install build
+
+cd ~
+rm -rf boost
+rm -rf ./libtorrent
+rm -rf "qBittorrent-release-${QBT_VERSION}"
 
 sudo adduser --disabled-password --gecos "" --home /usr/local/bitchan/BitChan/i2p_qb qb
 sudo usermod -aG bitchan qb
@@ -380,7 +411,7 @@ You can verify no connections are leaking from the qb user that runs qbittorrent
 ```bash
 # Verify that your current user has internet
 ping yahoo.com
-# Verify that the internet is not accessible by use qb (the user that will run qbittorrent)
+# Verify that the internet is not accessible by qb (the user that will run qbittorrent)
 sudo su qb -c "ping yahoo.com"
 # You should see the following returned:
 ### ping: yahoo.com: Temporary failure in name resolution
@@ -390,9 +421,18 @@ sudo su qb -c "ping yahoo.com"
 ## Install MiNode
 
 ```bash
-sudo cp BitChan/docker/minode/minode /usr/local/bitchan/  # If it still exists, this can instead be cloned from https://git.bitmessage.org/Bitmessage/MiNode/commit/a2bf898bca63e380435ad30e5e76fa4409e298cb
+export GIT_BRANCH="v0.3" 
+export GIT_COMMIT="82d5deec57c8b07ee056df2d27a79236fdce054c"
+export REPO_URL="https://git.bitmessage.org/Bitmessage/MiNode.git"
+
+git clone --progress --verbose -b ${GIT_BRANCH} ${REPO_URL} /usr/local/bitchan/minode
+cd /usr/local/bitchan/minode
+git checkout ${GIT_COMMIT}
+
 sudo cp BitChan/install_files/minode/minode_run.sh /usr/local/bitchan/minode
 sudo chmod +x /usr/local/bitchan/minode/minode_run.sh
+
+sudo chown -R bitchan:bitchan /usr/local/bitchan*
 
 sudo systemctl enable /usr/local/bitchan/BitChan/install_files/bitchan_minode.service
 sudo service bitchan_minode start
@@ -431,13 +471,25 @@ The default connection settings for bitmessage allows incoming connections to us
 
 ## Upgrading No-Docker Install
 
+This process is NOT as simple as when using docker, by simply issuing "made daemon".
+
+First, pull the latest BitChan code.
+
 ```bash
 cd /usr/local/bitchan/BitChan
 git pull
+```
+
+Upgrading tor, i2pd, minode, qbittorrent, and bitmessage will need to be done manually, by repeating the installation steps for each. You must then go through this INSTALL file and determine if you need to execute any commands and overwrite any files. There may need to be modifications to the steps to ensure no issues occur from the commands.
+
+When finished, restart the services. Alternatively, you can also opt to stop each service while building the new version, then start it.
+
+```bash
 sudo systemctl daemon-reload
+sudo service bitchan_tor restart
+sudo service bitchan_i2pd restart
+sudo service bitchan_minode restart
 sudo service bitchan_qbittorrent restart
 sudo service bitchan_backend restart
 sudo service bitchan_frontend restart
 ```
-
-Upgrading tor, i2pd, minode, qbittorrent, and bitmessage will need to be done manually, by repeating the installation steps for each, with the new version. There may need to be modifications to the steps to ensure no issues are introduced.

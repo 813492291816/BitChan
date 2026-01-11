@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # Bitchan environment variables
 ENV DOCKER TRUE
@@ -23,7 +23,6 @@ RUN /bin/bash /home/bitchan/install_packages_bitchan.sh
 RUN rm -f /home/bitchan/install_packages_bitchan.txt
 
 # BitChan pip dependencies
-RUN python3 -m pip install --break-system-packages --no-cache-dir --upgrade pip
 RUN python3 -m venv /home/bitchan/env3
 COPY ./install_files/bitchan/requirements-freeze-hashes.txt /home/bitchan/requirements_bitchan_copy.txt
 RUN /home/bitchan/env3/bin/python3 -m pip install --require-hashes --no-deps --no-cache-dir -r /home/bitchan/requirements_bitchan_copy.txt

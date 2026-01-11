@@ -18,7 +18,7 @@ services:
     depends_on:
       - bitchan_flask
 #    ports:
-#      - "8000:8000"
+#      - "8000:8000"  # Only uncomment to expose this port
 
   # See the manual for setting up a tor hidden service to host a kiosk.
   bitchan_tor:
@@ -56,7 +56,7 @@ services:
       - /etc/localtime:/etc/localtime:ro  # Use timezone of the host (read-only)
     privileged: true
     command: >
-      bash -c "/home/bitchan/docker/bitmessage/bitmessage_setup.sh &&
+      bash -c "/home/bitchan/bitmessage_setup.sh &&
                /home/bitchan/env2/bin/pybitmessage -d"
     depends_on:
       - bitchan_mysql
@@ -121,6 +121,7 @@ services:
     depends_on:
       - bitchan_bitmessage
       - bitchan_mysql
+      - bitchan_qbittorrent
 
 #
 # I2P
@@ -285,6 +286,7 @@ services:
       - /usr/local/bitchan-docker/minode:/home/minode/minode_data
     depends_on:
       - bitchan_i2p
+      - bitchan_tor
 
   bitchan_qbittorrent:
     container_name: bitchan_qbittorrent
@@ -301,8 +303,7 @@ services:
       options:
         max-size: 30m
     ports:
-      - "8080:8080"  # qBittorrent Web-UI Port
-                     # If not accessing from localhost, use "docker logs bitchan_qbittorrent" to get admin password
+      - "8080:8080"  # qBittorrent Web-UI, if not accessing from localhost, use "docker logs bitchan_qbittorrent" for admin pw
     volumes:
       - /usr/local/bitchan-docker/i2p_qb:/i2p_qb
     depends_on:
